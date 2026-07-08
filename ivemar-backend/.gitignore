@@ -1,0 +1,31 @@
+# Dependencias
+node_modules/
+
+# Variables de entorno (cuando se agregue configuración sensible)
+.env
+.env.local
+
+# Base de datos SQLite: NUNCA debe versionarse. Contiene datos reales de
+# clientes (nombre, teléfono, correo) y crece indefinidamente con el uso.
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+
+# Backups automáticos generados por utils/cron.js
+backups/
+
+# Firmas de legajos subidas por los usuarios (contenido generado en runtime,
+# no código fuente)
+firmas/*
+!firmas/.gitkeep
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor / SO
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store

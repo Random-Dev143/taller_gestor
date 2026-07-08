@@ -1,0 +1,19 @@
+# Este proyecto tiene dos sub-carpetas (ivemar-backend/ e
+# ivemar-frontend/), cada una con su propio .gitignore específico.
+# Este archivo raíz cubre lo que pueda quedar fuera de esas dos carpetas
+# si en algún momento se sube todo como un único repositorio.
+
+node_modules/
+dist/
+*.log
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+.idea
+
+# Base de datos y backups (ver también ivemar-backend/.gitignore)
+*.db
+*.db-wal
+*.db-shm
+backups/
+*.bat
