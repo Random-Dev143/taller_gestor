@@ -110,7 +110,13 @@ router.get('/mensual', async (req, res) => {
                 ROUND(SUM(
                     (a.tiempo_estimado / (SELECT NULLIF(SUM(tiempo_estimado), 0) FROM actividades WHERE ot = o.ot)) 
                     * (o.monto_mano_obra + o.monto_mano_obra_garantia)
-                ), 2) AS facturacion_generada
+                ), 2) AS facturacion_generada,
+                
+                -- NUEVO: Cálculo de Rentabilidad por Eficiencia (Horas Ahorradas * Valor Hora de la OT)
+                ROUND(SUM(
+                    (a.tiempo_estimado - a.tiempo_real) * ((o.monto_mano_obra + o.monto_mano_obra_garantia) / (SELECT NULLIF(SUM(tiempo_estimado), 0) FROM actividades WHERE ot = o.ot))
+                ), 2) AS rentabilidad_eficiencia
+
             FROM actividades a 
             JOIN legajos l ON a.legajo_mecanico = l.legajo 
             JOIN ordenes o ON a.ot = o.ot 

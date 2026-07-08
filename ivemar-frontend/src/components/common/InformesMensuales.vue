@@ -137,6 +137,23 @@
 
       <hr class="divider" />
 
+      <div class="section-block" ref="rentabilidadMecanicosRef">
+        <div class="header-with-actions">
+          <h3>Rentabilidad por Eficiencia</h3>
+          <select v-model="modoRentabilidad" class="form-control select-sm no-print">
+            <option value="separados">Comparativa Mecánicos</option>
+            <option value="taller">Taller Completo (Consolidado)</option>
+          </select>
+        </div>
+        <p class="chart-hint">Valor monetario del tiempo ahorrado (verde) o excedido (rojo) respecto al presupuestado.</p>
+        <div class="chart-box">
+          <Bar v-if="datosRentabilidad.length" :data="chartRentabilidad" :options="opcionesBarraRentabilidad" />
+          <p v-else class="empty-state">Sin datos de eficiencia en este período.</p>
+        </div>
+      </div>
+
+      <hr class="divider" />
+
       <div class="charts-grid">
         <div class="section-block" ref="cuellosRef">
           <div class="header-with-actions">
@@ -348,6 +365,7 @@ const financieroRef = ref(null)
 const tendenciaRef = ref(null)
 const diasSemanaRef = ref(null)
 const tiemposRef = ref(null)
+const rentabilidadMecanicosRef = ref(null)
 const cuellosRef = ref(null)
 const composicionRef = ref(null)
 const repuestosManoObraRef = ref(null)
@@ -368,7 +386,7 @@ const exportarPDF = async () => {
       filename: `informe_ivemar_${desde.value}_a_${hasta.value}.pdf`,
       blocks: [
         kpisRef.value, financieroRef.value, tendenciaRef.value, diasSemanaRef.value,
-        aporteMecanicosRef.value, tiemposRef.value, cuellosRef.value, 
+        aporteMecanicosRef.value, tiemposRef.value, rentabilidadMecanicosRef.value, cuellosRef.value, 
         composicionRef.value, repuestosManoObraRef.value,
         garantiaRef.value, clientesRef.value, rentabilidadRef.value
       ]
@@ -580,6 +598,60 @@ const chartTiempos = computed(() => ({
     { label: 'Real (hs)', backgroundColor: '#0056a7', data: datosTiempos.value.map(d => d.real) }
   ]
 }))
+
+
+const modoRentabilidad = ref('separados')
+
+const datosRentabilidad = computed(() => {
+  if (!informe.value || !informe.value.tiempos_mecanicos) return []
+  const mec = informe.value.tiempos_mecanicos
+
+  if (modoRentabilidad.value === 'taller') {
+    const totalRent = mec.reduce((acc, m) => acc + (m.rentabilidad_eficiencia || 0), 0)
+    return [{ etiqueta: 'Taller Completo', valor: totalRent }]
+  }
+
+  return mec.map(m => ({
+    etiqueta: m.nombre,
+    valor: m.rentabilidad_eficiencia || 0
+  }))
+})
+
+const chartRentabilidad = computed(() => {
+  const data = datosRentabilidad.value
+  return {
+    labels: data.map(d => d.etiqueta),
+    datasets: [{
+      label: 'Rentabilidad ($)',
+      backgroundColor: data.map(d => d.valor >= 0 ? '#1d8a4f' : '#b22234'), 
+      data: data.map(d => d.valor)
+    }]
+  }
+})
+
+const opcionesBarraRentabilidad = computed(() => ({
+  ...opcionesBase,
+  plugins: {
+    ...opcionesBase.plugins,
+    legend: { display: false },
+    tooltip: {
+      callbacks: {
+        label: (ctx) => `Rentabilidad: ${formatCurrency(ctx.parsed.y)}`
+      }
+    }
+  },
+  scales: {
+    x: { ...opcionesBase.scales.x },
+    y: {
+      ...opcionesBase.scales.y,
+      ticks: {
+        ...opcionesBase.scales.y.ticks,
+        callback: (v) => formatCurrency(v)
+      }
+    }
+  }
+}))
+
 
 const chartCuellos = computed(() => {
   const datos = informe.value?.permanencia_estado || []

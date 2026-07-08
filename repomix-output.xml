@@ -41,7 +41,6 @@ The content is organized as follows:
 
 <directory_structure>
 .gitignore
-iniciar_ivemar.bat
 ivemar-backend/.gitignore
 ivemar-backend/config/database.js
 ivemar-backend/middlewares/upload.js
@@ -101,7 +100,7 @@ ivemar-frontend/src/views/LoginMecanico.vue
 ivemar-frontend/src/views/MecanicoView.vue
 ivemar-frontend/src/views/SalaEsperaView.vue
 ivemar-frontend/vite.config.js
-migrar_ivemar.bat
+README.md
 </directory_structure>
 
 <files>
@@ -126,42 +125,7 @@ dist/
 *.db-wal
 *.db-shm
 backups/
-</file>
-
-<file path="iniciar_ivemar.bat">
-@echo off
-title Lanzador IVEMAR
-
-echo ============================================
-echo      INICIANDO SISTEMA DEL TALLER IVEMAR
-echo ============================================
-echo.
-
-:: 1. Entramos a la carpeta del backend y lo iniciamos en una nueva ventana
-echo [1/2] Levantando Backend (Base de Datos y API)...
-cd ivemar-backend
-start "IVEMAR - BACKEND" cmd /k "node server.js"
-
-:: Volvemos a la carpeta principal
-cd ..
-
-:: 2. Entramos a la carpeta del frontend y lo iniciamos en una nueva ventana
-echo [2/2] Levantando Frontend (Interfaz grafica)...
-cd ivemar-frontend
-start "IVEMAR - FRONTEND" cmd /k "npm run dev"
-
-:: Volvemos a la carpeta principal
-cd ..
-
-echo.
-echo ============================================
-echo  LISTO! El sistema ya esta en linea.
-echo  Puedes minimizar las dos pantallas negras.
-echo ============================================
-
-:: Espera 4 segundos y cierra esta ventanita inicial
-timeout /t 4 >nul
-exit
+*.bat
 </file>
 
 <file path="ivemar-backend/.gitignore">
@@ -5736,54 +5700,9 @@ export default defineConfig({
 })
 </file>
 
-<file path="migrar_ivemar.bat">
-@echo off
-echo 🚗 Iniciando andamiaje para IVEMAR en Vue...
-call npm create vite@latest ivemar-frontend -- --template vue
-
-cd ivemar-frontend
-
-echo 📦 Instalando dependencias base...
-call npm install
-
-echo 📦 Instalando Vue Router, Pinia y herramientas de PDF/Graficos...
-call npm install vue-router@4 pinia jspdf jspdf-autotable html2canvas chart.js
-
-echo 📂 Creando estructura de carpetas...
-mkdir src\assets\css 2>nul
-mkdir src\assets\img 2>nul
-mkdir src\components\common 2>nul
-mkdir src\components\asesor 2>nul
-mkdir src\components\jefe 2>nul
-mkdir src\components\mecanico 2>nul
-mkdir src\components\sala 2>nul
-mkdir src\views 2>nul
-mkdir src\router 2>nul
-mkdir src\stores 2>nul
-mkdir src\composables 2>nul
-
-echo 📄 Generando esqueletos de las vistas principales...
-type nul > src\views\HomeView.vue
-type nul > src\views\AsesorView.vue
-type nul > src\views\JefeView.vue
-type nul > src\views\MecanicoView.vue
-type nul > src\views\SalaEsperaView.vue
-
-echo 📄 Generando componentes compartidos...
-type nul > src\components\common\NavBar.vue
-type nul > src\components\common\Modal.vue
-type nul > src\components\common\StatusBadge.vue
-
-echo 📄 Creando stores para Pinia...
-type nul > src\stores\authStore.js
-type nul > src\stores\otStore.js
-
-echo 📄 Creando composables utilitarios...
-type nul > src\composables\useApi.js
-type nul > src\composables\useFormatters.js
-
-echo ✅ ¡Estructura creada con exito!
-pause
+<file path="README.md">
+# taller_gestor
+Gestor integral de taller.
 </file>
 
 </files>
