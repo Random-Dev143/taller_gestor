@@ -122,4 +122,50 @@ router.get('/mecanico/:legajo', async (req, res) => {
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
+router.post('/:id/tiempos', async (req, res) => {
+    const { inicio, fin } = req.body;
+    if (!inicio) return res.status(400).json({ error: 'El inicio es obligatorio' });
+    try {
+        await withTransaction(async () => {
+            const actividad = await get(`SELECT ot FROM actividades WHERE id = ?`, [req.params.id]);
+            if (!actividad) throw new Error('Actividad no encontrada');
+
+            await run(`INSERT INTO tiempos_actividad (actividad_id, inicio, fin) VALUES (?, ?, ?)`, [req.params.id, inicio, fin || null]);
+            await recalcularTiempoEmpleado(actividad.ot);
+        });
+        res.json({ status: 'Tiempo agregado' });
+    } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+router.delete('/tiempos/:id', async (req, res) => {
+    try {
+        await withTransaction(async () => {
+            const tiempo = await get(`SELECT actividad_id FROM tiempos_actividad WHERE id = ?`, [req.params.id]);
+            if (!tiempo) throw new Error('Registro de tiempo no encontrado');
+            
+            const actividad = await get(`SELECT ot FROM actividades WHERE id = ?`, [tiempo.actividad_id]);
+            await run(`DELETE FROM tiempos_actividad WHERE id = ?`, [req.params.id]);
+            
+            if (actividad) await recalcularTiempoEmpleado(actividad.ot);
+        });
+        res.json({ status: 'Tiempo eliminado' });
+    } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+router.put('/tiempos/:id', async (req, res) => {
+    const { inicio, fin } = req.body;
+    try {
+        await withTransaction(async () => {
+            const tiempo = await get(`SELECT actividad_id FROM tiempos_actividad WHERE id = ?`, [req.params.id]);
+            if (!tiempo) throw new Error('Registro de tiempo no encontrado');
+
+            await run(`UPDATE tiempos_actividad SET inicio = ?, fin = ? WHERE id = ?`, [inicio, fin, req.params.id]);
+            
+            const actividad = await get(`SELECT ot FROM actividades WHERE id = ?`, [tiempo.actividad_id]);
+            if (actividad) await recalcularTiempoEmpleado(actividad.ot);
+        });
+        res.json({ status: 'Tiempo actualizado' });
+    } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
 module.exports = router;

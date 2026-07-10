@@ -60,8 +60,9 @@ router.get('/:ot', async (req, res) => {
         const explicacion = await get(`SELECT * FROM explicaciones WHERE ot = ?`, [req.params.ot]);
         const aportes = await all(`SELECT ap.*, l.nombre, l.firma_path FROM aportes ap JOIN legajos l ON ap.legajo = l.legajo WHERE ap.ot = ?`, [req.params.ot]);
         const historial = await all(`SELECT * FROM estados_historial WHERE ot = ? ORDER BY id`, [req.params.ot]);
+        const tiempos_actividad = await all(`SELECT ta.* FROM tiempos_actividad ta JOIN actividades a ON ta.actividad_id = a.id WHERE a.ot = ?`, [req.params.ot]);
 
-        res.json({ ...ot, asignaciones, actividades, explicacion, aportes, historial });
+        res.json({ ...ot, asignaciones, actividades, explicacion, aportes, historial, tiempos_actividad });
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
