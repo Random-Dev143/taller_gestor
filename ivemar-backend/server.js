@@ -37,6 +37,7 @@ app.use('/api/ordenes', require('./routes/ordenes'));
 app.use('/api/actividades', require('./routes/actividades'));
 app.use('/api/informes', require('./routes/informes'));
 app.use('/api/sala', require('./routes/sala'));
+app.use('/api/feriados', require('./routes/feriados'));
 
 // ─── INICIAR TAREAS PROGRAMADAS ────────────────────────────────────
 iniciarCron();

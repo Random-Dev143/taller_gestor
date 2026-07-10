@@ -46,12 +46,16 @@ ivemar-backend/config/database.js
 ivemar-backend/middlewares/upload.js
 ivemar-backend/package.json
 ivemar-backend/routes/actividades.js
+ivemar-backend/routes/feriados.js
 ivemar-backend/routes/informes.js
 ivemar-backend/routes/legajos.js
 ivemar-backend/routes/ordenes.js
 ivemar-backend/routes/sala.js
 ivemar-backend/routes/unidades.js
 ivemar-backend/server.js
+ivemar-backend/services/feriados.service.js
+ivemar-backend/services/informes.service.js
+ivemar-backend/services/tiempos.service.js
 ivemar-backend/sql.js
 ivemar-backend/utils/cron.js
 ivemar-frontend/.gitignore
@@ -82,16 +86,21 @@ ivemar-frontend/src/components/common/SvgBarChart.vue
 ivemar-frontend/src/components/common/SvgPieChart.vue
 ivemar-frontend/src/components/common/ToastContainer.vue
 ivemar-frontend/src/components/HelloWorld.vue
+ivemar-frontend/src/components/informes/TableroOperativo.vue
 ivemar-frontend/src/components/jefe/ControlFinalOT.vue
 ivemar-frontend/src/components/jefe/ModalAsignar.vue
+ivemar-frontend/src/components/jefe/ModalAusencias.vue
+ivemar-frontend/src/components/jefe/TableroRendimiento.vue
 ivemar-frontend/src/components/mecanico/ModalFinalizarTarea.vue
 ivemar-frontend/src/components/mecanico/ModalPausarTarea.vue
 ivemar-frontend/src/composables/useApi.js
+ivemar-frontend/src/composables/useChartConfig.js
 ivemar-frontend/src/composables/useDashboardExporter.js
 ivemar-frontend/src/composables/usePdfGenerator.js
 ivemar-frontend/src/composables/useToast.js
 ivemar-frontend/src/main.js
 ivemar-frontend/src/router/index.js
+ivemar-frontend/src/stores/useInformesStore.js
 ivemar-frontend/src/style.css
 ivemar-frontend/src/views/AsesorView.vue
 ivemar-frontend/src/views/HomeView.vue
@@ -315,7 +324,8 @@ db.serialize(async () => {
     db.run(`CREATE TABLE IF NOT EXISTS aportes (id INTEGER PRIMARY KEY AUTOINCREMENT, ot TEXT NOT NULL, legajo TEXT NOT NULL, actividades TEXT NOT NULL, horas REAL DEFAULT 0, fecha_aporte DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(ot) REFERENCES ordenes(ot) ON DELETE CASCADE ON UPDATE CASCADE, FOREIGN KEY(legajo) REFERENCES legajos(legajo) ON DELETE RESTRICT ON UPDATE CASCADE)`);
     db.run(`CREATE TABLE IF NOT EXISTS actividades (id INTEGER PRIMARY KEY AUTOINCREMENT, ot TEXT NOT NULL, descripcion TEXT NOT NULL, tiempo_estimado REAL NOT NULL, tiempo_real REAL DEFAULT 0, estado TEXT DEFAULT 'Asignada' CHECK(estado IN ('Pendiente', 'Asignada', 'En Curso', 'Pausada', 'Finalizada')), legajo_mecanico TEXT NOT NULL, auto_pausa INTEGER DEFAULT 0, fecha_inicio DATETIME, fecha_fin DATETIME, FOREIGN KEY(ot) REFERENCES ordenes(ot) ON DELETE CASCADE ON UPDATE CASCADE, FOREIGN KEY(legajo_mecanico) REFERENCES legajos(legajo) ON DELETE RESTRICT ON UPDATE CASCADE)`);
     db.run(`CREATE TABLE IF NOT EXISTS tiempos_actividad (id INTEGER PRIMARY KEY AUTOINCREMENT, actividad_id INTEGER NOT NULL, inicio DATETIME NOT NULL, fin DATETIME, FOREIGN KEY(actividad_id) REFERENCES actividades(id) ON DELETE CASCADE ON UPDATE CASCADE)`);
-
+    db.run(`CREATE TABLE IF NOT EXISTS excepciones_mecanicos (id INTEGER PRIMARY KEY AUTOINCREMENT, legajo TEXT NOT NULL, fecha DATE NOT NULL, motivo TEXT NOT NULL, horas_descontadas REAL DEFAULT 10, FOREIGN KEY(legajo) REFERENCES legajos(legajo) ON DELETE CASCADE ON UPDATE CASCADE)`);
+    db.run(`CREATE TABLE IF NOT EXISTS feriados (fecha DATE PRIMARY KEY, descripcion TEXT DEFAULT '')`);
     setTimeout(() => migrarEstructura(), 500);
 });
 
@@ -339,9 +349,13 @@ async function sincronizarEstadoOT(ot) {
     const enCurso = acts.filter(a => a.estado === 'En Curso').length;
     const finalizadas = acts.filter(a => a.estado === 'Finalizada').length;
 
-    if (enCurso > 0) estadoCalculado = 'En Proceso';
-    else if (acts.length > 0 && finalizadas === acts.length) estadoCalculado = 'En Espera';
-    else if (estadoCalculado === 'En Proceso') estadoCalculado = 'En Espera';
+    if (enCurso > 0) {
+        estadoCalculado = 'En Proceso';
+    } else if (acts.length > 0 && finalizadas === acts.length) {
+        estadoCalculado = 'En Espera';
+    } else {
+        if (estadoCalculado === 'En Proceso') estadoCalculado = 'En Espera';
+    }
 
     if (estadoCalculado !== orden.estado_actual) await cambiarEstado(ot, estadoCalculado);
 }
@@ -534,214 +548,106 @@ router.get('/mecanico/:legajo', async (req, res) => {
 module.exports = router;
 </file>
 
+<file path="ivemar-backend/routes/feriados.js">
+const express = require('express');
+const router = express.Router();
+const { all, run } = require('../config/database');
+
+router.get('/', async (req, res) => {
+    try {
+        res.json(await all(`SELECT * FROM feriados ORDER BY fecha ASC`));
+    } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+router.post('/', async (req, res) => {
+    const { fecha, descripcion } = req.body;
+    try {
+        await run(`INSERT INTO feriados (fecha, descripcion) VALUES (?, ?)`, [fecha, descripcion || '']);
+        res.json({ status: 'Feriado registrado' });
+    } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+router.delete('/:fecha', async (req, res) => {
+    try {
+        await run(`DELETE FROM feriados WHERE fecha = ?`, [req.params.fecha]);
+        res.json({ status: 'Feriado eliminado' });
+    } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+module.exports = router;
+</file>
+
 <file path="ivemar-backend/routes/informes.js">
 const express = require('express');
 const router = express.Router();
-const { all, get } = require('../config/database');
+const { getFinanciero, getOperativo, getTaller } = require('../services/informes.service');
 
-// --- Motor de Cálculo de Horas de Taller ---
-function calcularMinutosHabiles(startStr, endStr) {
-    if (!startStr) return 0;
-    
-    let start = new Date(startStr + 'Z');
-    let end = endStr ? new Date(endStr + 'Z') : new Date();
-
-    if (end < start) return 0;
-
-    let totalMinutos = 0;
-    let actual = new Date(start);
-    let maxIterations = 1000; 
-
-    while (actual < end && maxIterations > 0) {
-        maxIterations--;
-        let dia = actual.getDay();
-        let hora = actual.getHours();
-
-        let enHorarioLaboral = false;
-        if (dia >= 1 && dia <= 5) { 
-            if ((hora >= 8 && hora < 13) || (hora >= 14 && hora < 18)) enHorarioLaboral = true;
-        } else if (dia === 6) { 
-            if (hora >= 8 && hora < 13) enHorarioLaboral = true;
-        }
-
-        if (enHorarioLaboral) {
-            let limiteCorte = (hora < 13) ? 13 : 18;
-            let finBloque = new Date(actual);
-            finBloque.setHours(limiteCorte, 0, 0, 0);
-
-            let corte = (end < finBloque) ? end : finBloque;
-            totalMinutos += (corte - actual) / 60000;
-            
-            actual = new Date(corte);
-        } else {
-            if (hora < 8) {
-                actual.setHours(8, 0, 0, 0);
-            } else if (dia >= 1 && dia <= 5 && hora >= 13 && hora < 14) {
-                actual.setHours(14, 0, 0, 0);
-            } else {
-                actual.setDate(actual.getDate() + 1);
-                actual.setHours(8, 0, 0, 0);
-            }
-        }
-    }
-    return totalMinutos;
-}
-
-router.get('/mensual', async (req, res) => {
+// Función auxiliar para parsear las fechas de las peticiones
+function parseFechas(req) {
     let inicio, fin, textoRango;
-    
     if (req.query.desde && req.query.hasta) {
         inicio = req.query.desde;
-        fin = new Date(new Date(req.query.hasta).setDate(new Date(req.query.hasta).getDate() + 1)).toISOString().split('T')[0];
+        fin = new Date(new Date(req.query.hasta + 'T00:00:00Z').getTime() + 86400000).toISOString().split('T')[0];
         textoRango = `${req.query.desde} al ${req.query.hasta}`;
     } else {
         const mes = req.query.mes || new Date().toISOString().substring(0, 7);
         inicio = `${mes}-01`;
-        fin = new Date(new Date(inicio).setMonth(new Date(inicio).getMonth() + 1)).toISOString().split('T')[0];
+        const [anio, mesNum] = mes.split('-').map(Number);
+        fin = new Date(Date.UTC(anio, mesNum, 1)).toISOString().split('T')[0];
         textoRango = mes;
     }
 
-    const diasRango = Math.round((new Date(fin) - new Date(inicio)) / 86400000);
-    const inicioAnterior = new Date(new Date(inicio).getTime() - diasRango * 86400000).toISOString().split('T')[0];
-    const finAnterior = inicio;
+    const diasRango = Math.round((new Date(fin + 'T00:00:00Z') - new Date(inicio + 'T00:00:00Z')) / 86400000);
+    const inicioAnterior = new Date(new Date(inicio + 'T00:00:00Z').getTime() - diasRango * 86400000).toISOString().split('T')[0];
 
+    return { inicio, fin, inicioAnterior, finAnterior: inicio, textoRango };
+}
+
+// NUEVAS RUTAS MODULARES (Preparadas para la Fase 2)
+router.get('/mensual/financiero', async (req, res) => {
     try {
-        const queryResumen = `
-            SELECT COUNT(*) AS total_ot, 
-                   SUM(CASE WHEN es_garantia = 1 THEN 1 ELSE 0 END) AS total_garantia, 
-                   SUM(CASE WHEN es_no_iveco = 1 THEN 1 ELSE 0 END) AS total_no_iveco, 
-                   SUM(CASE WHEN es_garantia = 0 AND es_no_iveco = 0 THEN 1 ELSE 0 END) AS total_normales,
-                   SUM(CASE WHEN controlada = 1 THEN 1 ELSE 0 END) AS total_controladas, 
-                   ROUND(SUM(tiempo_asignado_horas), 2) AS hs_asignadas, 
-                   ROUND(SUM(tiempo_empleado_horas), 2) AS hs_empleadas, 
-                   ROUND(SUM(monto_repuestos + monto_repuestos_garantia), 2) AS total_repuestos,
-                   ROUND(SUM(monto_mano_obra + monto_mano_obra_garantia), 2) AS total_mano_obra,
-                   ROUND(SUM(monto_repuestos + monto_mano_obra + monto_repuestos_garantia + monto_mano_obra_garantia), 2) AS total_facturado,
-                   ROUND(AVG(CASE WHEN estado_actual = 'Finalizada' THEN (monto_repuestos + monto_mano_obra + monto_repuestos_garantia + monto_mano_obra_garantia) ELSE NULL END), 2) AS facturacion_promedio,
-                   ROUND(SUM(monto_repuestos_garantia + monto_mano_obra_garantia), 2) AS monto_garantia,
-                   ROUND(SUM(monto_repuestos + monto_mano_obra), 2) AS monto_facturable
-            FROM ordenes WHERE fecha_apertura >= ? AND fecha_apertura < ?
-        `;
-        const resumen = await get(queryResumen, [inicio, fin]);
-        const resumen_anterior = await get(queryResumen, [inicioAnterior, finAnterior]);
-        
-        const facturacion_diaria = await all(`
-            SELECT DATE(fecha_cierre) as fecha, 
-                   SUM(monto_repuestos + monto_repuestos_garantia) as repuestos, 
-                   SUM(monto_mano_obra + monto_mano_obra_garantia) as mano_obra 
-            FROM ordenes 
-            WHERE estado_actual = 'Finalizada' AND fecha_cierre IS NOT NULL AND fecha_apertura >= ? AND fecha_apertura < ?
-            GROUP BY DATE(fecha_cierre)
-            ORDER BY fecha ASC
-        `, [inicio, fin]);
-
-        // FIX: Proporción matemática de facturación según horas asignadas a la tarea vs horas totales de la OT.
-        const tiempos_mecanicos = await all(`
-            SELECT 
-                a.legajo_mecanico AS legajo, 
-                l.nombre, 
-                COUNT(DISTINCT a.ot) AS ot_trabajadas, 
-                ROUND(SUM(a.tiempo_estimado), 2) AS hs_estimadas, 
-                ROUND(SUM(a.tiempo_real), 2) AS hs_empleadas, 
-                ROUND((SUM(a.tiempo_estimado) / NULLIF(SUM(a.tiempo_real), 0)) * 100, 2) AS eficiencia_porcentaje,
-                ROUND(SUM(
-                    (a.tiempo_estimado / (SELECT NULLIF(SUM(tiempo_estimado), 0) FROM actividades WHERE ot = o.ot)) 
-                    * (o.monto_mano_obra + o.monto_mano_obra_garantia)
-                ), 2) AS facturacion_generada,
-                
-                -- NUEVO: Cálculo de Rentabilidad por Eficiencia (Horas Ahorradas * Valor Hora de la OT)
-                ROUND(SUM(
-                    (a.tiempo_estimado - a.tiempo_real) * ((o.monto_mano_obra + o.monto_mano_obra_garantia) / (SELECT NULLIF(SUM(tiempo_estimado), 0) FROM actividades WHERE ot = o.ot))
-                ), 2) AS rentabilidad_eficiencia
-
-            FROM actividades a 
-            JOIN legajos l ON a.legajo_mecanico = l.legajo 
-            JOIN ordenes o ON a.ot = o.ot 
-            WHERE o.fecha_apertura >= ? AND o.fecha_apertura < ? AND a.estado = 'Finalizada' 
-            GROUP BY a.legajo_mecanico 
-            ORDER BY facturacion_generada DESC
-        `, [inicio, fin]);
-
-        let filtroPerm = "AND eh.estado != 'Finalizada'";
-        const paramsPerm = [inicio, fin];
-        if (req.query.filtro_cuellos) {
-            filtroPerm += " AND (o.ot = ? OR o.patente = ?)";
-            paramsPerm.push(req.query.filtro_cuellos, req.query.filtro_cuellos);
-        }
-
-        const historialRows = await all(`
-            SELECT eh.estado, eh.ot, eh.ts_desde, eh.ts_hasta
-            FROM estados_historial eh
-            JOIN ordenes o ON eh.ot = o.ot
-            WHERE o.fecha_apertura >= ? AND o.fecha_apertura < ? ${filtroPerm}
-        `, paramsPerm);
-
-        const cuellosMap = {};
-        for (const row of historialRows) {
-            const minHabiles = calcularMinutosHabiles(row.ts_desde, row.ts_hasta);
-            if (!cuellosMap[row.estado]) {
-                cuellosMap[row.estado] = { estado: row.estado, ots: new Set(), totalMin: 0 };
-            }
-            cuellosMap[row.estado].ots.add(row.ot);
-            cuellosMap[row.estado].totalMin += minHabiles;
-        }
-
-        const permanencia_estado = Object.values(cuellosMap).map(c => ({
-            estado: c.estado,
-            ot_afectadas: c.ots.size,
-            horas_totales: parseFloat((c.totalMin / 60).toFixed(2)),
-            horas_promedio: parseFloat(((c.totalMin / c.ots.size) / 60).toFixed(2))
-        })).sort((a, b) => b.horas_promedio - a.horas_promedio);
-
-        const facturacion_por_marca = await all(`
-            SELECT marca, COUNT(*) AS cantidad_ot, ROUND(SUM(monto_repuestos + monto_mano_obra + monto_repuestos_garantia + monto_mano_obra_garantia), 2) AS facturacion_total
-            FROM ordenes WHERE fecha_apertura >= ? AND fecha_apertura < ?
-            GROUP BY marca ORDER BY facturacion_total DESC
-        `, [inicio, fin]).catch(() => []);
-
-        const rentabilidad_unidad = await all(`
-            SELECT u.unidad, COUNT(*) as cantidad, ROUND(SUM(o.monto_repuestos + o.monto_mano_obra + o.monto_repuestos_garantia + o.monto_mano_obra_garantia), 2) AS facturacion_total
-            FROM ordenes o
-            JOIN unidades u ON o.patente = u.patente
-            WHERE o.fecha_apertura >= ? AND o.fecha_apertura < ? AND o.estado_actual = 'Finalizada'
-            GROUP BY u.unidad ORDER BY facturacion_total DESC LIMIT 10
-        `, [inicio, fin]);
-
-        const top_clientes = await all(`
-            SELECT c.nombre AS cliente, COUNT(*) AS cantidad_ot, ROUND(SUM(o.monto_repuestos + o.monto_mano_obra + o.monto_repuestos_garantia + o.monto_mano_obra_garantia), 2) AS facturacion_total
-            FROM ordenes o
-            JOIN unidades u ON o.patente = u.patente
-            JOIN clientes c ON u.cliente_id = c.id
-            WHERE o.fecha_apertura >= ? AND o.fecha_apertura < ?
-            GROUP BY c.id ORDER BY cantidad_ot DESC, facturacion_total DESC LIMIT 10
-        `, [inicio, fin]);
-
-        const aperturas_por_dia = await all(`
-            SELECT DATE(fecha_apertura) AS fecha, COUNT(*) AS cantidad
-            FROM ordenes WHERE fecha_apertura >= ? AND fecha_apertura < ?
-            GROUP BY DATE(fecha_apertura) ORDER BY fecha ASC
-        `, [inicio, fin]);
-        
-        const cierres_por_dia = await all(`
-            SELECT DATE(fecha_cierre) AS fecha, COUNT(*) AS cantidad
-            FROM ordenes WHERE fecha_cierre IS NOT NULL AND fecha_apertura >= ? AND fecha_apertura < ?
-            GROUP BY DATE(fecha_cierre) ORDER BY fecha ASC
-        `, [inicio, fin]);
-
-        const ciclo_promedio = await get(`
-            SELECT ROUND(AVG(JULIANDAY(fecha_cierre) - JULIANDAY(fecha_apertura)), 2) AS dias_promedio
-            FROM ordenes
-            WHERE estado_actual = 'Finalizada' AND fecha_cierre IS NOT NULL
-              AND fecha_apertura >= ? AND fecha_apertura < ?
-        `, [inicio, fin]);
-
-        res.json({
-            mes: textoRango, resumen, resumen_anterior, facturacion_diaria, tiempos_mecanicos,
-            permanencia_estado, rentabilidad_unidad, facturacion_por_marca,
-            top_clientes, aperturas_por_dia, cierres_por_dia,
-            ciclo_promedio: ciclo_promedio?.dias_promedio || 0
-        });
+        const { inicio, fin, inicioAnterior, finAnterior } = parseFechas(req);
+        res.json(await getFinanciero(inicio, fin, inicioAnterior, finAnterior));
     } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+router.get('/mensual/operativo', async (req, res) => {
+    try {
+        const { inicio, fin } = parseFechas(req);
+        res.json(await getOperativo(inicio, fin));
+    } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+router.get('/mensual/taller', async (req, res) => {
+    try {
+        const { inicio, fin } = parseFechas(req);
+        res.json(await getTaller(inicio, fin, req.query.filtro_cuellos));
+    } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+
+// RUTA LEGACY (Mantiene vivo al Frontend actual)
+router.get('/mensual', async (req, res) => {
+    try {
+        const fechas = parseFechas(req);
+        
+        // Ejecutamos los 3 servicios en paralelo para mayor velocidad
+        const [financiero, operativo, taller] = await Promise.all([
+            getFinanciero(fechas.inicio, fechas.fin, fechas.inicioAnterior, fechas.finAnterior),
+            getOperativo(fechas.inicio, fechas.fin),
+            getTaller(fechas.inicio, fechas.fin, req.query.filtro_cuellos)
+        ]);
+
+        // Ensamblamos y devolvemos exactamente lo mismo que devolvía antes
+        res.json({
+            mes: fechas.textoRango,
+            ...financiero,
+            ...operativo,
+            ...taller
+        });
+    } catch (error) { 
+        res.status(500).json({ error: error.message }); 
+    }
 });
 
 module.exports = router;
@@ -753,14 +659,11 @@ const router = express.Router();
 const { run, all, get } = require('../config/database');
 const upload = require('../middlewares/upload');
 
-// Equivalente a app.get('/api/legajos', ...)
 router.get('/', async (req, res) => {
     try {
         const rows = await all(`SELECT legajo, nombre, rol, firma_path FROM legajos`);
         res.json(rows);
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
+    } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
 router.get('/:legajo', async (req, res) => {
@@ -768,27 +671,19 @@ router.get('/:legajo', async (req, res) => {
         const row = await get(`SELECT * FROM legajos WHERE legajo = ?`, [req.params.legajo]);
         if (!row) return res.status(404).json({ error: 'Legajo no encontrado' });
         res.json(row);
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
+    } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
 router.post('/', async (req, res) => {
     const { legajo, nombre, rol } = req.body;
     if (!legajo || !nombre || !rol) return res.status(400).json({ error: 'Faltan datos' });
-    // El legajo se usa tal cual como nombre de archivo al subir la firma
-    // (ver middlewares/upload.js), así que se valida acá el formato para
-    // evitar que termine escribiendo fuera de la carpeta de firmas
-    // (ej. un legajo como "../../algo").
     if (!/^[a-zA-Z0-9_-]+$/.test(legajo)) {
         return res.status(400).json({ error: 'El legajo solo puede contener letras, números, guiones y guiones bajos' });
     }
     try {
         await run(`INSERT INTO legajos (legajo, nombre, rol) VALUES (?, ?, ?)`, [legajo, nombre, rol]);
         res.json({ status: 'Legajo creado', legajo });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
+    } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
 router.post('/:legajo/firma', upload.single('firma'), async (req, res) => {
@@ -797,9 +692,7 @@ router.post('/:legajo/firma', upload.single('firma'), async (req, res) => {
     try {
         await run(`UPDATE legajos SET firma_path = ? WHERE legajo = ?`, [firma_path, req.params.legajo]);
         res.json({ status: 'Firma subida', firma_path });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
+    } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
 router.delete('/:legajo', async (req, res) => {
@@ -812,6 +705,42 @@ router.delete('/:legajo', async (req, res) => {
         }
         res.status(500).json({ error: error.message });
     }
+});
+
+// --- NUEVO: GESTIÓN DE EXCEPCIONES Y PERMISOS (TIEMPO MUERTO) ---
+
+router.get('/:legajo/excepciones', async (req, res) => {
+    try {
+        // Se puede filtrar por mes enviando ?mes=YYYY-MM
+        let query = `SELECT * FROM excepciones_mecanicos WHERE legajo = ?`;
+        const params = [req.params.legajo];
+        if (req.query.mes) {
+            query += ` AND fecha LIKE ?`;
+            params.push(`${req.query.mes}%`);
+        }
+        query += ` ORDER BY fecha DESC`;
+        
+        const excepciones = await all(query, params);
+        res.json(excepciones);
+    } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+router.post('/excepciones', async (req, res) => {
+    const { legajo, fecha, motivo, horas_descontadas } = req.body;
+    try {
+        await run(
+            `INSERT INTO excepciones_mecanicos (legajo, fecha, motivo, horas_descontadas) VALUES (?, ?, ?, ?)`, 
+            [legajo, fecha, motivo, horas_descontadas]
+        );
+        res.json({ status: 'Excepción registrada' });
+    } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+router.delete('/excepciones/:id', async (req, res) => {
+    try {
+        await run(`DELETE FROM excepciones_mecanicos WHERE id = ?`, [req.params.id]);
+        res.json({ status: 'Excepción eliminada' });
+    } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
 module.exports = router;
@@ -1132,6 +1061,7 @@ app.use('/api/ordenes', require('./routes/ordenes'));
 app.use('/api/actividades', require('./routes/actividades'));
 app.use('/api/informes', require('./routes/informes'));
 app.use('/api/sala', require('./routes/sala'));
+app.use('/api/feriados', require('./routes/feriados'));
 
 // ─── INICIAR TAREAS PROGRAMADAS ────────────────────────────────────
 iniciarCron();
@@ -1141,6 +1071,346 @@ app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 API IVEMAR activa en http://0.0.0.0:${PORT}`);
     console.log(`📁 Firmas: ${FIRMAS_DIR}`);
 });
+</file>
+
+<file path="ivemar-backend/services/feriados.service.js">
+// ivemar-backend/services/feriados.service.js
+const { all } = require('../config/database');
+
+async function getFeriadosSet() {
+    const rows = await all(`SELECT fecha FROM feriados`);
+    return new Set(rows.map(r => r.fecha));
+}
+
+module.exports = { getFeriadosSet };
+</file>
+
+<file path="ivemar-backend/services/informes.service.js">
+const { all, get } = require('../config/database');
+const { calcularMinutosHabiles } = require('./tiempos.service');
+const { getFeriadosSet } = require('./feriados.service');
+
+// Informe financiero: criterio único en todo el bloque = OT Finalizada + fecha_cierre (fecha real de facturación)
+async function getFinanciero(inicio, fin, inicioAnterior, finAnterior) {
+    const queryResumen = `
+        SELECT COUNT(*) AS total_ot,
+               SUM(CASE WHEN es_garantia = 1 THEN 1 ELSE 0 END) AS total_garantia,
+               SUM(CASE WHEN es_no_iveco = 1 THEN 1 ELSE 0 END) AS total_no_iveco,
+               SUM(CASE WHEN es_garantia = 0 AND es_no_iveco = 0 THEN 1 ELSE 0 END) AS total_normales,
+               SUM(CASE WHEN controlada = 1 THEN 1 ELSE 0 END) AS total_controladas,
+               ROUND(SUM(tiempo_asignado_horas), 2) AS hs_asignadas,
+               ROUND(SUM(tiempo_empleado_horas), 2) AS hs_empleadas,
+               ROUND(SUM(monto_repuestos + monto_repuestos_garantia), 2) AS total_repuestos,
+               ROUND(SUM(monto_mano_obra + monto_mano_obra_garantia), 2) AS total_mano_obra,
+               ROUND(SUM(monto_repuestos + monto_mano_obra + monto_repuestos_garantia + monto_mano_obra_garantia), 2) AS total_facturado,
+               ROUND(AVG(monto_repuestos + monto_mano_obra + monto_repuestos_garantia + monto_mano_obra_garantia), 2) AS facturacion_promedio,
+               ROUND(SUM(monto_repuestos_garantia + monto_mano_obra_garantia), 2) AS monto_garantia,
+               ROUND(SUM(monto_repuestos + monto_mano_obra), 2) AS monto_facturable
+        FROM ordenes WHERE estado_actual = 'Finalizada' AND fecha_cierre IS NOT NULL AND fecha_cierre >= ? AND fecha_cierre < ?
+    `;
+    const resumen = await get(queryResumen, [inicio, fin]);
+    const resumen_anterior = await get(queryResumen, [inicioAnterior, finAnterior]);
+
+    const facturacion_diaria = await all(`
+        SELECT DATE(fecha_cierre) as fecha, SUM(monto_repuestos + monto_repuestos_garantia) as repuestos, SUM(monto_mano_obra + monto_mano_obra_garantia) as mano_obra
+        FROM ordenes WHERE estado_actual = 'Finalizada' AND fecha_cierre IS NOT NULL AND fecha_cierre >= ? AND fecha_cierre < ?
+        GROUP BY DATE(fecha_cierre) ORDER BY fecha ASC
+    `, [inicio, fin]);
+
+    const facturacion_por_marca = await all(`
+        SELECT marca, COUNT(*) AS cantidad_ot, ROUND(SUM(monto_repuestos + monto_mano_obra + monto_repuestos_garantia + monto_mano_obra_garantia), 2) AS facturacion_total
+        FROM ordenes WHERE estado_actual = 'Finalizada' AND fecha_cierre IS NOT NULL AND fecha_cierre >= ? AND fecha_cierre < ?
+        GROUP BY marca ORDER BY facturacion_total DESC
+    `, [inicio, fin]).catch(() => []);
+
+    const rentabilidad_unidad = await all(`
+        SELECT u.unidad, COUNT(*) as cantidad, ROUND(SUM(o.monto_repuestos + o.monto_mano_obra + o.monto_repuestos_garantia + o.monto_mano_obra_garantia), 2) AS facturacion_total
+        FROM ordenes o JOIN unidades u ON o.patente = u.patente
+        WHERE o.estado_actual = 'Finalizada' AND o.fecha_cierre IS NOT NULL AND o.fecha_cierre >= ? AND o.fecha_cierre < ?
+        GROUP BY u.unidad ORDER BY facturacion_total DESC LIMIT 10
+    `, [inicio, fin]);
+
+    const top_clientes = await all(`
+        SELECT c.nombre AS cliente, COUNT(*) AS cantidad_ot, ROUND(SUM(o.monto_repuestos + o.monto_mano_obra + o.monto_repuestos_garantia + o.monto_mano_obra_garantia), 2) AS facturacion_total
+        FROM ordenes o JOIN unidades u ON o.patente = u.patente JOIN clientes c ON u.cliente_id = c.id
+        WHERE o.estado_actual = 'Finalizada' AND o.fecha_cierre IS NOT NULL AND o.fecha_cierre >= ? AND o.fecha_cierre < ?
+        GROUP BY c.id ORDER BY cantidad_ot DESC, facturacion_total DESC LIMIT 10
+    `, [inicio, fin]);
+
+    return { resumen, resumen_anterior, facturacion_diaria, facturacion_por_marca, rentabilidad_unidad, top_clientes };
+}
+
+async function getOperativo(inicio, fin) {
+    const feriadosSet = await getFeriadosSet();
+    const rangeStart = new Date(inicio + 'T00:00:00Z');
+    const rangeEnd = new Date(fin + 'T00:00:00Z');
+
+    // Días hábiles ya transcurridos dentro del rango (lunes a sábado, sin feriados).
+    // Sirven de base para detectar en qué días puntuales un mecánico no se logueó.
+    const diasHabilesPeriodo = [];
+    {
+        const limite = new Date(Math.min(rangeEnd.getTime(), Date.now()));
+        for (let cursor = new Date(rangeStart); cursor < limite; cursor = new Date(cursor.getTime() + 86400000)) {
+            const fecha = cursor.toISOString().split('T')[0];
+            const dia = new Date(fecha + 'T12:00:00Z').getDay();
+            if (dia >= 1 && dia <= 6 && !feriadosSet.has(fecha)) diasHabilesPeriodo.push(fecha);
+        }
+    }
+
+    // Arrancamos con TODOS los mecánicos activos (no solo los que tuvieron actividad),
+    // para que quien no se logueó ningún día del período también aparezca en el informe.
+    const mecanicosActivos = await all(`SELECT legajo, nombre FROM legajos WHERE rol = 'mecanico'`);
+    const porLegajo = {};
+    for (const mec of mecanicosActivos) {
+        porLegajo[mec.legajo] = {
+            legajo: mec.legajo, nombre: mec.nombre, ot_set: new Set(),
+            hs_estimadas: 0, hs_productivas: 0, hs_internas: 0,
+            facturacion_generada: 0, rentabilidad_eficiencia: 0
+        };
+    }
+
+    // Sesiones de trabajo (tiempos_actividad) que se solapan con el rango.
+    // Ya NO exigimos que la actividad esté Finalizada: si el mecánico trabajó varios días
+    // sobre una tarea que sigue en curso, esas horas deben contar igual como trabajo real.
+    // Solo la atribución de facturación (dinero) sigue esperando el cierre de la actividad,
+    // porque repartir el monto de mano de obra de una tarea aún no finalizada es especulativo.
+    // Además prorrateamos cada sesión a las horas reales caídas dentro del rango, en vez de
+    // sumar la actividad completa (evita que una tarea que cruza fin de mes duplique o fugue horas).
+    const sesiones = await all(`
+        SELECT
+            a.legajo_mecanico AS legajo, l.nombre, a.estado,
+            a.id AS actividad_id, a.ot, a.tiempo_estimado, a.tiempo_real AS tiempo_real_total,
+            ta.inicio, ta.fin,
+            c.nombre AS cliente_nombre,
+            (o.monto_mano_obra + o.monto_mano_obra_garantia) AS monto_mano_obra_total,
+            (SELECT SUM(tiempo_estimado) FROM actividades WHERE ot = a.ot AND estado = 'Finalizada') AS denom_estimado
+        FROM tiempos_actividad ta
+        JOIN actividades a ON ta.actividad_id = a.id
+        JOIN legajos l ON a.legajo_mecanico = l.legajo
+        JOIN ordenes o ON a.ot = o.ot
+        JOIN unidades u ON o.patente = u.patente
+        JOIN clientes c ON u.cliente_id = c.id
+        WHERE ta.inicio < ? AND (ta.fin IS NULL OR ta.fin > ?)
+          -- Descarta sesiones "abiertas" huérfanas (fin NULL que no sea la última del legajo
+          -- ni de una actividad realmente En Curso): un bug de doble-inicio puede dejar filas
+          -- sin cerrar para siempre, y contarlas como "trabajando hasta ahora" infla las horas.
+          AND (ta.fin IS NOT NULL OR (
+                a.estado = 'En Curso'
+                AND ta.id = (SELECT MAX(id) FROM tiempos_actividad WHERE actividad_id = a.id)
+          ))
+    `, [fin, inicio]);
+
+    for (const s of sesiones) {
+        const inicioSesion = new Date(s.inicio + 'Z');
+        const finSesion = s.fin ? new Date(s.fin + 'Z') : new Date();
+        const start = inicioSesion < rangeStart ? rangeStart : inicioSesion;
+        const end = finSesion > rangeEnd ? rangeEnd : finSesion;
+        const horasPeriodo = Math.max(0, (end - start) / 3600000);
+        if (horasPeriodo <= 0) continue;
+
+        if (!porLegajo[s.legajo]) {
+            porLegajo[s.legajo] = {
+                legajo: s.legajo, nombre: s.nombre, ot_set: new Set(),
+                hs_estimadas: 0, hs_productivas: 0, hs_internas: 0,
+                facturacion_generada: 0, rentabilidad_eficiencia: 0
+            };
+        }
+        const m = porLegajo[s.legajo];
+
+        if (s.cliente_nombre === 'IVEMAR') {
+            m.hs_internas += horasPeriodo;
+            continue;
+        }
+
+        m.ot_set.add(s.ot);
+        m.hs_productivas += horasPeriodo;
+
+        // Fracción del trabajo real total de la actividad que cayó en este período,
+        // usada para prorratear (sin duplicar) el peso estimado y su facturación asociada.
+        const fraccion = s.tiempo_real_total > 0 ? Math.min(1, horasPeriodo / s.tiempo_real_total) : 0;
+        m.hs_estimadas += s.tiempo_estimado * fraccion;
+
+        if (s.estado === 'Finalizada') {
+            const denom = s.denom_estimado || 0;
+            if (denom > 0) {
+                const tasaPorHoraEstimada = s.monto_mano_obra_total / denom;
+                m.facturacion_generada += s.tiempo_estimado * tasaPorHoraEstimada * fraccion;
+                m.rentabilidad_eficiencia += (s.tiempo_estimado - s.tiempo_real_total) * tasaPorHoraEstimada * fraccion;
+            }
+        }
+    }
+
+    // 2. Extraer los días que cada mecánico tuvo al menos 1 segundo de actividad (sin filtrar por estado de la tarea)
+    const dias_activos = await all(`
+        SELECT a.legajo_mecanico AS legajo, DATE(ta.inicio) as fecha
+        FROM tiempos_actividad ta
+        JOIN actividades a ON ta.actividad_id = a.id
+        WHERE ta.inicio >= ? AND ta.inicio < ?
+        GROUP BY a.legajo_mecanico, DATE(ta.inicio)
+    `, [inicio, fin]);
+
+    // 3. Extraer excepciones/justificaciones cargadas por el Jefe (normalizamos ambos lados a DATE)
+    const excepciones = await all(`
+        SELECT id, legajo, DATE(fecha) as fecha, motivo, horas_descontadas
+        FROM excepciones_mecanicos
+        WHERE DATE(fecha) >= ? AND DATE(fecha) < ?
+    `, [inicio, fin]);
+
+    // 4. Lógica Matemática del Ocio + detección de días puntuales sin login
+    const tiempos_mecanicos = Object.values(porLegajo).map(m => {
+        let dias_del_mecanico = dias_activos.filter(d => d.legajo === m.legajo);
+        const diasTrabajadosSet = new Set(dias_del_mecanico.map(d => d.fecha));
+        let hs_exigidas = 0;
+
+        for (let d of dias_del_mecanico) {
+            // Evaluamos la fecha al mediodía UTC para evitar saltos de zona horaria
+            let fechaObj = new Date(d.fecha + 'T12:00:00Z');
+            let isSabado = fechaObj.getDay() === 6;
+            let esFeriado = feriadosSet.has(d.fecha);
+
+            let base_dia = esFeriado ? 0 : (isSabado ? 5 : 10);
+
+            // Restar horas si el jefe cargó una salida anticipada/permiso para ese día
+            let exc = excepciones.find(e => e.legajo === m.legajo && e.fecha === d.fecha);
+            if (exc) base_dia -= exc.horas_descontadas;
+
+            hs_exigidas += Math.max(0, base_dia);
+        }
+
+        // Días hábiles del período en los que el mecánico NO registró ningún trabajo.
+        // Si hay una excepción cargada (franco, permiso, vacaciones) se informa el motivo;
+        // si no hay ninguna, queda como ausencia sin justificar para que el Jefe la revise.
+        const dias_ausentes = diasHabilesPeriodo
+            .filter(fecha => !diasTrabajadosSet.has(fecha))
+            .map(fecha => {
+                const exc = excepciones.find(e => e.legajo === m.legajo && e.fecha === fecha);
+                return { fecha, motivo: exc ? exc.motivo : null, excepcion_id: exc ? exc.id : null };
+            });
+
+        const hs_estimadas = parseFloat(m.hs_estimadas.toFixed(2));
+        const hs_productivas = parseFloat(m.hs_productivas.toFixed(2));
+        const hs_internas = parseFloat(m.hs_internas.toFixed(2));
+        const hs_empleadas = parseFloat((hs_productivas + hs_internas).toFixed(2));
+
+        return {
+            legajo: m.legajo, nombre: m.nombre,
+            ot_trabajadas: m.ot_set.size,
+            hs_estimadas, hs_productivas, hs_internas,
+            facturacion_generada: parseFloat(m.facturacion_generada.toFixed(2)),
+            rentabilidad_eficiencia: parseFloat(m.rentabilidad_eficiencia.toFixed(2)),
+            hs_empleadas,
+            hs_exigidas: parseFloat(hs_exigidas.toFixed(2)),
+            dias_asistidos: dias_del_mecanico.length,
+            dias_ausentes,
+            dias_ausentes_count: dias_ausentes.length,
+            tiempo_muerto: Math.max(0, parseFloat((hs_exigidas - hs_productivas - hs_internas).toFixed(2))),
+            eficiencia_porcentaje: hs_productivas > 0 ? parseFloat(((hs_estimadas / hs_productivas) * 100).toFixed(2)) : 0,
+            productividad_porcentaje: hs_exigidas > 0 ? parseFloat((hs_empleadas / hs_exigidas * 100).toFixed(2)) : 0
+        };
+    }).sort((a, b) => b.facturacion_generada - a.facturacion_generada);
+
+    return { tiempos_mecanicos };
+}
+
+async function getTaller(inicio, fin, filtroCuellosStr) {
+    let filtroPerm = "AND eh.estado != 'Finalizada'";
+    const paramsPerm = [fin, inicio];
+    if (filtroCuellosStr) {
+        filtroPerm += " AND (o.ot = ? OR o.patente = ?)";
+        paramsPerm.push(filtroCuellosStr, filtroCuellosStr);
+    }
+
+    const historialRows = await all(`
+        SELECT eh.estado, eh.ot, eh.ts_desde, eh.ts_hasta FROM estados_historial eh JOIN ordenes o ON eh.ot = o.ot
+        WHERE eh.ts_desde < ? AND (eh.ts_hasta IS NULL OR eh.ts_hasta >= ?) ${filtroPerm}
+    `, paramsPerm);
+
+    const feriadosSet = await getFeriadosSet();
+    const cuellosMap = {};
+    for (const row of historialRows) {
+        const minHabiles = calcularMinutosHabiles(row.ts_desde, row.ts_hasta, row.estado, feriadosSet);
+        if (!cuellosMap[row.estado]) cuellosMap[row.estado] = { estado: row.estado, ots: new Set(), totalMin: 0 };
+        cuellosMap[row.estado].ots.add(row.ot);
+        cuellosMap[row.estado].totalMin += minHabiles;
+    }
+
+    const permanencia_estado = Object.values(cuellosMap).map(c => ({
+        estado: c.estado, ot_afectadas: c.ots.size,
+        horas_totales: parseFloat((c.totalMin / 60).toFixed(2)),
+        horas_promedio: parseFloat(((c.totalMin / c.ots.size) / 60).toFixed(2))
+    })).sort((a, b) => b.horas_promedio - a.horas_promedio);
+
+    const aperturas_por_dia = await all(`SELECT DATE(fecha_apertura) AS fecha, COUNT(*) AS cantidad FROM ordenes WHERE fecha_apertura >= ? AND fecha_apertura < ? GROUP BY DATE(fecha_apertura) ORDER BY fecha ASC`, [inicio, fin]);
+    const cierres_por_dia = await all(`SELECT DATE(fecha_cierre) AS fecha, COUNT(*) AS cantidad FROM ordenes WHERE fecha_cierre IS NOT NULL AND fecha_cierre >= ? AND fecha_cierre < ? GROUP BY DATE(fecha_cierre) ORDER BY fecha ASC`, [inicio, fin]);
+    const ciclo_promedio = await get(`SELECT ROUND(AVG(JULIANDAY(fecha_cierre) - JULIANDAY(fecha_apertura)), 2) AS dias_promedio FROM ordenes WHERE estado_actual = 'Finalizada' AND fecha_cierre IS NOT NULL AND fecha_cierre >= ? AND fecha_cierre < ?`, [inicio, fin]);
+
+    return { permanencia_estado, aperturas_por_dia, cierres_por_dia, ciclo_promedio: ciclo_promedio?.dias_promedio || 0 };
+}
+
+module.exports = { getFinanciero, getOperativo, getTaller };
+</file>
+
+<file path="ivemar-backend/services/tiempos.service.js">
+// ivemar-backend/services/tiempos.service.js
+
+// 1. Motor matemático base (Extraído de las rutas)
+function calcularMinutosHabiles(startStr, endStr, estado, feriadosSet = new Set()) {
+    if (!startStr) return 0;
+
+    let start = new Date(startStr + 'Z');
+    let end = endStr ? new Date(endStr + 'Z') : new Date();
+    if (end < start) return 0;
+
+    let totalMinutos = 0;
+    let actual = new Date(start);
+    let maxIterations = 2000;
+
+    const modoExterno = (estado === 'Espera de Repuestos' || estado === 'Trabajos de Terceros');
+
+    while (actual < end && maxIterations > 0) {
+        maxIterations--;
+        let dia = actual.getDay();
+        let hora = actual.getHours();
+        let esFeriado = feriadosSet.has(actual.toISOString().split('T')[0]);
+
+        let enHorarioLaboral = false;
+        let limiteCorte = 18;
+
+        if (!esFeriado && dia >= 1 && dia <= 5) {
+            if (modoExterno) {
+                if (hora >= 8 && hora < 18) enHorarioLaboral = true;
+                limiteCorte = 18;
+            } else {
+                if (hora >= 8 && hora < 13) { enHorarioLaboral = true; limiteCorte = 13; }
+                else if (hora >= 14 && hora < 18) { enHorarioLaboral = true; limiteCorte = 18; }
+            }
+        } else if (!esFeriado && dia === 6) {
+            if (hora >= 8 && hora < 13) { enHorarioLaboral = true; limiteCorte = 13; }
+        }
+
+        if (enHorarioLaboral) {
+            let finBloque = new Date(actual);
+            finBloque.setHours(limiteCorte, 0, 0, 0);
+            let corte = (end < finBloque) ? end : finBloque;
+            totalMinutos += (corte - actual) / 60000;
+            actual = new Date(corte);
+        } else {
+            if (hora < 8) {
+                actual.setHours(8, 0, 0, 0);
+            } else if (!esFeriado && !modoExterno && dia >= 1 && dia <= 5 && hora >= 13 && hora < 14) {
+                actual.setHours(14, 0, 0, 0);
+            } else {
+                actual.setDate(actual.getDate() + 1);
+                actual.setHours(8, 0, 0, 0);
+            }
+        }
+    }
+    return totalMinutos;
+}
+
+// 2. Aquí agregaremos en el futuro la función para calcular Días Activos y Ocio.
+
+module.exports = { calcularMinutosHabiles };
 </file>
 
 <file path="ivemar-backend/sql.js">
@@ -1167,13 +1437,13 @@ db.all(sql, [], (err, rows) => {
 <file path="ivemar-backend/utils/cron.js">
 const fs = require('fs');
 const path = require('path');
-const { all, get, run, recalcularTiempoEmpleado, DB_PATH } = require('../config/database');
+const { all, get, run, recalcularTiempoEmpleado, sincronizarEstadoOT, DB_PATH } = require('../config/database');
 
 const BACKUPS_DIR = path.join(__dirname, '..', 'backups');
 const MAX_BACKUPS = 14;
 
 let ultimaAccionAutomatica = null;
-let cronEjecutando = false; // <-- Bloqueo para evitar superposición
+let cronEjecutando = false; 
 
 async function procesarPausaAutomatica(esAlmuerzo) {
     console.log(`[SISTEMA] Ejecutando corte automático. ¿Es almuerzo?: ${esAlmuerzo}`);
@@ -1198,6 +1468,9 @@ async function procesarPausaAutomatica(esAlmuerzo) {
                     [horas, esAlmuerzo ? 1 : 0, act.id]
                 );
                 await recalcularTiempoEmpleado(act.ot);
+                
+                // Aplicamos sincronización (esta función respetará los estados externos si los hay)
+                await sincronizarEstadoOT(act.ot);
             }
         }
     } catch (error) {
@@ -1205,7 +1478,6 @@ async function procesarPausaAutomatica(esAlmuerzo) {
     }
 }
 
-// Backup nativo de SQLite: VACUUM INTO
 async function hacerBackupDB() {
     console.log('[SISTEMA] Ejecutando backup automático seguro...');
     try {
@@ -1215,7 +1487,6 @@ async function hacerBackupDB() {
         const stamp = ahora.toISOString().replace(/[:.]/g, '-');
         const destino = path.join(BACKUPS_DIR, `taller_${stamp}.db`);
 
-        // VACUUM INTO clona la base de datos de manera atómica sin requerir parar el servidor
         await run(`VACUUM INTO '${destino}'`);
         console.log(`[SISTEMA] Backup creado: ${destino}`);
 
@@ -1236,10 +1507,12 @@ async function hacerBackupDB() {
 async function procesarReanudacionAutomatica() {
     console.log(`[SISTEMA] Ejecutando reanudación automática post-almuerzo.`);
     try {
-        const paraReanudar = await all(`SELECT id FROM actividades WHERE estado = 'Pausada' AND auto_pausa = 1`);
+        const paraReanudar = await all(`SELECT id, ot FROM actividades WHERE estado = 'Pausada' AND auto_pausa = 1`);
         for (const act of paraReanudar) {
             await run(`UPDATE actividades SET estado = 'En Curso', auto_pausa = 0 WHERE id = ?`, [act.id]);
             await run(`INSERT INTO tiempos_actividad (actividad_id, inicio) VALUES (?, CURRENT_TIMESTAMP)`, [act.id]);
+            // Levantar OT si estaba pausada a En Proceso de vuelta
+            await sincronizarEstadoOT(act.ot);
         }
     } catch (error) {
         console.error('[SISTEMA] Error en reanudación automática:', error.message);
@@ -1250,7 +1523,6 @@ function iniciarCron() {
     console.log('⏱️ Cron job de automatización iniciado.');
     
     setInterval(async () => {
-        // Bloqueo para evitar que una ejecución pise a la siguiente
         if (cronEjecutando) return; 
         
         cronEjecutando = true;
@@ -2524,15 +2796,12 @@ const claseColor = computed(() => {
 
 <file path="ivemar-frontend/src/components/common/InformesMensuales.vue">
 <template>
-  <div class="im-dashboard card" ref="rootRef">
-    <div class="im-topbar">
-      <div class="im-title-block">
-        <span class="im-eyebrow">Panel de control · Taller</span>
-        <h2>Informes de Rendimiento y Facturación</h2>
-      </div>
-      <div class="pdf-actions" v-if="informe">
+  <div class="card" ref="rootRef">
+    <div class="header-row">
+      <h2>Informes de Rendimiento y Facturación</h2>
+      <div class="pdf-actions" v-if="store.financiero">
         <button class="btn btn-outline btn-sm" @click="exportarPDF" :disabled="exportando">
-          {{ exportando ? 'Generando PDF…' : '👁️ Previsualizar PDF' }}
+          {{ exportando ? 'Generando PDF...' : '👁️ Previsualizar PDF' }}
         </button>
         <button class="btn btn-sm" @click="descargarPDF" :disabled="exportando || !ultimoPdf">⬇ Descargar</button>
       </div>
@@ -2540,246 +2809,232 @@ const claseColor = computed(() => {
 
     <div class="dashboard-controls">
       <div class="date-group">
-        <label>Desde</label>
-        <input type="date" v-model="desde" class="form-control date-input" />
+        <label>Desde:</label>
+        <input type="date" v-model="store.desde" class="form-control date-input" />
       </div>
       <div class="date-group">
-        <label>Hasta</label>
-        <input type="date" v-model="hasta" class="form-control date-input" />
+        <label>Hasta:</label>
+        <input type="date" v-model="store.hasta" class="form-control date-input" />
       </div>
-      <button class="btn im-btn-primary" @click="cargarInforme" :disabled="loading">{{ loading ? 'Cargando…' : 'Generar reporte' }}</button>
+      <button class="btn" @click="store.cargarInformes" :disabled="store.loading">
+        {{ store.loading ? 'Cargando...' : 'Generar Reporte' }}
+      </button>
     </div>
 
-    <div v-if="loading" class="loading-state"><div class="spinner"></div>Procesando métricas…</div>
-    <p v-else-if="!informe" class="empty-state">Elegí un rango de fechas y presioná "Generar reporte" para ver el panel.</p>
+    <div v-if="store.loading" class="loading-state"><div class="spinner"></div>Procesando métricas...</div>
+    <p v-else-if="!store.financiero" class="empty-state">Seleccione el rango de fechas y presione "Generar Reporte".</p>
 
-    <div v-else class="im-body">
-
-      <div class="im-kpi-strip" ref="kpisRef">
-        <div class="im-kpi-hero">
-          <svg class="im-gauge" viewBox="0 0 120 68" aria-hidden="true">
-            <path d="M10,60 A50,50 0 0 1 110,60" fill="none" stroke="rgba(255,255,255,0.16)" stroke-width="8" stroke-linecap="round" />
-            <path d="M10,60 A50,50 0 0 1 90,20" fill="none" stroke="rgba(255,255,255,0.55)" stroke-width="8" stroke-linecap="round" />
-          </svg>
-          <span class="im-kpi-label">Facturación total</span>
-          <strong class="im-kpi-value">{{ formatCurrency(informe.resumen.total_facturado) }}</strong>
+    <div v-else>
+      <div class="stats-grid mt-15" ref="kpisRef">
+        <div class="stat-card highlight-card">
+          <strong>Facturación Total</strong><br>{{ formatCurrency(store.financiero.resumen.total_facturado) }}
           <DeltaBadge :valor="deltaFacturacion" />
         </div>
-        <div class="im-kpi-grid">
-          <div class="im-kpi-card">
-            <span class="im-kpi-label">Ticket promedio</span>
-            <strong class="im-kpi-value-sm">{{ formatCurrency(informe.resumen.facturacion_promedio) }}</strong>
-            <DeltaBadge :valor="deltaTicket" />
-          </div>
-          <div class="im-kpi-card">
-            <span class="im-kpi-label">Mano de obra</span>
-            <strong class="im-kpi-value-sm">{{ formatCurrency(informe.resumen.total_mano_obra) }}</strong>
-          </div>
-          <div class="im-kpi-card">
-            <span class="im-kpi-label">Repuestos</span>
-            <strong class="im-kpi-value-sm">{{ formatCurrency(informe.resumen.total_repuestos) }}</strong>
-          </div>
-          <div class="im-kpi-card">
-            <span class="im-kpi-label">Total OTs</span>
-            <strong class="im-kpi-value-sm">{{ informe.resumen.total_ot }}</strong>
-            <DeltaBadge :valor="deltaOts" invertido />
-          </div>
-          <div class="im-kpi-card">
-            <span class="im-kpi-label">Ciclo promedio</span>
-            <strong class="im-kpi-value-sm">{{ informe.ciclo_promedio }} <small>días</small></strong>
-          </div>
+        <div class="stat-card">
+          <strong>Ticket Promedio</strong><br>{{ formatCurrency(store.financiero.resumen.facturacion_promedio) }}
+          <DeltaBadge :valor="deltaTicket" />
         </div>
+        <div class="stat-card"><strong>Mano de Obra</strong><br>{{ formatCurrency(store.financiero.resumen.total_mano_obra) }}</div>
+        <div class="stat-card"><strong>Repuestos</strong><br>{{ formatCurrency(store.financiero.resumen.total_repuestos) }}</div>
+        <div class="stat-card">
+          <strong>Total OTs</strong><br>{{ store.financiero.resumen.total_ot }}
+          <DeltaBadge :valor="deltaOts" invertido />
+        </div>
+        <div class="stat-card"><strong>Ciclo Promedio</strong><br>{{ store.taller.ciclo_promedio }} días</div>
       </div>
-      <p class="chart-hint im-hint-strip" v-if="informe.resumen_anterior">
-        Comparado contra el período equivalente inmediatamente anterior ({{ diasRangoTexto }} días antes).
+      <p class="chart-hint" v-if="store.financiero.resumen_anterior">
+        Comparado contra el período equivalente inmediatamente anterior.
       </p>
 
-      <div class="im-group">
-        <span class="im-eyebrow">Facturación</span>
-        <div class="section-block" ref="financieroRef">
-          <div class="header-with-actions">
-            <h3>Evolución de facturación</h3>
-            <div class="im-controls-row">
-              <select v-model="modoFacturacion" class="form-control select-sm no-print">
-                <option value="apilado">Apilado (suma total)</option>
-                <option value="agrupado">Agrupado (lado a lado)</option>
-              </select>
-              <select v-model="agrupacionFinanciera" class="form-control select-sm">
-                <option value="diaria">Diaria</option>
-                <option value="semanal">Semanal</option>
-                <option value="quincenal">Quincenal</option>
-                <option value="mensual">Mensual</option>
-              </select>
-            </div>
-          </div>
-          <div class="chart-box">
-            <Bar v-if="datosFinancierosAgrupados.length" :data="chartFinanciero" :options="opcionesBarraMoneda" />
-            <p v-else class="empty-state">No hay facturación registrada en este período.</p>
-          </div>
-        </div>
-      </div>
+      <hr class="divider" />
 
-      <div class="im-group">
-        <span class="im-eyebrow">Operación</span>
-        <div class="charts-grid">
-          <div class="section-block" ref="tendenciaRef">
-            <div class="header-with-actions">
-              <h3>Abiertas vs. cerradas</h3>
-              <select v-model="agrupacionTendencia" class="form-control select-sm">
-                <option value="diaria">Diaria</option>
-                <option value="semanal">Semanal</option>
-                <option value="mensual">Mensual</option>
-              </select>
-            </div>
-            <p class="chart-hint">Si "abiertas" supera a "cerradas", se acumula trabajo pendiente.</p>
-            <div class="chart-box">
-              <Line v-if="datosTendenciaAgrupados.length" :data="chartTendencia" :options="opcionesLineaCantidad" />
-              <p v-else class="empty-state">Sin movimientos en este período.</p>
-            </div>
-          </div>
-
-          <div class="section-block" ref="diasSemanaRef">
-            <div class="header-with-actions">
-              <h3>Concentración por día de la semana</h3>
-            </div>
-            <p class="chart-hint">¿Qué días entran y salen más vehículos del taller?</p>
-            <div class="chart-box">
-              <Bar v-if="datosDiasSemana.some(d => d.aperturas > 0 || d.cierres > 0)" :data="chartDiasSemana" :options="opcionesBarraCantidades" />
-              <p v-else class="empty-state">Sin movimientos en este período.</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="im-group">
-        <span class="im-eyebrow">Mecánicos</span>
-        <div class="charts-grid">
-          <div class="section-block" ref="aporteMecanicosRef">
-            <div class="header-with-actions">
-              <h3>Aporte por mecánico</h3>
-              <select v-model="modoAporteMecanico" class="form-control select-sm no-print">
-                <option value="facturacion">Facturación (mano de obra)</option>
-                <option value="ordenes">Órdenes trabajadas</option>
-              </select>
-            </div>
-            <div class="chart-box">
-              <Bar v-if="informe.tiempos_mecanicos?.length" :data="chartAporteMecanico" :options="opcionesAporteMecanico" />
-              <p v-else class="empty-state">Sin datos en este período.</p>
-            </div>
-          </div>
-
-          <div class="section-block" ref="tiemposRef">
-            <div class="header-with-actions">
-              <h3>Desviación de tiempos</h3>
-              <select v-model="mecanicoSeleccionado" class="form-control select-sm">
-                <option value="todos">Taller completo (suma)</option>
-                <option value="separados">Comparativa mecánicos</option>
-                <option v-for="m in informe.tiempos_mecanicos" :key="m.legajo" :value="m.legajo">{{ m.nombre }}</option>
-              </select>
-            </div>
-            <div class="chart-box">
-              <Bar v-if="datosTiempos.length" :data="chartTiempos" :options="opcionesBarraHoras" />
-              <p v-else class="empty-state">Sin actividades finalizadas en este período.</p>
-            </div>
-          </div>
-        </div>
-
-        <div class="section-block im-mt" ref="rentabilidadMecanicosRef">
-          <div class="header-with-actions">
-            <h3>Rentabilidad por eficiencia</h3>
-            <select v-model="modoRentabilidad" class="form-control select-sm no-print">
-              <option value="separados">Comparativa mecánicos</option>
-              <option value="taller">Taller completo (consolidado)</option>
+      <div class="section-block" ref="financieroRef">
+        <div class="header-with-actions">
+          <h3>Evolución de Facturación</h3>
+          <div style="display:flex; gap: 8px; flex-wrap: wrap;">
+            <select v-model="modoFacturacion" class="form-control select-sm no-print">
+              <option value="apilado">Apilado (Suma Total)</option>
+              <option value="agrupado">Agrupado (Lado a Lado)</option>
+            </select>
+            <select v-model="agrupacionFinanciera" class="form-control select-sm">
+              <option value="diaria">Diaria</option>
+              <option value="semanal">Semanal</option>
+              <option value="quincenal">Quincenal</option>
+              <option value="mensual">Mensual</option>
             </select>
           </div>
-          <p class="chart-hint">Valor monetario del tiempo ahorrado (verde) o excedido (rojo) respecto al presupuestado.</p>
+        </div>
+        <div class="chart-box">
+          <Bar v-if="datosFinancierosAgrupados.length" :data="chartFinanciero" :options="opcionesBarraMonedaConfig" />
+          <p v-else class="empty-state">No hay facturación registrada en este período.</p>
+        </div>
+      </div>
+
+      <hr class="divider" />
+
+      <div class="charts-grid">
+        <div class="section-block" ref="tendenciaRef">
+          <div class="header-with-actions">
+            <h3>Tendencia: Abiertas vs. Cerradas</h3>
+            <select v-model="agrupacionTendencia" class="form-control select-sm">
+              <option value="diaria">Diaria</option>
+              <option value="semanal">Semanal</option>
+              <option value="mensual">Mensual</option>
+            </select>
+          </div>
+          <p class="chart-hint">Si "Abiertas" supera a "Cerradas", se acumula trabajo.</p>
           <div class="chart-box">
-            <Bar v-if="datosRentabilidad.length" :data="chartRentabilidad" :options="opcionesBarraRentabilidad" />
-            <p v-else class="empty-state">Sin datos de eficiencia en este período.</p>
+            <Line v-if="datosTendenciaAgrupados.length" :data="chartTendencia" :options="opcionesLineaCantidad" />
+            <p v-else class="empty-state">Sin movimientos en este período.</p>
+          </div>
+        </div>
+
+        <div class="section-block" ref="diasSemanaRef">
+          <div class="header-with-actions">
+            <h3>Concentración por Día de la Semana</h3>
+          </div>
+          <p class="chart-hint">¿Qué días de la semana ingresan y salen más vehículos?</p>
+          <div class="chart-box">
+            <Bar v-if="datosDiasSemana.some(d => d.aperturas > 0 || d.cierres > 0)" :data="chartDiasSemana" :options="opcionesBarraCantidades" />
+            <p v-else class="empty-state">Sin movimientos en este período.</p>
           </div>
         </div>
       </div>
 
-      <div class="im-group">
-        <span class="im-eyebrow">Calidad y composición</span>
-        <div class="charts-grid">
-          <div class="section-block" ref="cuellosRef">
-            <div class="header-with-actions">
-              <h3>Cuellos de botella (tiempo por estado)</h3>
-              <div class="im-controls-row no-print">
-                <input type="text" v-model="filtroCuellos" placeholder="Filtrar OT o patente" class="form-control select-sm im-uppercase" @keyup.enter="cargarInforme" />
-                <button class="btn btn-sm" @click="cargarInforme">🔍</button>
-              </div>
-            </div>
-            <div class="chart-box">
-              <Bar v-if="informe.permanencia_estado?.length" :data="chartCuellos" :options="opcionesBarraHorasHorizontal" />
-              <p v-else class="empty-state">Sin datos de permanencia por estado.</p>
-            </div>
-          </div>
+      <hr class="divider" />
 
-          <div class="section-block" ref="composicionRef">
-            <h3>Composición del trabajo</h3>
-            <p class="chart-hint">Normal / garantía / otras marcas</p>
-            <div class="chart-box chart-box-doughnut">
-              <Doughnut v-if="calidadData.datasets[0].data.some(v => v > 0)" :data="calidadData" :options="opcionesDoughnut" />
-              <p v-else class="empty-state">Sin OTs en este período.</p>
-            </div>
+      <div ref="rendimientoOperativoRef">
+        <TableroOperativo />
+      </div>
+
+      <hr class="divider" />
+
+      <div class="charts-grid">
+        <div class="section-block" ref="aporteMecanicosRef">
+          <div class="header-with-actions">
+            <h3>Aporte por Mecánico (Facturación)</h3>
+            <select v-model="modoAporteMecanico" class="form-control select-sm no-print">
+              <option value="facturacion">Facturación (Mano de Obra)</option>
+              <option value="ordenes">Órdenes Trabajadas</option>
+            </select>
+          </div>
+          <div class="chart-box">
+            <Bar v-if="store.operativo.tiempos_mecanicos?.length" :data="chartAporteMecanico" :options="opcionesAporteMecanico" />
+            <p v-else class="empty-state">Sin datos en este período.</p>
           </div>
         </div>
 
-        <div class="charts-grid im-mt">
-          <div class="section-block" ref="repuestosManoObraRef">
-            <h3>Repuestos vs. mano de obra</h3>
-            <div class="chart-box chart-box-doughnut">
-              <Doughnut v-if="(informe.resumen.total_repuestos + informe.resumen.total_mano_obra) > 0" :data="chartRepuestosManoObra" :options="opcionesDoughnutMoneda" />
-              <p v-else class="empty-state">Sin facturación registrada en este período.</p>
-            </div>
+        <div class="section-block" ref="tiemposRef">
+          <div class="header-with-actions">
+            <h3>Desviación de Tiempos (Estimado vs Real)</h3>
+            <select v-model="mecanicoSeleccionado" class="form-control select-sm">
+              <option value="todos">Taller Completo (Suma)</option>
+              <option value="separados">Comparativa Mecánicos</option>
+              <option v-for="m in store.operativo.tiempos_mecanicos" :key="m.legajo" :value="m.legajo">{{ m.nombre }}</option>
+            </select>
           </div>
-
-          <div class="section-block" ref="garantiaRef">
-            <h3>Garantía vs. facturable</h3>
-            <p class="chart-hint">Trabajo cubierto por garantía (no cobrado al cliente) vs. facturado normalmente.</p>
-            <div class="chart-box chart-box-doughnut">
-              <Doughnut v-if="(informe.resumen.monto_garantia + informe.resumen.monto_facturable) > 0" :data="chartGarantia" :options="opcionesDoughnutMoneda" />
-              <p v-else class="empty-state">Sin facturación registrada en este período.</p>
-            </div>
+          <div class="chart-box">
+            <Bar v-if="datosTiempos.length" :data="chartTiempos" :options="opcionesBarraHoras" />
+            <p v-else class="empty-state">Sin actividades finalizadas en este período.</p>
           </div>
         </div>
       </div>
 
-      <div class="im-group" v-if="informe.top_clientes?.length || informe.rentabilidad_unidad?.length">
-        <span class="im-eyebrow">Clientes y unidades</span>
-        <div class="charts-grid">
-          <div class="section-block" ref="clientesRef" v-if="informe.top_clientes?.length">
-            <h3>Clientes recurrentes <small class="im-subtle">(top 10)</small></h3>
-            <div class="table-wrapper">
-              <table>
-                <thead><tr><th>Cliente</th><th>OTs</th><th>Facturación</th></tr></thead>
-                <tbody>
-                  <tr v-for="c in informe.top_clientes" :key="c.cliente">
-                    <td>{{ c.cliente }}</td>
-                    <td>{{ c.cantidad_ot }}</td>
-                    <td><span class="highlight">{{ formatCurrency(c.facturacion_total) }}</span></td>
-                  </tr>
-                </tbody>
-              </table>
+      <hr class="divider" />
+
+      <div class="section-block" ref="rentabilidadMecanicosRef">
+        <div class="header-with-actions">
+          <h3>Rentabilidad Monetaria por Eficiencia</h3>
+          <select v-model="modoRentabilidad" class="form-control select-sm no-print">
+            <option value="separados">Comparativa Mecánicos</option>
+            <option value="taller">Taller Completo (Consolidado)</option>
+          </select>
+        </div>
+        <p class="chart-hint">Valor monetario del tiempo ahorrado (verde) o excedido (rojo) respecto al presupuestado.</p>
+        <div class="chart-box">
+          <Bar v-if="datosRentabilidad.length" :data="chartRentabilidad" :options="opcionesBarraRentabilidad" />
+          <p v-else class="empty-state">Sin datos de eficiencia en este período.</p>
+        </div>
+      </div>
+
+      <hr class="divider" />
+
+      <div class="charts-grid">
+        <div class="section-block" ref="cuellosRef">
+          <div class="header-with-actions">
+            <h3>Cuellos de Botella (Tiempos por Estado)</h3>
+            <div style="display:flex; gap: 8px;" class="no-print">
+              <input type="text" v-model="store.filtroCuellos" placeholder="Filtrar OT o Patente" class="form-control select-sm" @keyup.enter="store.cargarInformes" style="text-transform: uppercase;" />
+              <button class="btn btn-sm" @click="store.cargarInformes">🔍</button>
             </div>
           </div>
+          <div class="chart-box">
+            <Bar v-if="store.taller.permanencia_estado?.length" :data="chartCuellos" :options="opcionesBarraHorasHorizontal" />
+            <p v-else class="empty-state">Sin datos de permanencia por estado.</p>
+          </div>
+        </div>
+        
+        <div class="section-block" ref="composicionRef">
+          <h3>Composición del Trabajo</h3>
+          <div class="chart-box chart-box-doughnut">
+            <Doughnut v-if="calidadData.datasets[0].data.some(v => v > 0)" :data="calidadData" :options="opcionesDoughnut" />
+            <p v-else class="empty-state">Sin OTs en este período.</p>
+          </div>
+        </div>
+      </div>
 
-          <div class="section-block" ref="rentabilidadRef" v-if="informe.rentabilidad_unidad?.length">
-            <h3>Rentabilidad por tipo de unidad <small class="im-subtle">(top 10)</small></h3>
-            <div class="table-wrapper">
-              <table>
-                <thead><tr><th>Unidad</th><th>Cantidad OTs</th><th>Facturación total</th></tr></thead>
-                <tbody>
-                  <tr v-for="u in informe.rentabilidad_unidad" :key="u.unidad">
-                    <td><strong>{{ u.unidad }}</strong></td>
-                    <td>{{ u.cantidad }}</td>
-                    <td><span class="highlight">{{ formatCurrency(u.facturacion_total) }}</span></td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+      <hr class="divider" />
+
+      <div class="charts-grid">
+        <div class="section-block" ref="repuestosManoObraRef">
+          <h3>Distribución: Repuestos vs. Mano de Obra</h3>
+          <div class="chart-box chart-box-doughnut">
+            <Doughnut v-if="(store.financiero.resumen.total_repuestos + store.financiero.resumen.total_mano_obra) > 0" :data="chartRepuestosManoObra" :options="opcionesDoughnutMoneda" />
+            <p v-else class="empty-state">Sin facturación registrada.</p>
+          </div>
+        </div>
+
+        <div class="section-block" ref="garantiaRef">
+          <h3>Facturación: Garantía vs. Facturable</h3>
+          <div class="chart-box chart-box-doughnut">
+            <Doughnut v-if="(store.financiero.resumen.monto_garantia + store.financiero.resumen.monto_facturable) > 0" :data="chartGarantia" :options="opcionesDoughnutMoneda" />
+            <p v-else class="empty-state">Sin facturación registrada.</p>
+          </div>
+        </div>
+      </div>
+
+      <hr class="divider" />
+
+      <div class="charts-grid">
+        <div class="section-block" ref="clientesRef" v-if="store.financiero.top_clientes?.length">
+          <h3>Clientes Recurrentes (Top 10)</h3>
+          <div class="table-wrapper">
+            <table>
+              <thead><tr><th>Cliente</th><th>OTs</th><th>Facturación</th></tr></thead>
+              <tbody>
+                <tr v-for="c in store.financiero.top_clientes" :key="c.cliente">
+                  <td>{{ c.cliente }}</td>
+                  <td>{{ c.cantidad_ot }}</td>
+                  <td><span class="highlight">{{ formatCurrency(c.facturacion_total) }}</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="section-block" ref="rentabilidadRef" v-if="store.financiero.rentabilidad_unidad?.length">
+          <h3>Rentabilidad por Tipo de Unidad (Top 10)</h3>
+          <div class="table-wrapper">
+            <table>
+              <thead><tr><th>Unidad</th><th>Cantidad OTs</th><th>Facturación Total</th></tr></thead>
+              <tbody>
+                <tr v-for="u in store.financiero.rentabilidad_unidad" :key="u.unidad">
+                  <td><strong>{{ u.unidad }}</strong></td>
+                  <td>{{ u.cantidad }}</td>
+                  <td><span class="highlight">{{ formatCurrency(u.facturacion_total) }}</span></td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
@@ -2791,128 +3046,29 @@ const claseColor = computed(() => {
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { Bar, Line, Doughnut } from 'vue-chartjs'
-import {
-  Chart as ChartJS, Title, Tooltip, Legend, BarElement, CategoryScale,
-  LinearScale, LineElement, PointElement, ArcElement
-} from 'chart.js'
-import { useApi } from '../../composables/useApi'
-import { useToast, errMsg } from '../../composables/useToast'
+import { Chart as ChartJS, Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale, LineElement, PointElement, ArcElement } from 'chart.js'
+import { useInformesStore } from '../../stores/useInformesStore'
+import { useChartConfig } from '../../composables/useChartConfig'
 import { useDashboardExporter } from '../../composables/useDashboardExporter'
 import DeltaBadge from './DeltaBadge.vue'
+import TableroOperativo from '../informes/TableroOperativo.vue'
 
 ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale, LineElement, PointElement, ArcElement)
 
-const { fetchJSON } = useApi()
-const toast = useToast()
+const store = useInformesStore()
+const { formatCurrency, opcionesBase, getOpcionesBarraMoneda, opcionesDoughnut, opcionesDoughnutMoneda } = useChartConfig()
 const { exportarDashboardPDF } = useDashboardExporter()
 
-const today = new Date()
-const firstDay = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0]
-const currentDay = today.toISOString().split('T')[0]
-
-const desde = ref(firstDay)
-const hasta = ref(currentDay)
-const informe = ref(null)
-const loading = ref(false)
-const filtroCuellos = ref('')
-
-const formatCurrency = (val) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(val || 0)
-
-const opcionesBase = {
-  responsive: true,
-  maintainAspectRatio: false,
-  plugins: { legend: { position: 'bottom', labels: { color: '#52606d' } } },
-  scales: {
-    x: { ticks: { color: '#52606d' }, grid: { display: false } },
-    y: { ticks: { color: '#52606d' }, grid: { color: '#eef3f9' } }
-  }
-}
-
-const modoFacturacion = ref('apilado')
-const opcionesBarraMoneda = computed(() => {
-  const apilado = modoFacturacion.value === 'apilado'
-  return {
-    ...opcionesBase,
-    interaction: { mode: 'index', intersect: false },
-    plugins: {
-      ...opcionesBase.plugins,
-      tooltip: {
-        callbacks: {
-          label: (ctx) => `${ctx.dataset.label}: ${formatCurrency(ctx.parsed.y)}`,
-          footer: (tooltipItems) => {
-            let total = 0;
-            tooltipItems.forEach(item => { total += item.parsed.y; });
-            return `\nTOTAL: ${formatCurrency(total)}`;
-          }
-        }
-      }
-    },
-    scales: {
-      x: { ...opcionesBase.scales.x, stacked: apilado },
-      y: { ...opcionesBase.scales.y, stacked: apilado, ticks: { ...opcionesBase.scales.y.ticks, callback: (v) => formatCurrency(v) } }
-    }
-  }
-})
-
-const opcionesLineaCantidad = { ...opcionesBase }
-
-const opcionesBarraHoras = {
-  ...opcionesBase,
-  plugins: {
-    ...opcionesBase.plugins,
-    tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y} hs` } }
-  }
-}
-
-const opcionesBarraHorasHorizontal = {
-  ...opcionesBase,
-  indexAxis: 'y',
-  plugins: {
-    legend: { display: false },
-    tooltip: { callbacks: { label: (ctx) => `${ctx.parsed.x} hs` } }
-  }
-}
-
-const opcionesBarraCantidades = {
-  ...opcionesBase,
-  plugins: {
-    ...opcionesBase.plugins,
-    tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y} OTs` } }
-  }
-}
-
-const opcionesDoughnut = {
-  responsive: true,
-  maintainAspectRatio: false,
-  plugins: { legend: { position: 'bottom', labels: { color: '#52606d' } } }
-}
-
-const opcionesDoughnutMoneda = {
-  ...opcionesDoughnut,
-  plugins: {
-    legend: { position: 'bottom', labels: { color: '#52606d' } },
-    tooltip: { callbacks: { label: (ctx) => `${ctx.label}: ${formatCurrency(ctx.parsed)}` } }
-  }
-}
-
-const diasRangoTexto = computed(() => {
-  if (!desde.value || !hasta.value) return ''
-  return Math.round((new Date(hasta.value) - new Date(desde.value)) / 86400000) + 1
-})
-
-const calcularDelta = (actual, anterior) => {
-  if (anterior === null || anterior === undefined || anterior === 0) return null
-  if (actual === null || actual === undefined) return null
-  return ((actual - anterior) / anterior) * 100
-}
-const deltaFacturacion = computed(() => informe.value?.resumen_anterior ? calcularDelta(informe.value.resumen.total_facturado, informe.value.resumen_anterior.total_facturado) : null)
-const deltaTicket = computed(() => informe.value?.resumen_anterior ? calcularDelta(informe.value.resumen.facturacion_promedio, informe.value.resumen_anterior.facturacion_promedio) : null)
-const deltaOts = computed(() => informe.value?.resumen_anterior ? calcularDelta(informe.value.resumen.total_ot, informe.value.resumen_anterior.total_ot) : null)
+// Lógica PDF
+const exportando = ref(false)
+const ultimoPdf = ref(null)
 
 const kpisRef = ref(null)
 const financieroRef = ref(null)
 const tendenciaRef = ref(null)
 const diasSemanaRef = ref(null)
+const rendimientoOperativoRef = ref(null)
+const aporteMecanicosRef = ref(null)
 const tiemposRef = ref(null)
 const rentabilidadMecanicosRef = ref(null)
 const cuellosRef = ref(null)
@@ -2921,22 +3077,18 @@ const repuestosManoObraRef = ref(null)
 const garantiaRef = ref(null)
 const clientesRef = ref(null)
 const rentabilidadRef = ref(null)
-const aporteMecanicosRef = ref(null)
-
-const exportando = ref(false)
-const ultimoPdf = ref(null)
 
 const exportarPDF = async () => {
   exportando.value = true
   try {
     const resultado = await exportarDashboardPDF({
       titulo: 'IVEMAR · Informe de Rendimiento y Facturación',
-      subtitulo: `Período: ${desde.value} al ${hasta.value}`,
-      filename: `informe_ivemar_${desde.value}_a_${hasta.value}.pdf`,
+      subtitulo: `Período: ${store.desde} al ${store.hasta}`,
+      filename: `informe_ivemar_${store.desde}_a_${store.hasta}.pdf`,
       blocks: [
         kpisRef.value, financieroRef.value, tendenciaRef.value, diasSemanaRef.value,
-        aporteMecanicosRef.value, tiemposRef.value, rentabilidadMecanicosRef.value, cuellosRef.value, 
-        composicionRef.value, repuestosManoObraRef.value,
+        rendimientoOperativoRef.value, aporteMecanicosRef.value, tiemposRef.value, rentabilidadMecanicosRef.value, 
+        cuellosRef.value, composicionRef.value, repuestosManoObraRef.value,
         garantiaRef.value, clientesRef.value, rentabilidadRef.value
       ]
     })
@@ -2945,59 +3097,37 @@ const exportarPDF = async () => {
     exportando.value = false
   }
 }
-
 const descargarPDF = () => { if (ultimoPdf.value) ultimoPdf.value.descargar() }
 
-const calidadData = computed(() => {
-  const r = informe.value?.resumen || {}
-  return {
-    labels: ['Normales', 'Garantía IVECO', 'Otras Marcas (No Iveco)'],
-    datasets: [{
-      data: [r.total_normales || 0, r.total_garantia || 0, r.total_no_iveco || 0],
-      backgroundColor: ['#1f6fb8', '#d98a2b', '#64748b']
-    }]
-  }
-})
+// Calculadora Deltas
+const calcularDelta = (actual, anterior) => (anterior ? ((actual - anterior) / anterior) * 100 : null)
+const deltaFacturacion = computed(() => calcularDelta(store.financiero?.resumen.total_facturado, store.financiero?.resumen_anterior.total_facturado))
+const deltaTicket = computed(() => calcularDelta(store.financiero?.resumen.facturacion_promedio, store.financiero?.resumen_anterior.facturacion_promedio))
+const deltaOts = computed(() => calcularDelta(store.financiero?.resumen.total_ot, store.financiero?.resumen_anterior.total_ot))
 
-const chartRepuestosManoObra = computed(() => ({
-  labels: ['Repuestos', 'Mano de Obra'],
-  datasets: [{
-    data: [informe.value?.resumen.total_repuestos || 0, informe.value?.resumen.total_mano_obra || 0],
-    backgroundColor: ['#1f8a74', '#1f6fb8']
-  }]
-}))
-
-const chartGarantia = computed(() => ({
-  labels: ['Garantía (no facturado)', 'Facturable'],
-  datasets: [{
-    data: [informe.value?.resumen.monto_garantia || 0, informe.value?.resumen.monto_facturable || 0],
-    backgroundColor: ['#d98a2b', '#1f8a74']
-  }]
-}))
-
+// Utilidades Fechas
 const getSemana = (fecha) => {
   const d = new Date(fecha); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + 3 - (d.getDay() + 6) % 7);
   const week1 = new Date(d.getFullYear(), 0, 4);
   return `Sem ${1 + Math.round(((d.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7)}`;
 }
-
 const claveAgrupacion = (fechaStr, modo) => {
   const fechaObj = new Date(fechaStr)
   if (modo === 'semanal') return getSemana(fechaStr)
   if (modo === 'mensual') return fechaStr.substring(0, 7)
-  if (modo === 'quincenal') {
-    const q = fechaObj.getDate() <= 15 ? 'Q1' : 'Q2'
-    return `${fechaStr.substring(0, 7)} ${q}`
-  }
+  if (modo === 'quincenal') return `${fechaStr.substring(0, 7)} ${fechaObj.getDate() <= 15 ? 'Q1' : 'Q2'}`
   return fechaStr
 }
 
+// 1. FINANCIERO
+const modoFacturacion = ref('apilado')
 const agrupacionFinanciera = ref('diaria')
+const opcionesBarraMonedaConfig = computed(() => getOpcionesBarraMoneda(modoFacturacion.value === 'apilado'))
 
 const datosFinancierosAgrupados = computed(() => {
-  if (!informe.value || !informe.value.facturacion_diaria) return []
+  if (!store.financiero?.facturacion_diaria) return []
   const grupos = {}
-  informe.value.facturacion_diaria.forEach(d => {
+  store.financiero.facturacion_diaria.forEach(d => {
     const clave = claveAgrupacion(d.fecha, agrupacionFinanciera.value)
     if (!grupos[clave]) grupos[clave] = { etiqueta: clave, repuestos: 0, mano_obra: 0 }
     grupos[clave].repuestos += d.repuestos
@@ -3005,330 +3135,181 @@ const datosFinancierosAgrupados = computed(() => {
   })
   return Object.values(grupos)
 })
-
 const chartFinanciero = computed(() => ({
   labels: datosFinancierosAgrupados.value.map(d => d.etiqueta),
   datasets: [
-    { label: 'Repuestos', backgroundColor: '#1f8a74', data: datosFinancierosAgrupados.value.map(d => d.repuestos) },
-    { label: 'Mano de Obra', backgroundColor: '#1f6fb8', data: datosFinancierosAgrupados.value.map(d => d.mano_obra) }
+    { label: 'Repuestos', backgroundColor: '#1d8a4f', data: datosFinancierosAgrupados.value.map(d => d.repuestos) },
+    { label: 'Mano de Obra', backgroundColor: '#0056a7', data: datosFinancierosAgrupados.value.map(d => d.mano_obra) }
   ]
 }))
 
+// 2. TENDENCIAS
 const agrupacionTendencia = ref('diaria')
-
+const opcionesLineaCantidad = { ...opcionesBase }
 const datosTendenciaAgrupados = computed(() => {
-  if (!informe.value) return []
+  if (!store.taller) return []
   const grupos = {}
-  const aperturas = informe.value.aperturas_por_dia || []
-  const cierres = informe.value.cierres_por_dia || []
-
-  aperturas.forEach(d => {
+  store.taller.aperturas_por_dia?.forEach(d => {
     const clave = claveAgrupacion(d.fecha, agrupacionTendencia.value)
     if (!grupos[clave]) grupos[clave] = { etiqueta: clave, aperturas: 0, cierres: 0 }
     grupos[clave].aperturas += d.cantidad
   })
-  cierres.forEach(d => {
+  store.taller.cierres_por_dia?.forEach(d => {
     const clave = claveAgrupacion(d.fecha, agrupacionTendencia.value)
     if (!grupos[clave]) grupos[clave] = { etiqueta: clave, aperturas: 0, cierres: 0 }
     grupos[clave].cierres += d.cantidad
   })
-
   return Object.values(grupos).sort((a, b) => a.etiqueta.localeCompare(b.etiqueta))
 })
-
 const chartTendencia = computed(() => ({
   labels: datosTendenciaAgrupados.value.map(d => d.etiqueta),
   datasets: [
-    { label: 'Abiertas', borderColor: '#d98a2b', backgroundColor: '#d98a2b', data: datosTendenciaAgrupados.value.map(d => d.aperturas), tension: 0.3 },
-    { label: 'Cerradas', borderColor: '#1f8a74', backgroundColor: '#1f8a74', data: datosTendenciaAgrupados.value.map(d => d.cierres), tension: 0.3 }
+    { label: 'Abiertas', borderColor: '#b8860b', backgroundColor: '#b8860b', data: datosTendenciaAgrupados.value.map(d => d.aperturas), tension: 0.3 },
+    { label: 'Cerradas', borderColor: '#1d8a4f', backgroundColor: '#1d8a4f', data: datosTendenciaAgrupados.value.map(d => d.cierres), tension: 0.3 }
   ]
 }))
 
+// 3. DIAS DE LA SEMANA
 const diasNombres = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
-
+const opcionesBarraCantidades = { ...opcionesBase, plugins: { ...opcionesBase.plugins, tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y} OTs` } } } }
 const datosDiasSemana = computed(() => {
-  if (!informe.value) return []
-  const aperturas = informe.value.aperturas_por_dia || []
-  const cierres = informe.value.cierres_por_dia || []
-
-  const dias = Array(7).fill(0).map((_, i) => ({
-    dia: i, etiqueta: diasNombres[i], aperturas: 0, cierres: 0
-  }))
-
-  aperturas.forEach(d => {
-    const [yyyy, mm, dd] = d.fecha.split('-')
-    dias[new Date(yyyy, mm - 1, dd).getDay()].aperturas += d.cantidad
-  })
-
-  cierres.forEach(d => {
-    const [yyyy, mm, dd] = d.fecha.split('-')
-    dias[new Date(yyyy, mm - 1, dd).getDay()].cierres += d.cantidad
-  })
-
+  if (!store.taller) return []
+  const dias = Array(7).fill(0).map((_, i) => ({ dia: i, etiqueta: diasNombres[i], aperturas: 0, cierres: 0 }))
+  store.taller.aperturas_por_dia?.forEach(d => { const [y, m, dd] = d.fecha.split('-'); dias[new Date(y, m - 1, dd).getDay()].aperturas += d.cantidad })
+  store.taller.cierres_por_dia?.forEach(d => { const [y, m, dd] = d.fecha.split('-'); dias[new Date(y, m - 1, dd).getDay()].cierres += d.cantidad })
   const ordenados = [dias[1], dias[2], dias[3], dias[4], dias[5], dias[6], dias[0]]
   if (ordenados[6].aperturas === 0 && ordenados[6].cierres === 0) ordenados.pop()
-  
   return ordenados
 })
-
 const chartDiasSemana = computed(() => ({
   labels: datosDiasSemana.value.map(d => d.etiqueta),
   datasets: [
-    { label: 'Aperturas', backgroundColor: '#d98a2b', data: datosDiasSemana.value.map(d => d.aperturas) },
-    { label: 'Cierres', backgroundColor: '#1f8a74', data: datosDiasSemana.value.map(d => d.cierres) }
+    { label: 'Aperturas', backgroundColor: '#b8860b', data: datosDiasSemana.value.map(d => d.aperturas) },
+    { label: 'Cierres', backgroundColor: '#1d8a4f', data: datosDiasSemana.value.map(d => d.cierres) }
   ]
 }))
 
+// 4. APORTE MECANICOS
 const modoAporteMecanico = ref('facturacion')
-
 const chartAporteMecanico = computed(() => {
-  const datos = informe.value?.tiempos_mecanicos || []
+  const datos = store.operativo?.tiempos_mecanicos || []
   const esFact = modoAporteMecanico.value === 'facturacion'
-  
   return {
     labels: datos.map(d => d.nombre),
     datasets: [{
       label: esFact ? 'Facturación Generada ($)' : 'OTs Trabajadas',
-      backgroundColor: esFact ? '#1f8a74' : '#1f6fb8',
+      backgroundColor: esFact ? '#1d8a4f' : '#0056a7',
       data: datos.map(d => esFact ? d.facturacion_generada : d.ot_trabajadas)
     }]
   }
 })
-
 const opcionesAporteMecanico = computed(() => {
   const esFact = modoAporteMecanico.value === 'facturacion'
   return {
     ...opcionesBase,
-    plugins: {
-      ...opcionesBase.plugins,
-      tooltip: {
-        callbacks: {
-          label: (ctx) => esFact ? `Mano de Obra: ${formatCurrency(ctx.parsed.y)}` : `Órdenes: ${ctx.parsed.y}`
-        }
-      }
-    },
-    scales: {
-      x: { ...opcionesBase.scales.x },
-      y: { 
-        ...opcionesBase.scales.y, 
-        ticks: { 
-          ...opcionesBase.scales.y.ticks, 
-          callback: (v) => esFact ? formatCurrency(v) : v 
-        } 
-      }
-    }
+    plugins: { ...opcionesBase.plugins, tooltip: { callbacks: { label: (ctx) => esFact ? `Mano de Obra: ${formatCurrency(ctx.parsed.y)}` : `Órdenes: ${ctx.parsed.y}` } } },
+    scales: { x: opcionesBase.scales.x, y: { ...opcionesBase.scales.y, ticks: { ...opcionesBase.scales.y.ticks, callback: (v) => esFact ? formatCurrency(v) : v } } }
   }
 })
 
-
+// 5. TIEMPOS ESTIMADO VS REAL
 const mecanicoSeleccionado = ref('separados')
+const opcionesBarraHoras = { ...opcionesBase, plugins: { ...opcionesBase.plugins, tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y} hs` } } } }
 const datosTiempos = computed(() => {
-  if (!informe.value || !informe.value.tiempos_mecanicos) return []
-  const mec = informe.value.tiempos_mecanicos
-
+  const mec = store.operativo?.tiempos_mecanicos || []
   if (mecanicoSeleccionado.value === 'todos') {
-    const totEst = mec.reduce((acc, m) => acc + m.hs_estimadas, 0)
-    const totReal = mec.reduce((acc, m) => acc + m.hs_empleadas, 0)
-    return [{ etiqueta: 'Total Taller', estimado: totEst, real: totReal }]
+    return [{ etiqueta: 'Total Taller', estimado: mec.reduce((a, m) => a + m.hs_estimadas, 0), real: mec.reduce((a, m) => a + m.hs_empleadas, 0) }]
   }
-
-  if (mecanicoSeleccionado.value === 'separados') {
-    return mec.map(m => ({ etiqueta: m.nombre, estimado: m.hs_estimadas, real: m.hs_empleadas }))
-  }
-
+  if (mecanicoSeleccionado.value === 'separados') return mec.map(m => ({ etiqueta: m.nombre, estimado: m.hs_estimadas, real: m.hs_empleadas }))
   const m = mec.find(m => m.legajo === mecanicoSeleccionado.value)
   return m ? [{ etiqueta: m.nombre, estimado: m.hs_estimadas, real: m.hs_empleadas }] : []
 })
-
 const chartTiempos = computed(() => ({
   labels: datosTiempos.value.map(d => d.etiqueta),
   datasets: [
-    { label: 'Estimado (hs)', backgroundColor: '#d98a2b', data: datosTiempos.value.map(d => d.estimado) },
-    { label: 'Real (hs)', backgroundColor: '#1f6fb8', data: datosTiempos.value.map(d => d.real) }
+    { label: 'Estimado (hs)', backgroundColor: '#b8860b', data: datosTiempos.value.map(d => d.estimado) },
+    { label: 'Real (hs)', backgroundColor: '#0056a7', data: datosTiempos.value.map(d => d.real) }
   ]
 }))
 
-
+// 6. RENTABILIDAD MECANICOS
 const modoRentabilidad = ref('separados')
-
 const datosRentabilidad = computed(() => {
-  if (!informe.value || !informe.value.tiempos_mecanicos) return []
-  const mec = informe.value.tiempos_mecanicos
-
-  if (modoRentabilidad.value === 'taller') {
-    const totalRent = mec.reduce((acc, m) => acc + (m.rentabilidad_eficiencia || 0), 0)
-    return [{ etiqueta: 'Taller Completo', valor: totalRent }]
-  }
-
-  return mec.map(m => ({
-    etiqueta: m.nombre,
-    valor: m.rentabilidad_eficiencia || 0
-  }))
+  const mec = store.operativo?.tiempos_mecanicos || []
+  if (modoRentabilidad.value === 'taller') return [{ etiqueta: 'Taller Completo', valor: mec.reduce((acc, m) => acc + (m.rentabilidad_eficiencia || 0), 0) }]
+  return mec.map(m => ({ etiqueta: m.nombre, valor: m.rentabilidad_eficiencia || 0 }))
 })
-
 const chartRentabilidad = computed(() => {
   const data = datosRentabilidad.value
   return {
     labels: data.map(d => d.etiqueta),
-    datasets: [{
-      label: 'Rentabilidad ($)',
-      backgroundColor: data.map(d => d.valor >= 0 ? '#1f8a74' : '#c1443c'), 
-      data: data.map(d => d.valor)
-    }]
+    datasets: [{ label: 'Rentabilidad ($)', backgroundColor: data.map(d => d.valor >= 0 ? '#1d8a4f' : '#b22234'), data: data.map(d => d.valor) }]
   }
 })
-
 const opcionesBarraRentabilidad = computed(() => ({
   ...opcionesBase,
-  plugins: {
-    ...opcionesBase.plugins,
-    legend: { display: false },
-    tooltip: {
-      callbacks: {
-        label: (ctx) => `Rentabilidad: ${formatCurrency(ctx.parsed.y)}`
-      }
-    }
-  },
-  scales: {
-    x: { ...opcionesBase.scales.x },
-    y: {
-      ...opcionesBase.scales.y,
-      ticks: {
-        ...opcionesBase.scales.y.ticks,
-        callback: (v) => formatCurrency(v)
-      }
-    }
-  }
+  plugins: { ...opcionesBase.plugins, legend: { display: false }, tooltip: { callbacks: { label: (ctx) => `Rentabilidad: ${formatCurrency(ctx.parsed.y)}` } } },
+  scales: { x: opcionesBase.scales.x, y: { ...opcionesBase.scales.y, ticks: { ...opcionesBase.scales.y.ticks, callback: (v) => formatCurrency(v) } } }
 }))
 
-
+// 7. CUELLOS DE BOTELLA
+const opcionesBarraHorasHorizontal = { ...opcionesBase, indexAxis: 'y', plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx) => `${ctx.parsed.x} hs` } } } }
 const chartCuellos = computed(() => {
-  const datos = informe.value?.permanencia_estado || []
+  const datos = store.taller?.permanencia_estado || []
   return {
     labels: datos.map(e => e.estado),
-    datasets: [{
-      label: filtroCuellos.value ? 'Horas totales' : 'Horas promedio',
-      backgroundColor: '#c1443c',
-      data: datos.map(e => filtroCuellos.value ? e.horas_totales : e.horas_promedio)
-    }]
+    datasets: [{ label: store.filtroCuellos ? 'Horas totales' : 'Horas promedio', backgroundColor: '#b22234', data: datos.map(e => store.filtroCuellos ? e.horas_totales : e.horas_promedio) }]
   }
 })
 
-const cargarInforme = async () => {
-  let url = '/informes/mensual?'
-  if (desde.value && hasta.value) url += `desde=${desde.value}&hasta=${hasta.value}`
-  if (filtroCuellos.value) url += `&filtro_cuellos=${filtroCuellos.value.trim().toUpperCase()}`
-
-  loading.value = true
-  ultimoPdf.value = null
-  try {
-    informe.value = await fetchJSON(url)
-  } catch (err) {
-    toast.error('Error cargando informe: ' + errMsg(err))
-  } finally {
-    loading.value = false
+// 8. DOUGHNUTS
+const calidadData = computed(() => {
+  const r = store.financiero?.resumen || {}
+  return {
+    labels: ['Normales', 'Garantía IVECO', 'Otras Marcas (No Iveco)'],
+    datasets: [{ data: [r.total_normales || 0, r.total_garantia || 0, r.total_no_iveco || 0], backgroundColor: ['#0056a7', '#b8860b', '#6c7a8a'] }]
   }
-}
-onMounted(cargarInforme)
+})
+const chartRepuestosManoObra = computed(() => ({
+  labels: ['Repuestos', 'Mano de Obra'],
+  datasets: [{ data: [store.financiero?.resumen.total_repuestos || 0, store.financiero?.resumen.total_mano_obra || 0], backgroundColor: ['#1d8a4f', '#0056a7'] }]
+}))
+const chartGarantia = computed(() => ({
+  labels: ['Garantía (no facturado)', 'Facturable'],
+  datasets: [{ data: [store.financiero?.resumen.monto_garantia || 0, store.financiero?.resumen.monto_facturable || 0], backgroundColor: ['#b8860b', '#1d8a4f'] }]
+}))
+
+onMounted(() => { store.cargarInformes() })
 </script>
 
 <style scoped>
-/* ---- Tokens locales del panel (no pisan variables globales) ---- */
-.im-dashboard {
-  --im-navy: #12283f;
-  --im-blue: #1f6fb8;
-  --im-teal: #1f8a74;
-  --im-amber: #d98a2b;
-  --im-rust: #c1443c;
-  --im-slate: #64748b;
-  --im-bg: #f4f6f9;
-  --im-line: #e2e8f0;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-}
-
-.im-eyebrow {
-  display: inline-block;
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: var(--im-slate);
-  margin-bottom: 6px;
-}
-
-/* ---- Encabezado ---- */
-.im-topbar { display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 12px; }
-.im-title-block h2 { margin: 2px 0 0; font-family: 'Space Grotesk', 'Inter', sans-serif; font-weight: 700; letter-spacing: -0.01em; color: var(--im-navy); }
+.header-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+.header-row h2 { margin: 0; }
 .pdf-actions { display: flex; gap: 8px; }
-
-.dashboard-controls {
-  display: flex; flex-wrap: wrap; gap: 16px; align-items: end;
-  background: var(--im-bg);
-  padding: 14px 16px;
-  border-radius: 10px;
-  border: 1px solid var(--im-line);
-  margin: 16px 0 24px;
-}
-.date-group { display: flex; flex-direction: column; gap: 4px; }
-.date-group label { font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--im-slate); }
+.dashboard-controls { display: flex; flex-wrap: wrap; gap: 15px; align-items: center; background: #f8fafc; padding: 15px; border-radius: var(--radius); border: 1px solid var(--border-soft); margin: 15px 0 20px; }
+.date-group { display: flex; align-items: center; gap: 8px; }
 .date-input { width: auto; }
-.im-btn-primary { background: var(--im-navy); border-color: var(--im-navy); }
-.im-uppercase { text-transform: uppercase; }
-.im-controls-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.divider { border: 0; border-top: 1px dashed var(--border); margin: 30px 0; }
+.section-block { background: white; padding: 20px; border-radius: var(--radius); border: 1px solid var(--border-soft); box-shadow: var(--shadow-sm); break-inside: avoid; }
+.header-with-actions { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; margin-bottom: 20px; border-bottom: 1px solid var(--border-soft); padding-bottom: 10px;}
+.header-with-actions h3 { margin: 0; color: var(--primary); font-size: 1.1rem; }
+.select-sm { width: auto; padding: 4px 8px; font-size: 0.9rem; }
+.chart-hint { font-size: 0.8rem; color: var(--muted); margin: -10px 0 12px; }
 
-/* ---- Grupos con eyebrow de sección ---- */
-.im-body { display: flex; flex-direction: column; }
-.im-group { margin-top: 34px; padding-top: 18px; border-top: 1px solid var(--im-line); }
-.im-group:first-of-type { margin-top: 28px; }
-.im-mt { margin-top: 20px; }
-
-.section-block { background: white; padding: 20px; border-radius: 12px; border: 1px solid var(--im-line); box-shadow: 0 1px 2px rgba(18,40,63,0.04); break-inside: avoid; }
-.header-with-actions { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; padding-bottom: 10px; border-bottom: 1px solid var(--im-line); }
-.header-with-actions h3 { margin: 0; color: var(--im-navy); font-size: 1.02rem; font-weight: 600; }
-.section-block > h3 { margin: 0 0 4px; color: var(--im-navy); font-size: 1.02rem; font-weight: 600; }
-.im-subtle { color: var(--im-slate); font-weight: 400; }
-.select-sm { width: auto; padding: 4px 8px; font-size: 0.85rem; }
-.chart-hint { font-size: 0.8rem; color: var(--im-slate); margin: 0 0 12px; }
-.im-hint-strip { margin: 10px 0 0; text-align: right; }
-
-/* ---- Tira de KPIs tipo "panel de instrumentos" ---- */
-.im-kpi-strip { display: grid; grid-template-columns: minmax(220px, 320px) 1fr; gap: 16px; }
-.im-kpi-hero {
-  position: relative;
-  background: linear-gradient(155deg, var(--im-navy), #1a3a5c);
-  color: white;
-  border-radius: 14px;
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  overflow: hidden;
-}
-.im-gauge { position: absolute; top: 10px; right: 10px; width: 90px; opacity: 0.9; }
-.im-kpi-hero .im-kpi-label { color: rgba(255,255,255,0.75); }
-.im-kpi-value { font-family: 'IBM Plex Mono', 'Space Grotesk', monospace; font-size: 1.7rem; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
-
-.im-kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
-.im-kpi-card { background: white; border: 1px solid var(--im-line); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; box-shadow: 0 1px 2px rgba(18,40,63,0.04); }
-.im-kpi-label { font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--im-slate); }
-.im-kpi-value-sm { font-family: 'IBM Plex Mono', 'Space Grotesk', monospace; font-size: 1.15rem; font-weight: 600; color: var(--im-navy); font-variant-numeric: tabular-nums; }
-.im-kpi-value-sm small { font-size: 0.7rem; font-weight: 500; color: var(--im-slate); }
+.stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 15px; }
+.stat-card { background: white; border: 1px solid var(--border-soft); border-radius: 8px; padding: 15px; text-align: center; box-shadow: var(--shadow-sm); font-size: 1.05rem; position: relative; }
+.highlight-card { background: #0056a7; color: white; border: none; font-size: 1.15rem; }
 
 .chart-box { height: 280px; position: relative; }
 .chart-box-doughnut { height: 240px; }
 
 .table-wrapper { overflow-x: auto; }
-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
-th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--im-line); }
-th { background: var(--im-bg); font-weight: 600; color: var(--im-navy); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em; }
-td { font-variant-numeric: tabular-nums; }
-.highlight { color: var(--im-blue); font-weight: 700; font-family: 'IBM Plex Mono', monospace; }
+table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border-soft); }
+th { background: #f8fafc; font-weight: 600; color: #1a2a3a; }
+.highlight { color: #0056a7; font-weight: bold; }
 
 .charts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 20px; }
-
-@media (max-width: 640px) {
-  .im-kpi-strip { grid-template-columns: 1fr; }
-}
 
 @media print {
   .no-print { display: none !important; }
@@ -3901,6 +3882,109 @@ const count = ref(0)
 </template>
 </file>
 
+<file path="ivemar-frontend/src/components/informes/TableroOperativo.vue">
+<template>
+  <div class="im-group">
+    <span class="im-eyebrow">Rendimiento Operativo (Mecánicos)</span>
+    
+    <div v-if="!tiempos || tiempos.length === 0" class="empty-state">
+      No hay actividad de mecánicos en este período.
+    </div>
+    
+    <div class="table-wrapper" v-else>
+      <table>
+        <thead>
+          <tr>
+            <th>Mecánico</th>
+            <th>Asistencia</th>
+            <th>Hs Productivas</th>
+            <th>Hs Internas</th>
+            <th>Ocio</th>
+            <th>Días sin login</th>
+            <th>Productividad</th>
+            <th>Eficiencia (Cumplimiento)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="m in tiempos" :key="m.legajo">
+            <td><strong>{{ m.nombre }}</strong></td>
+            <td>{{ m.dias_asistidos }} días</td>
+            <td><span class="text-success">{{ m.hs_productivas }} hs</span></td>
+            <td class="text-muted">{{ m.hs_internas }} hs</td>
+            <td :class="{'text-danger': m.tiempo_muerto > 10}">
+              <strong>{{ m.tiempo_muerto }} hs</strong>
+            </td>
+            <td>
+              <button
+                v-if="m.dias_ausentes_count > 0"
+                class="btn btn-sm"
+                :class="sinJustificar(m) > 0 ? 'btn-danger' : 'btn-secondary'"
+                @click="verAusencias(m)"
+              >
+                {{ m.dias_ausentes_count }} día{{ m.dias_ausentes_count > 1 ? 's' : '' }}
+                <template v-if="sinJustificar(m) > 0">({{ sinJustificar(m) }} sin justificar)</template>
+              </button>
+              <span v-else class="text-muted">-</span>
+            </td>
+            <td>
+              <span :class="['badge', m.productividad_porcentaje >= 80 ? 'bg-success' : 'bg-warning']" title="(Hs Productivas + Hs Internas) / Hs Exigidas">
+                {{ m.productividad_porcentaje }}%
+              </span>
+            </td>
+            <td>
+              <span :class="['badge', m.eficiencia_porcentaje >= 100 ? 'bg-success' : 'bg-danger']" title="Hs Estimadas / Hs Productivas">
+                {{ m.eficiencia_porcentaje }}%
+              </span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="chart-hint im-mt">
+      * <strong>Hs Internas:</strong> Tareas realizadas en OTs donde el cliente es "IVEMAR". Suman a la productividad pero no a la facturación.<br>
+      * <strong>Ocio:</strong> Horas hábiles donde el mecánico estuvo presente pero no registró actividad en el panel.<br>
+      * <strong>Días sin login:</strong> días hábiles del período sin ningún registro de actividad. Se pueden justificar (franco, permiso, vacaciones, etc.).
+    </p>
+
+    <ModalAusencias v-if="mecanicoModalLegajo" :mecanico="mecanicoModal" @close="mecanicoModalLegajo = null" @justificado="store.cargarInformes" />
+  </div>
+</template>
+
+<script setup>
+import { computed, ref } from 'vue'
+import { useInformesStore } from '../../stores/useInformesStore'
+import ModalAusencias from '../jefe/ModalAusencias.vue'
+
+const store = useInformesStore()
+const tiempos = computed(() => store.operativo?.tiempos_mecanicos || [])
+
+const mecanicoModalLegajo = ref(null)
+const mecanicoModal = computed(() => tiempos.value.find(m => m.legajo === mecanicoModalLegajo.value) || null)
+
+const sinJustificar = (m) => (m.dias_ausentes || []).filter(d => !d.motivo).length
+const verAusencias = (m) => { mecanicoModalLegajo.value = m.legajo }
+</script>
+
+<style scoped>
+.im-group { padding-top: 18px; border-top: 1px solid var(--border-soft); margin-top: 24px; }
+.im-eyebrow { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); display: block; margin-bottom: 16px; }
+.table-wrapper { overflow-x: auto; background: white; border: 1px solid var(--border-soft); border-radius: var(--radius); box-shadow: var(--shadow-sm); }
+table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid var(--border-soft); }
+th { background: #f8fafc; font-weight: 600; color: #1a2a3a; text-transform: uppercase; font-size: 0.8rem; }
+.badge { padding: 4px 10px; border-radius: 12px; color: white; font-weight: bold; font-size: 0.85rem; }
+.bg-success { background: #1d8a4f; }
+.bg-warning { background: #b8860b; color: #fff; }
+.bg-danger { background: #b22234; }
+.text-success { color: #1d8a4f; font-weight: 600; }
+.text-muted { color: #6c7a8a; }
+.text-danger { color: #b22234; }
+.im-mt { margin-top: 12px; }
+.chart-hint { font-size: 0.8rem; color: var(--muted); line-height: 1.5; }
+</style>
+</file>
+
 <file path="ivemar-frontend/src/components/jefe/ControlFinalOT.vue">
 <template>
   <div class="card">
@@ -4043,6 +4127,177 @@ const submitAsignacion = () => {
 </style>
 </file>
 
+<file path="ivemar-frontend/src/components/jefe/ModalAusencias.vue">
+<template>
+  <div class="modal-overlay" @click.self="$emit('close')">
+    <div class="modal-content" style="max-width: 500px;">
+      <button class="close-btn" @click="$emit('close')">&times;</button>
+      <h2>Días sin registro - {{ mecanico?.nombre }}</h2>
+
+      <p class="chart-hint" v-if="dias.length === 0">No hay días hábiles sin actividad en este período.</p>
+
+      <ul class="ausencias-list" v-else>
+        <li v-for="d in dias" :key="d.fecha" class="ausencia-item">
+          <div class="ausencia-row">
+            <strong>{{ formatFecha(d.fecha) }}</strong>
+            <span v-if="d.motivo" class="badge bg-success">{{ d.motivo }}</span>
+            <span v-else class="badge bg-danger">Sin justificar</span>
+            <button v-if="editando !== d.fecha" class="btn btn-secondary btn-sm" @click="abrirForm(d)">
+              {{ d.motivo ? 'Editar' : 'Justificar' }}
+            </button>
+          </div>
+
+          <form v-if="editando === d.fecha" class="form-inline" @submit.prevent="guardar(d)">
+            <input
+              v-model="form.motivo"
+              list="motivos-comunes"
+              placeholder="Motivo (Franco, Permiso, Vacaciones...)"
+              required
+            />
+            <datalist id="motivos-comunes">
+              <option value="Franco" />
+              <option value="Permiso" />
+              <option value="Vacaciones" />
+              <option value="Enfermedad" />
+              <option value="Falta injustificada" />
+            </datalist>
+            <input
+              type="number"
+              v-model="form.horas_descontadas"
+              step="0.5"
+              min="0"
+              title="Horas a descontar de la exigencia de ese día"
+            />
+            <button type="submit" class="btn btn-success btn-sm" :disabled="guardando">Guardar</button>
+            <button type="button" class="btn btn-secondary btn-sm" @click="editando = null">Cancelar</button>
+          </form>
+        </li>
+      </ul>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref, computed } from 'vue'
+import { useApi } from '../../composables/useApi'
+import { useToast, errMsg } from '../../composables/useToast'
+
+const props = defineProps({ mecanico: { type: Object, default: null } })
+const emit = defineEmits(['close', 'justificado'])
+
+const { fetchJSON } = useApi()
+const toast = useToast()
+
+const dias = computed(() => props.mecanico?.dias_ausentes || [])
+const editando = ref(null)
+const guardando = ref(false)
+const form = ref({ motivo: '', horas_descontadas: 10 })
+
+const horasPorDefecto = (fecha) => (new Date(fecha + 'T12:00:00Z').getDay() === 6 ? 5 : 10)
+
+const abrirForm = (d) => {
+  editando.value = d.fecha
+  form.value = { motivo: d.motivo || '', horas_descontadas: horasPorDefecto(d.fecha) }
+}
+
+const formatFecha = (f) =>
+  new Date(f + 'T12:00:00Z').toLocaleDateString('es-AR', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' })
+
+const guardar = async (d) => {
+  guardando.value = true
+  try {
+    // Si ya había una excepción para ese día, la reemplazamos en vez de duplicarla
+    if (d.excepcion_id) {
+      await fetchJSON(`/legajos/excepciones/${d.excepcion_id}`, { method: 'DELETE' })
+    }
+    await fetchJSON('/legajos/excepciones', {
+      method: 'POST',
+      body: JSON.stringify({
+        legajo: props.mecanico.legajo,
+        fecha: d.fecha,
+        motivo: form.value.motivo,
+        horas_descontadas: Number(form.value.horas_descontadas) || 0
+      })
+    })
+    toast.success(`Día ${d.fecha} justificado`)
+    editando.value = null
+    emit('justificado')
+  } catch (err) {
+    toast.error(errMsg(err))
+  } finally {
+    guardando.value = false
+  }
+}
+</script>
+
+<style scoped>
+.ausencias-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; max-height: 60vh; overflow-y: auto; }
+.ausencia-item { padding: 10px; border: 1px solid var(--border-soft); border-radius: var(--radius); }
+.ausencia-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ausencia-row strong { min-width: 120px; }
+.form-inline { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+.form-inline input:not([type="number"]) { flex: 1; min-width: 180px; }
+.form-inline input[type="number"] { width: 75px; }
+.badge { padding: 3px 9px; border-radius: 12px; color: white; font-weight: 600; font-size: 0.78rem; }
+.bg-success { background: #1d8a4f; }
+.bg-danger { background: #b22234; }
+.chart-hint { font-size: 0.85rem; color: var(--muted); }
+</style>
+</file>
+
+<file path="ivemar-frontend/src/components/jefe/TableroRendimiento.vue">
+<template>
+  <div class="card">
+    <div class="header-row">
+      <h2>Rendimiento y Productividad del Taller</h2>
+    </div>
+
+    <div class="dashboard-controls">
+      <div class="date-group">
+        <label>Desde:</label>
+        <input type="date" v-model="store.desde" class="form-control date-input" />
+      </div>
+      <div class="date-group">
+        <label>Hasta:</label>
+        <input type="date" v-model="store.hasta" class="form-control date-input" />
+      </div>
+      <button class="btn btn-primary" @click="store.cargarInformes" :disabled="store.loading">
+        {{ store.loading ? 'Calculando...' : 'Generar Reporte' }}
+      </button>
+    </div>
+
+    <div v-if="store.loading" class="loading-state"><div class="spinner"></div>Procesando tiempos...</div>
+    <p v-else-if="!store.operativo" class="empty-state">Seleccione el rango de fechas y presione "Generar Reporte" para ver el panel.</p>
+
+    <div v-else>
+      <TableroOperativo />
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { onMounted } from 'vue'
+import { useInformesStore } from '../../stores/useInformesStore'
+import TableroOperativo from '../informes/TableroOperativo.vue'
+
+const store = useInformesStore()
+
+onMounted(() => {
+  if (!store.operativo) store.cargarInformes()
+})
+</script>
+
+<style scoped>
+.header-row { display: flex; align-items: center; flex-wrap: wrap; gap: 15px; margin-bottom: 15px; }
+.header-row h2 { margin: 0; margin-right: auto; }
+
+.dashboard-controls { display: flex; flex-wrap: wrap; gap: 15px; align-items: end; background: #f8fafc; padding: 15px; border-radius: var(--radius); border: 1px solid var(--border-soft); margin-bottom: 20px; }
+.date-group { display: flex; flex-direction: column; gap: 4px; }
+.date-group label { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; color: var(--muted); }
+.date-input { width: auto; }
+</style>
+</file>
+
 <file path="ivemar-frontend/src/components/mecanico/ModalFinalizarTarea.vue">
 <template>
   <div class="modal-overlay" @click.self="$emit('close')">
@@ -4152,6 +4407,70 @@ export function useApi() {
         fetchJSON,
         API_BASE
     }
+}
+</file>
+
+<file path="ivemar-frontend/src/composables/useChartConfig.js">
+export function useChartConfig() {
+  const formatCurrency = (val) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(val || 0)
+
+  const opcionesBase = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { position: 'bottom', labels: { color: '#52606d' } } },
+    scales: {
+      x: { ticks: { color: '#52606d' }, grid: { display: false } },
+      y: { ticks: { color: '#52606d' }, grid: { color: '#eef3f9' } }
+    }
+  }
+
+  const getOpcionesBarraMoneda = (apilado = false) => ({
+    ...opcionesBase,
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      ...opcionesBase.plugins,
+      tooltip: {
+        callbacks: {
+          label: (ctx) => `${ctx.dataset.label}: ${formatCurrency(ctx.parsed.y)}`,
+          footer: (tooltipItems) => {
+            let total = 0;
+            tooltipItems.forEach(item => { total += item.parsed.y; });
+            return `\nTOTAL: ${formatCurrency(total)}`;
+          }
+        }
+      }
+    },
+    scales: {
+      x: { ...opcionesBase.scales.x, stacked: apilado },
+      y: { 
+        ...opcionesBase.scales.y, 
+        stacked: apilado, 
+        ticks: { ...opcionesBase.scales.y.ticks, callback: (v) => formatCurrency(v) } 
+      }
+    }
+  })
+
+  const opcionesDoughnut = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { position: 'bottom', labels: { color: '#52606d' } } }
+  }
+
+  const opcionesDoughnutMoneda = {
+    ...opcionesDoughnut,
+    plugins: {
+      legend: { position: 'bottom', labels: { color: '#52606d' } },
+      tooltip: { callbacks: { label: (ctx) => `${ctx.label}: ${formatCurrency(ctx.parsed)}` } }
+    }
+  }
+
+  return {
+    formatCurrency,
+    opcionesBase,
+    getOpcionesBarraMoneda,
+    opcionesDoughnut,
+    opcionesDoughnutMoneda
+  }
 }
 </file>
 
@@ -4566,6 +4885,72 @@ router.beforeEach((to) => {
 })
 
 export default router
+</file>
+
+<file path="ivemar-frontend/src/stores/useInformesStore.js">
+import { defineStore } from 'pinia'
+import { ref } from 'vue'
+import { useApi } from '../composables/useApi'
+import { useToast, errMsg } from '../composables/useToast'
+
+export const useInformesStore = defineStore('informes', () => {
+  const { fetchJSON } = useApi()
+  const toast = useToast()
+
+  // Fechas por defecto: Inicio del mes actual hasta hoy
+  const today = new Date()
+  const firstDay = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0]
+  const currentDay = today.toISOString().split('T')[0]
+
+  // Estado (Variables compartidas)
+  const desde = ref(firstDay)
+  const hasta = ref(currentDay)
+  const filtroCuellos = ref('')
+
+  const financiero = ref(null)
+  const operativo = ref(null)
+  const taller = ref(null)
+  
+  const loading = ref(false)
+
+  // Acción: Cargar datos en paralelo
+  const cargarInformes = async () => {
+    let params = `?desde=${desde.value}&hasta=${hasta.value}`
+    if (filtroCuellos.value) {
+      params += `&filtro_cuellos=${filtroCuellos.value.trim().toUpperCase()}`
+    }
+
+    loading.value = true
+    try {
+      const [resFinanciero, resOperativo, resTaller] = await Promise.all([
+        fetchJSON(`/informes/mensual/financiero${params}`),
+        fetchJSON(`/informes/mensual/operativo${params}`),
+        fetchJSON(`/informes/mensual/taller${params}`)
+      ])
+      
+      financiero.value = resFinanciero
+      operativo.value = resOperativo
+      taller.value = resTaller
+    } catch (err) {
+      toast.error('Error cargando informes: ' + errMsg(err))
+    } finally {
+      loading.value = false
+    }
+  }
+
+  // Resetea los datos para forzar vaciado
+  const limpiar = () => {
+    financiero.value = null
+    operativo.value = null
+    taller.value = null
+  }
+
+  return {
+    desde, hasta, filtroCuellos,
+    financiero, operativo, taller,
+    loading, cargarInformes, limpiar
+  }
+})
 </file>
 
 <file path="ivemar-frontend/src/style.css">
@@ -5077,7 +5462,8 @@ const goTo = (routeName) => {
       <template #extra><span class="jefe-pill" @click="cambiarJefe">👤 {{ jefeLegajo }}</span></template>
     </NavBar>
 
-    <div class="card">
+    <!-- PESTAÑAS DE GESTIÓN DE OTs -->
+    <div v-if="activeTab === 'jefe-ots' || activeTab === 'jefe-ots-finalizadas'" class="card">
       <div class="header-row">
         <h2>{{ activeTab === 'jefe-ots' ? 'Gestión de OTs en Taller' : 'OTs Finalizadas' }}</h2>
         <input type="text" v-model="busqueda" placeholder="🔍 Buscar por patente, OT o cliente..." class="form-control search-input" @input="onBuscar" />
@@ -5101,6 +5487,10 @@ const goTo = (routeName) => {
       </template>
     </div>
 
+    <!-- NUEVA PESTAÑA: RENDIMIENTO OPERATIVO -->
+    <TableroRendimiento v-else-if="activeTab === 'jefe-rendimiento'" />
+
+    <!-- MODALES -->
     <ModalDetalleOT
       v-if="showModalDetalle"
       :otId="otSeleccionada"
@@ -5126,12 +5516,14 @@ import { ref, onMounted, watch } from 'vue'
 import { useApi } from '../composables/useApi'
 import { useToast, errMsg } from '../composables/useToast'
 import { usePdfGenerator } from '../composables/usePdfGenerator'
+
 import NavBar from '../components/common/NavBar.vue'
 import OTTable from '../components/common/OTTable.vue'
 import PaginationBar from '../components/common/PaginationBar.vue'
 import ModalDetalleOT from '../components/asesor/ModalDetalleOT.vue'
 import ModalEditarOT from '../components/asesor/ModalEditarOT.vue'
 import ModalAsignar from '../components/jefe/ModalAsignar.vue'
+import TableroRendimiento from '../components/jefe/TableroRendimiento.vue' // <-- Importamos el nuevo componente
 
 const { fetchJSON } = useApi()
 const toast = useToast()
@@ -5143,7 +5535,6 @@ const mecanicos = ref([])
 const busqueda = ref('')
 const loading = ref(true)
 
-// Paginación server-side (ver mismo criterio en AsesorView.vue)
 const page = ref(1)
 const totalPages = ref(1)
 const total = ref(0)
@@ -5160,7 +5551,8 @@ const jefeLegajo = ref(localStorage.getItem('legajoJefe') || '')
 
 const tabs = [
   { id: 'jefe-ots', label: 'En Taller' },
-  { id: 'jefe-ots-finalizadas', label: 'Finalizadas' }
+  { id: 'jefe-ots-finalizadas', label: 'Finalizadas' },
+  { id: 'jefe-rendimiento', label: 'Rendimiento' }
 ]
 
 const estadoParaBackend = () => activeTab.value === 'jefe-ots' ? 'activas' : 'finalizadas'
@@ -5203,10 +5595,12 @@ const onBuscar = () => {
   }, 350)
 }
 
-watch(activeTab, () => {
-  page.value = 1
-  busqueda.value = ''
-  cargarDatos()
+watch(activeTab, (newTab) => {
+  if (newTab === 'jefe-ots' || newTab === 'jefe-ots-finalizadas') {
+    page.value = 1
+    busqueda.value = ''
+    cargarDatos()
+  }
 })
 
 const abrirAsignacion = (ot) => { otSeleccionada.value = ot; actividadAEditar.value = null; showModalAsignar.value = true; }

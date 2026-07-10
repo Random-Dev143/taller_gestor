@@ -4,7 +4,8 @@
       <template #extra><span class="jefe-pill" @click="cambiarJefe">👤 {{ jefeLegajo }}</span></template>
     </NavBar>
 
-    <div class="card">
+    <!-- PESTAÑAS DE GESTIÓN DE OTs -->
+    <div v-if="activeTab === 'jefe-ots' || activeTab === 'jefe-ots-finalizadas'" class="card">
       <div class="header-row">
         <h2>{{ activeTab === 'jefe-ots' ? 'Gestión de OTs en Taller' : 'OTs Finalizadas' }}</h2>
         <input type="text" v-model="busqueda" placeholder="🔍 Buscar por patente, OT o cliente..." class="form-control search-input" @input="onBuscar" />
@@ -28,6 +29,10 @@
       </template>
     </div>
 
+    <!-- NUEVA PESTAÑA: RENDIMIENTO OPERATIVO -->
+    <TableroRendimiento v-else-if="activeTab === 'jefe-rendimiento'" />
+
+    <!-- MODALES -->
     <ModalDetalleOT
       v-if="showModalDetalle"
       :otId="otSeleccionada"
@@ -53,12 +58,14 @@ import { ref, onMounted, watch } from 'vue'
 import { useApi } from '../composables/useApi'
 import { useToast, errMsg } from '../composables/useToast'
 import { usePdfGenerator } from '../composables/usePdfGenerator'
+
 import NavBar from '../components/common/NavBar.vue'
 import OTTable from '../components/common/OTTable.vue'
 import PaginationBar from '../components/common/PaginationBar.vue'
 import ModalDetalleOT from '../components/asesor/ModalDetalleOT.vue'
 import ModalEditarOT from '../components/asesor/ModalEditarOT.vue'
 import ModalAsignar from '../components/jefe/ModalAsignar.vue'
+import TableroRendimiento from '../components/jefe/TableroRendimiento.vue' // <-- Importamos el nuevo componente
 
 const { fetchJSON } = useApi()
 const toast = useToast()
@@ -70,7 +77,6 @@ const mecanicos = ref([])
 const busqueda = ref('')
 const loading = ref(true)
 
-// Paginación server-side (ver mismo criterio en AsesorView.vue)
 const page = ref(1)
 const totalPages = ref(1)
 const total = ref(0)
@@ -87,7 +93,8 @@ const jefeLegajo = ref(localStorage.getItem('legajoJefe') || '')
 
 const tabs = [
   { id: 'jefe-ots', label: 'En Taller' },
-  { id: 'jefe-ots-finalizadas', label: 'Finalizadas' }
+  { id: 'jefe-ots-finalizadas', label: 'Finalizadas' },
+  { id: 'jefe-rendimiento', label: 'Rendimiento' }
 ]
 
 const estadoParaBackend = () => activeTab.value === 'jefe-ots' ? 'activas' : 'finalizadas'
@@ -130,10 +137,12 @@ const onBuscar = () => {
   }, 350)
 }
 
-watch(activeTab, () => {
-  page.value = 1
-  busqueda.value = ''
-  cargarDatos()
+watch(activeTab, (newTab) => {
+  if (newTab === 'jefe-ots' || newTab === 'jefe-ots-finalizadas') {
+    page.value = 1
+    busqueda.value = ''
+    cargarDatos()
+  }
 })
 
 const abrirAsignacion = (ot) => { otSeleccionada.value = ot; actividadAEditar.value = null; showModalAsignar.value = true; }
