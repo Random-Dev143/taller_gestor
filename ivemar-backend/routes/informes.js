@@ -2,18 +2,20 @@ const express = require('express');
 const router = express.Router();
 const { all, get } = require('../config/database');
 
-// --- Motor de Cálculo de Horas de Taller ---
-function calcularMinutosHabiles(startStr, endStr) {
+// --- Motor Dual de Cálculo de Horas de Taller ---
+function calcularMinutosHabiles(startStr, endStr, estado) {
     if (!startStr) return 0;
     
     let start = new Date(startStr + 'Z');
     let end = endStr ? new Date(endStr + 'Z') : new Date();
-
     if (end < start) return 0;
 
     let totalMinutos = 0;
     let actual = new Date(start);
-    let maxIterations = 1000; 
+    let maxIterations = 2000; 
+
+    // Regla: Terceros y Repuestos no frenan al mediodía (10hs lisas)
+    const modoExterno = (estado === 'Espera de Repuestos' || estado === 'Trabajos de Terceros');
 
     while (actual < end && maxIterations > 0) {
         maxIterations--;
@@ -21,25 +23,30 @@ function calcularMinutosHabiles(startStr, endStr) {
         let hora = actual.getHours();
 
         let enHorarioLaboral = false;
+        let limiteCorte = 18;
+
         if (dia >= 1 && dia <= 5) { 
-            if ((hora >= 8 && hora < 13) || (hora >= 14 && hora < 18)) enHorarioLaboral = true;
+            if (modoExterno) {
+                if (hora >= 8 && hora < 18) enHorarioLaboral = true;
+                limiteCorte = 18;
+            } else {
+                if (hora >= 8 && hora < 13) { enHorarioLaboral = true; limiteCorte = 13; }
+                else if (hora >= 14 && hora < 18) { enHorarioLaboral = true; limiteCorte = 18; }
+            }
         } else if (dia === 6) { 
-            if (hora >= 8 && hora < 13) enHorarioLaboral = true;
+            if (hora >= 8 && hora < 13) { enHorarioLaboral = true; limiteCorte = 13; }
         }
 
         if (enHorarioLaboral) {
-            let limiteCorte = (hora < 13) ? 13 : 18;
             let finBloque = new Date(actual);
             finBloque.setHours(limiteCorte, 0, 0, 0);
-
             let corte = (end < finBloque) ? end : finBloque;
             totalMinutos += (corte - actual) / 60000;
-            
             actual = new Date(corte);
         } else {
             if (hora < 8) {
                 actual.setHours(8, 0, 0, 0);
-            } else if (dia >= 1 && dia <= 5 && hora >= 13 && hora < 14) {
+            } else if (!modoExterno && dia >= 1 && dia <= 5 && hora >= 13 && hora < 14) {
                 actual.setHours(14, 0, 0, 0);
             } else {
                 actual.setDate(actual.getDate() + 1);
@@ -69,6 +76,7 @@ router.get('/mensual', async (req, res) => {
     const finAnterior = inicio;
 
     try {
+        // Resumen General se sigue calculando por aperturas para mantener coherencia financiera de ingreso
         const queryResumen = `
             SELECT COUNT(*) AS total_ot, 
                    SUM(CASE WHEN es_garantia = 1 THEN 1 ELSE 0 END) AS total_garantia, 
@@ -93,12 +101,12 @@ router.get('/mensual', async (req, res) => {
                    SUM(monto_repuestos + monto_repuestos_garantia) as repuestos, 
                    SUM(monto_mano_obra + monto_mano_obra_garantia) as mano_obra 
             FROM ordenes 
-            WHERE estado_actual = 'Finalizada' AND fecha_cierre IS NOT NULL AND fecha_apertura >= ? AND fecha_apertura < ?
+            WHERE estado_actual = 'Finalizada' AND fecha_cierre IS NOT NULL AND fecha_cierre >= ? AND fecha_cierre < ?
             GROUP BY DATE(fecha_cierre)
             ORDER BY fecha ASC
         `, [inicio, fin]);
 
-        // FIX: Proporción matemática de facturación según horas asignadas a la tarea vs horas totales de la OT.
+        // FILTRO SOLUCIONADO: Tiempos mecánicos de tareas trabajadas este mes, sin importar cuándo nació la OT
         const tiempos_mecanicos = await all(`
             SELECT 
                 a.legajo_mecanico AS legajo, 
@@ -110,17 +118,22 @@ router.get('/mensual', async (req, res) => {
                 ROUND(SUM(
                     (a.tiempo_estimado / (SELECT NULLIF(SUM(tiempo_estimado), 0) FROM actividades WHERE ot = o.ot)) 
                     * (o.monto_mano_obra + o.monto_mano_obra_garantia)
-                ), 2) AS facturacion_generada
+                ), 2) AS facturacion_generada,
+                ROUND(SUM(
+                    (a.tiempo_estimado - a.tiempo_real) * ((o.monto_mano_obra + o.monto_mano_obra_garantia) / (SELECT NULLIF(SUM(tiempo_estimado), 0) FROM actividades WHERE ot = o.ot))
+                ), 2) AS rentabilidad_eficiencia
             FROM actividades a 
             JOIN legajos l ON a.legajo_mecanico = l.legajo 
             JOIN ordenes o ON a.ot = o.ot 
-            WHERE o.fecha_apertura >= ? AND o.fecha_apertura < ? AND a.estado = 'Finalizada' 
+            WHERE a.estado = 'Finalizada'
+              AND EXISTS (SELECT 1 FROM tiempos_actividad ta WHERE ta.actividad_id = a.id AND ta.inicio >= ? AND ta.inicio < ?)
             GROUP BY a.legajo_mecanico 
             ORDER BY facturacion_generada DESC
         `, [inicio, fin]);
 
+        // FILTRO SOLUCIONADO: Cuellos de botella de OTs activas este mes
         let filtroPerm = "AND eh.estado != 'Finalizada'";
-        const paramsPerm = [inicio, fin];
+        const paramsPerm = [fin, inicio];
         if (req.query.filtro_cuellos) {
             filtroPerm += " AND (o.ot = ? OR o.patente = ?)";
             paramsPerm.push(req.query.filtro_cuellos, req.query.filtro_cuellos);
@@ -130,12 +143,13 @@ router.get('/mensual', async (req, res) => {
             SELECT eh.estado, eh.ot, eh.ts_desde, eh.ts_hasta
             FROM estados_historial eh
             JOIN ordenes o ON eh.ot = o.ot
-            WHERE o.fecha_apertura >= ? AND o.fecha_apertura < ? ${filtroPerm}
+            WHERE eh.ts_desde < ? AND (eh.ts_hasta IS NULL OR eh.ts_hasta >= ?) ${filtroPerm}
         `, paramsPerm);
 
         const cuellosMap = {};
         for (const row of historialRows) {
-            const minHabiles = calcularMinutosHabiles(row.ts_desde, row.ts_hasta);
+            // Pasamos el estado para usar el "Modo Externo" de 10hs si aplica
+            const minHabiles = calcularMinutosHabiles(row.ts_desde, row.ts_hasta, row.estado);
             if (!cuellosMap[row.estado]) {
                 cuellosMap[row.estado] = { estado: row.estado, ots: new Set(), totalMin: 0 };
             }
@@ -181,7 +195,7 @@ router.get('/mensual', async (req, res) => {
         
         const cierres_por_dia = await all(`
             SELECT DATE(fecha_cierre) AS fecha, COUNT(*) AS cantidad
-            FROM ordenes WHERE fecha_cierre IS NOT NULL AND fecha_apertura >= ? AND fecha_apertura < ?
+            FROM ordenes WHERE fecha_cierre IS NOT NULL AND fecha_cierre >= ? AND fecha_cierre < ?
             GROUP BY DATE(fecha_cierre) ORDER BY fecha ASC
         `, [inicio, fin]);
 
@@ -189,7 +203,7 @@ router.get('/mensual', async (req, res) => {
             SELECT ROUND(AVG(JULIANDAY(fecha_cierre) - JULIANDAY(fecha_apertura)), 2) AS dias_promedio
             FROM ordenes
             WHERE estado_actual = 'Finalizada' AND fecha_cierre IS NOT NULL
-              AND fecha_apertura >= ? AND fecha_apertura < ?
+              AND fecha_cierre >= ? AND fecha_cierre < ?
         `, [inicio, fin]);
 
         res.json({

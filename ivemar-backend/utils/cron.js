@@ -1,12 +1,12 @@
 const fs = require('fs');
 const path = require('path');
-const { all, get, run, recalcularTiempoEmpleado, DB_PATH } = require('../config/database');
+const { all, get, run, recalcularTiempoEmpleado, sincronizarEstadoOT, DB_PATH } = require('../config/database');
 
 const BACKUPS_DIR = path.join(__dirname, '..', 'backups');
 const MAX_BACKUPS = 14;
 
 let ultimaAccionAutomatica = null;
-let cronEjecutando = false; // <-- Bloqueo para evitar superposición
+let cronEjecutando = false; 
 
 async function procesarPausaAutomatica(esAlmuerzo) {
     console.log(`[SISTEMA] Ejecutando corte automático. ¿Es almuerzo?: ${esAlmuerzo}`);
@@ -31,6 +31,9 @@ async function procesarPausaAutomatica(esAlmuerzo) {
                     [horas, esAlmuerzo ? 1 : 0, act.id]
                 );
                 await recalcularTiempoEmpleado(act.ot);
+                
+                // Aplicamos sincronización (esta función respetará los estados externos si los hay)
+                await sincronizarEstadoOT(act.ot);
             }
         }
     } catch (error) {
@@ -38,7 +41,6 @@ async function procesarPausaAutomatica(esAlmuerzo) {
     }
 }
 
-// Backup nativo de SQLite: VACUUM INTO
 async function hacerBackupDB() {
     console.log('[SISTEMA] Ejecutando backup automático seguro...');
     try {
@@ -48,7 +50,6 @@ async function hacerBackupDB() {
         const stamp = ahora.toISOString().replace(/[:.]/g, '-');
         const destino = path.join(BACKUPS_DIR, `taller_${stamp}.db`);
 
-        // VACUUM INTO clona la base de datos de manera atómica sin requerir parar el servidor
         await run(`VACUUM INTO '${destino}'`);
         console.log(`[SISTEMA] Backup creado: ${destino}`);
 
@@ -69,10 +70,12 @@ async function hacerBackupDB() {
 async function procesarReanudacionAutomatica() {
     console.log(`[SISTEMA] Ejecutando reanudación automática post-almuerzo.`);
     try {
-        const paraReanudar = await all(`SELECT id FROM actividades WHERE estado = 'Pausada' AND auto_pausa = 1`);
+        const paraReanudar = await all(`SELECT id, ot FROM actividades WHERE estado = 'Pausada' AND auto_pausa = 1`);
         for (const act of paraReanudar) {
             await run(`UPDATE actividades SET estado = 'En Curso', auto_pausa = 0 WHERE id = ?`, [act.id]);
             await run(`INSERT INTO tiempos_actividad (actividad_id, inicio) VALUES (?, CURRENT_TIMESTAMP)`, [act.id]);
+            // Levantar OT si estaba pausada a En Proceso de vuelta
+            await sincronizarEstadoOT(act.ot);
         }
     } catch (error) {
         console.error('[SISTEMA] Error en reanudación automática:', error.message);
@@ -83,7 +86,6 @@ function iniciarCron() {
     console.log('⏱️ Cron job de automatización iniciado.');
     
     setInterval(async () => {
-        // Bloqueo para evitar que una ejecución pise a la siguiente
         if (cronEjecutando) return; 
         
         cronEjecutando = true;

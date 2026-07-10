@@ -18,6 +18,7 @@
               <span class="patente">{{ ot.patente }}</span>
             </div>
             <div class="unidad-name">{{ truncate(ot.unidad, 20) }}</div>
+            <div class="cliente-name">{{ ot.cliente }}</div>
 
             <div class="card-mid">
               <div class="mecanico">Mecánico: <strong>{{ ot.mecanico || 'Pendiente' }}</strong></div>
@@ -51,20 +52,6 @@ let fetchInterval = null
 let carouselInterval = null
 let resizeObserver = null
 
-// ─── Grilla 100% proporcional (sin píxeles fijos) ─────────────────────────
-// Antes las tarjetas tenían un tamaño fijo en px (320x220). Eso se ve
-// perfecto SOLO si la pantalla conectada por HDMI tiene, casualmente, una
-// resolución cercana a la que se usó para diseñar. En cuanto se conecta un
-// monitor de 15" y una TV de 32" con resoluciones distintas (lo más común:
-// una en 1366x768/1080p y la otra en 1080p/4K), el mismo cartel de "320px"
-// ocupa una fracción de pantalla totalmente distinta en cada una: gigante
-// con huecos vacíos en una, apretado en la otra. El navegador no tiene
-// forma de saber el tamaño FÍSICO del panel (no existe esa información vía
-// HDMI/CSS), así que la única solución robusta es no asumir nunca un
-// tamaño absoluto: la grilla siempre se arma en fracciones (fr) del
-// contenedor, y el texto escala con el tamaño de cada tarjeta (container
-// query units), no con píxeles fijos. Así se ve bien en cualquier
-// resolución sin necesidad de detectar el hardware.
 const itemsPerPage = computed(() => cols.value * rows.value)
 
 const gridStyle = computed(() => ({
@@ -79,11 +66,6 @@ const paginatedOts = computed(() => {
   return ots.value.slice(start, start + itemsPerPage.value)
 })
 
-// Encuentra la combinación de columnas x filas que mejor aprovecha el
-// espacio disponible para la cantidad de OTs a mostrar, buscando que cada
-// tarjeta quede con una relación de aspecto legible (ni un cuadrado
-// achatado ni una tira demasiado alargada), en vez de asumir un tamaño de
-// tarjeta fijo de antemano.
 const MAX_COLS = 5
 const MAX_ROWS = 4
 
@@ -102,7 +84,6 @@ const calcularGrilla = () => {
     const cardW = w / c
     const cardH = h / r
     const aspecto = cardW / cardH
-    // Preferimos tarjetas con relación ancho/alto entre 1.1 y 2.0
     const penalizacionAspecto = aspecto < 1.1 ? (1.1 - aspecto) : aspecto > 2.0 ? (aspecto - 2.0) : 0
     const espacioSobrante = (c * r) - tope
     const score = penalizacionAspecto * 5 + espacioSobrante * 0.5
@@ -145,8 +126,6 @@ const cargarSala = async () => {
     })
 
     ultimaActualizacion.value = new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
-    // La cantidad de OTs cambió: puede convenir una distribución de
-    // columnas/filas distinta para aprovechar mejor el espacio.
     calcularGrilla()
     iniciarCarrusel()
   } catch (error) { console.error('Error cargando sala:', error) }
@@ -162,7 +141,6 @@ const colorEstado = (estado) => ({
   'Finalizada': 'border-done'
 }[estado] || 'border-wait')
 
-// (Se mantiene tu función intacta de cálculo de fechas hábiles)
 const calcularFechaFinHabil = (horasRestantes) => {
   if (horasRestantes <= 0) return 'Próximo a finalizar'
   let fecha = new Date()
@@ -239,11 +217,6 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-/* Todas las medidas de esta vista están en unidades relativas al viewport
-   (vw/vh) o al contenedor (cqw/cqh vía container queries), nunca en px
-   fijos: así se adapta a cualquier resolución que reporte la pantalla
-   conectada por HDMI, sea un monitor de 15" o una TV de 32". */
-
 .view-sala {
   display: flex; flex-direction: column;
   padding: 1.5vh 1.5vw; background: #121212; height: 100vh; margin: -20px; color: #fff; overflow: hidden;
@@ -265,8 +238,6 @@ onUnmounted(() => {
   flex: 1;
   overflow: hidden;
   position: relative;
-  /* Habilita cqw/cqh: el tamaño de fuente de cada tarjeta puede referirse
-     al tamaño del propio contenedor en vez de a px fijos. */
   container-type: size;
   container-name: sala-wrapper;
 }
@@ -284,9 +255,6 @@ onUnmounted(() => {
   box-shadow: 0 4px 15px rgba(0,0,0,0.3);
   box-sizing: border-box;
   min-width: 0; min-height: 0; overflow: hidden;
-  /* Cada tarjeta es a su vez un contenedor de tamaño: así el texto de
-     adentro escala según el tamaño REAL de la tarjeta (que cambia según
-     cuántas columnas/filas entren), no según el viewport completo. */
   container-type: inline-size;
   container-name: card-sala;
 }
@@ -305,6 +273,8 @@ onUnmounted(() => {
 .patente { background: white; color: black; padding: 0.3vh 0.8vw; border-radius: 4px; font-family: monospace; font-weight: bold; font-size: clamp(0.75rem, 3vw, 1.2rem); }
 .unidad-name { font-weight: bold; margin-top: 0.5vh; font-size: clamp(0.85rem, 3.6vw, 1.5rem); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+.cliente-name { color: #9e9e9e; font-weight: 500; margin-top: 0.2vh; font-size: clamp(0.8rem, 3.2vw, 1.3rem); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-transform: uppercase; }
+
 .card-mid { background: #2a2a2a; padding: 1vh 1vw; border-radius: 8px; margin: auto 0; }
 .mecanico { margin-bottom: 0.5vh; color: #ccc; font-size: clamp(0.7rem, 2.6vw, 1.05rem); }
 .estado-text { font-weight: bold; letter-spacing: 0.5px; font-size: clamp(0.75rem, 2.8vw, 1.15rem); }
@@ -313,20 +283,11 @@ onUnmounted(() => {
 .eta-label { color: #888; text-transform: uppercase; font-size: clamp(0.6rem, 2vw, 0.85rem); }
 .eta-value { font-weight: bold; color: #a4c2f4; font-size: clamp(0.85rem, 3.4vw, 1.35rem); }
 
-/* En navegadores que soportan container query units (Chrome 105+, Firefox
-   110+, Safari 16+ — cualquier smart TV/mini PC moderna conectada por HDMI
-   los soporta), estas reglas pisan las de arriba usando cqw: el tamaño de
-   fuente pasa a depender del ancho REAL de cada tarjeta en vez del
-   viewport completo, que es más preciso todavía cuando cambia la cantidad
-   de columnas. Si el navegador no reconoce "cqw" como unidad válida,
-   ignora la declaración entera y se queda con el valor en vw de arriba:
-   degradación segura, no hace falta detectar el navegador a mano.
-   Container query es un tipo de unidad con inline-size:
-   se declara sobre .card-sala arriba (container-type: inline-size). */
 @container card-sala (min-width: 1px) {
   .ot-number { font-size: clamp(0.8rem, 9cqw, 1.4rem); }
   .patente { font-size: clamp(0.75rem, 8.5cqw, 1.25rem); }
   .unidad-name { font-size: clamp(0.85rem, 10cqw, 1.6rem); }
+  .cliente-name { font-size: clamp(0.8rem, 9cqw, 1.4rem); }
   .mecanico { font-size: clamp(0.7rem, 7cqw, 1.1rem); }
   .estado-text { font-size: clamp(0.75rem, 7.5cqw, 1.2rem); }
   .eta-label { font-size: clamp(0.6rem, 5.5cqw, 0.9rem); }
