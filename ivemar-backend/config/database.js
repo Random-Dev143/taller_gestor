@@ -173,9 +173,13 @@ async function sincronizarEstadoOT(ot) {
     const enCurso = acts.filter(a => a.estado === 'En Curso').length;
     const finalizadas = acts.filter(a => a.estado === 'Finalizada').length;
 
-    if (enCurso > 0) estadoCalculado = 'En Proceso';
-    else if (acts.length > 0 && finalizadas === acts.length) estadoCalculado = 'En Espera';
-    else if (estadoCalculado === 'En Proceso') estadoCalculado = 'En Espera';
+    if (enCurso > 0) {
+        estadoCalculado = 'En Proceso';
+    } else if (acts.length > 0 && finalizadas === acts.length) {
+        estadoCalculado = 'En Espera';
+    } else {
+        if (estadoCalculado === 'En Proceso') estadoCalculado = 'En Espera';
+    }
 
     if (estadoCalculado !== orden.estado_actual) await cambiarEstado(ot, estadoCalculado);
 }
