@@ -16,26 +16,36 @@ router.post('/orden/:ot', async (req, res) => {
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-router.put('/:id', async (req, res) => {
-    const { legajo_mecanico, descripcion, tiempo_estimado, tiempo_real, fecha_inicio, fecha_fin } = req.body;
+// ivemar-backend/routes/actividades.js
+router.put('/tiempos/:id', async (req, res) => {
+    const { inicio, fin } = req.body;
     try {
         await withTransaction(async () => {
-            const act = await get(`SELECT ot FROM actividades WHERE id = ?`, [req.params.id]);
-            if (!act) throw new Error('Actividad no encontrada');
+            const tiempo = await get(`SELECT actividad_id FROM tiempos_actividad WHERE id = ?`, [req.params.id]);
+            if (!tiempo) throw new Error('Registro de tiempo no encontrado');
 
-            await run(`
-                UPDATE actividades 
-                SET legajo_mecanico = ?, descripcion = ?, tiempo_estimado = ?, 
-                    tiempo_real = COALESCE(?, tiempo_real),
-                    fecha_inicio = COALESCE(?, fecha_inicio),
-                    fecha_fin = COALESCE(?, fecha_fin)
-                WHERE id = ?`, 
-                [legajo_mecanico, descripcion, tiempo_estimado, tiempo_real, fecha_inicio, fecha_fin, req.params.id]
-            );
+            // 1. Actualizar el registro modificado por el Jefe
+            await run(`UPDATE tiempos_actividad SET inicio = ?, fin = ? WHERE id = ?`, [inicio, fin, req.params.id]);
             
-            if (tiempo_real !== undefined) await recalcularTiempoEmpleado(act.ot);
+            // 2. Recalcular la sumatoria exacta de todas las sesiones de esta actividad
+            const sesiones = await all(`SELECT inicio, fin FROM tiempos_actividad WHERE actividad_id = ? AND fin IS NOT NULL`, [tiempo.actividad_id]);
+            let totalHorasReal = 0;
+            for (const s of sesiones) {
+                const start = new Date(s.inicio + 'Z');
+                const end = new Date(s.fin + 'Z');
+                if (end > start) {
+                    totalHorasReal += (end - start) / 3600000; // Convertir ms a horas
+                }
+            }
+            
+            // 3. Impactar el nuevo valor en la tabla de actividades
+            await run(`UPDATE actividades SET tiempo_real = ? WHERE id = ?`, [totalHorasReal, tiempo.actividad_id]);
+
+            // 4. Recalcular el tiempo general de la OT
+            const actividad = await get(`SELECT ot FROM actividades WHERE id = ?`, [tiempo.actividad_id]);
+            if (actividad) await recalcularTiempoEmpleado(actividad.ot);
         });
-        res.json({ status: 'Actividad actualizada' });
+        res.json({ status: 'Tiempo actualizado y recalculado correctamente' });
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 

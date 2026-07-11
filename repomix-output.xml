@@ -439,26 +439,36 @@ router.post('/orden/:ot', async (req, res) => {
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-router.put('/:id', async (req, res) => {
-    const { legajo_mecanico, descripcion, tiempo_estimado, tiempo_real, fecha_inicio, fecha_fin } = req.body;
+// ivemar-backend/routes/actividades.js
+router.put('/tiempos/:id', async (req, res) => {
+    const { inicio, fin } = req.body;
     try {
         await withTransaction(async () => {
-            const act = await get(`SELECT ot FROM actividades WHERE id = ?`, [req.params.id]);
-            if (!act) throw new Error('Actividad no encontrada');
+            const tiempo = await get(`SELECT actividad_id FROM tiempos_actividad WHERE id = ?`, [req.params.id]);
+            if (!tiempo) throw new Error('Registro de tiempo no encontrado');
 
-            await run(`
-                UPDATE actividades 
-                SET legajo_mecanico = ?, descripcion = ?, tiempo_estimado = ?, 
-                    tiempo_real = COALESCE(?, tiempo_real),
-                    fecha_inicio = COALESCE(?, fecha_inicio),
-                    fecha_fin = COALESCE(?, fecha_fin)
-                WHERE id = ?`, 
-                [legajo_mecanico, descripcion, tiempo_estimado, tiempo_real, fecha_inicio, fecha_fin, req.params.id]
-            );
+            // 1. Actualizar el registro modificado por el Jefe
+            await run(`UPDATE tiempos_actividad SET inicio = ?, fin = ? WHERE id = ?`, [inicio, fin, req.params.id]);
             
-            if (tiempo_real !== undefined) await recalcularTiempoEmpleado(act.ot);
+            // 2. Recalcular la sumatoria exacta de todas las sesiones de esta actividad
+            const sesiones = await all(`SELECT inicio, fin FROM tiempos_actividad WHERE actividad_id = ? AND fin IS NOT NULL`, [tiempo.actividad_id]);
+            let totalHorasReal = 0;
+            for (const s of sesiones) {
+                const start = new Date(s.inicio + 'Z');
+                const end = new Date(s.fin + 'Z');
+                if (end > start) {
+                    totalHorasReal += (end - start) / 3600000; // Convertir ms a horas
+                }
+            }
+            
+            // 3. Impactar el nuevo valor en la tabla de actividades
+            await run(`UPDATE actividades SET tiempo_real = ? WHERE id = ?`, [totalHorasReal, tiempo.actividad_id]);
+
+            // 4. Recalcular el tiempo general de la OT
+            const actividad = await get(`SELECT ot FROM actividades WHERE id = ?`, [tiempo.actividad_id]);
+            if (actividad) await recalcularTiempoEmpleado(actividad.ot);
         });
-        res.json({ status: 'Actividad actualizada' });
+        res.json({ status: 'Tiempo actualizado y recalculado correctamente' });
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
@@ -542,6 +552,52 @@ router.get('/mecanico/:legajo', async (req, res) => {
             WHERE a.legajo_mecanico = ? AND a.estado != 'Finalizada'
         `, [req.params.legajo]);
         res.json(actividades);
+    } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+router.post('/:id/tiempos', async (req, res) => {
+    const { inicio, fin } = req.body;
+    if (!inicio) return res.status(400).json({ error: 'El inicio es obligatorio' });
+    try {
+        await withTransaction(async () => {
+            const actividad = await get(`SELECT ot FROM actividades WHERE id = ?`, [req.params.id]);
+            if (!actividad) throw new Error('Actividad no encontrada');
+
+            await run(`INSERT INTO tiempos_actividad (actividad_id, inicio, fin) VALUES (?, ?, ?)`, [req.params.id, inicio, fin || null]);
+            await recalcularTiempoEmpleado(actividad.ot);
+        });
+        res.json({ status: 'Tiempo agregado' });
+    } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+router.delete('/tiempos/:id', async (req, res) => {
+    try {
+        await withTransaction(async () => {
+            const tiempo = await get(`SELECT actividad_id FROM tiempos_actividad WHERE id = ?`, [req.params.id]);
+            if (!tiempo) throw new Error('Registro de tiempo no encontrado');
+            
+            const actividad = await get(`SELECT ot FROM actividades WHERE id = ?`, [tiempo.actividad_id]);
+            await run(`DELETE FROM tiempos_actividad WHERE id = ?`, [req.params.id]);
+            
+            if (actividad) await recalcularTiempoEmpleado(actividad.ot);
+        });
+        res.json({ status: 'Tiempo eliminado' });
+    } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+router.put('/tiempos/:id', async (req, res) => {
+    const { inicio, fin } = req.body;
+    try {
+        await withTransaction(async () => {
+            const tiempo = await get(`SELECT actividad_id FROM tiempos_actividad WHERE id = ?`, [req.params.id]);
+            if (!tiempo) throw new Error('Registro de tiempo no encontrado');
+
+            await run(`UPDATE tiempos_actividad SET inicio = ?, fin = ? WHERE id = ?`, [inicio, fin, req.params.id]);
+            
+            const actividad = await get(`SELECT ot FROM actividades WHERE id = ?`, [tiempo.actividad_id]);
+            if (actividad) await recalcularTiempoEmpleado(actividad.ot);
+        });
+        res.json({ status: 'Tiempo actualizado' });
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
@@ -809,8 +865,9 @@ router.get('/:ot', async (req, res) => {
         const explicacion = await get(`SELECT * FROM explicaciones WHERE ot = ?`, [req.params.ot]);
         const aportes = await all(`SELECT ap.*, l.nombre, l.firma_path FROM aportes ap JOIN legajos l ON ap.legajo = l.legajo WHERE ap.ot = ?`, [req.params.ot]);
         const historial = await all(`SELECT * FROM estados_historial WHERE ot = ? ORDER BY id`, [req.params.ot]);
+        const tiempos_actividad = await all(`SELECT ta.* FROM tiempos_actividad ta JOIN actividades a ON ta.actividad_id = a.id WHERE a.ot = ?`, [req.params.ot]);
 
-        res.json({ ...ot, asignaciones, actividades, explicacion, aportes, historial });
+        res.json({ ...ot, asignaciones, actividades, explicacion, aportes, historial, tiempos_actividad });
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
@@ -915,6 +972,25 @@ router.get('/:ot/explicacion', async (req, res) => {
         let jefe = orden.jefe_legajo ? await get(`SELECT legajo, nombre, firma_path FROM legajos WHERE legajo = ?`, [orden.jefe_legajo]) : null;
         res.json({ orden, explicacion, aportes, jefe, controlada: !!orden.controlada });
     } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+router.put('/aportes/:id', async (req, res) => {
+    const { actividades, horas } = req.body;
+    try {
+        await withTransaction(async () => {
+            const aporte = await get(`SELECT ot FROM aportes WHERE id = ?`, [req.params.id]);
+            if (!aporte) throw new Error('Aporte no encontrado');
+
+            await run(`UPDATE aportes SET actividades = ?, horas = ? WHERE id = ?`, 
+                [actividades, horas, req.params.id]);
+            
+            await recalcularTiempoEmpleado(aporte.ot);
+        });
+        res.json({ status: 'Aporte corregido exitosamente' });
+    } catch (error) { 
+        console.error('Error editando aporte:', error);
+        res.status(500).json({ error: error.message }); 
+    }
 });
 
 module.exports = router;
@@ -1140,13 +1216,75 @@ async function getFinanciero(inicio, fin, inicioAnterior, finAnterior) {
     return { resumen, resumen_anterior, facturacion_diaria, facturacion_por_marca, rentabilidad_unidad, top_clientes };
 }
 
+// ivemar-backend/services/informes.service.js (Reemplaza getOperativo y añade el helper)
+
+// Función matemática para escanear huecos de inactividad
+function construirMapaOcio(diasHabiles, sesiones, excepciones) {
+    const heatmap = {}; 
+    for (let d = 1; d <= 6; d++) {
+        heatmap[d] = {};
+        const hs = d === 6 ? [8,9,10,11,12] : [8,9,10,11,12,14,15,16,17];
+        for (let h of hs) heatmap[d][h] = 0;
+    }
+
+    // Si el jefe descontó 8hs o más, consideramos que fue un día de ausencia justificada completa
+    const diasConExcepcionTotal = new Set(excepciones.filter(e => e.horas_descontadas >= 8).map(e => e.fecha));
+    const bucketCapacity = {}; 
+
+    // 1. Llenar los "baldes" de horas hábiles disponibles (60 min por hora)
+    for (const fecha of diasHabiles) {
+        if (diasConExcepcionTotal.has(fecha)) continue; 
+        const dateObj = new Date(fecha + 'T12:00:00Z');
+        const dSemana = dateObj.getDay();
+        const hs = dSemana === 6 ? [8,9,10,11,12] : [8,9,10,11,12,14,15,16,17];
+        for (let h of hs) {
+            const key = `${fecha}-${h}`;
+            bucketCapacity[key] = 60;
+            heatmap[dSemana][h] += 60; // Añadir 60 min de "Ocio Potencial"
+        }
+    }
+
+    // 2. Restar los minutos exactos trabajados en cada balde
+    for (const s of sesiones) {
+        let start = new Date(s.inicio + 'Z');
+        let end = s.fin ? new Date(s.fin + 'Z') : new Date();
+        
+        let curr = new Date(start);
+        while (curr < end) {
+            const fecha = curr.toISOString().split('T')[0];
+            const h = curr.getHours();
+            const dSemana = curr.getDay();
+            
+            const nextHour = new Date(curr);
+            nextHour.setHours(h + 1, 0, 0, 0);
+            const chunkEnd = nextHour < end ? nextHour : end;
+            const mins = (chunkEnd - curr) / 60000;
+
+            const key = `${fecha}-${h}`;
+            if (bucketCapacity[key] && heatmap[dSemana] && heatmap[dSemana][h] !== undefined) {
+                heatmap[dSemana][h] -= mins;
+                if (heatmap[dSemana][h] < 0) heatmap[dSemana][h] = 0;
+            }
+            curr = chunkEnd;
+        }
+    }
+
+    // 3. Formatear para el Frontend
+    const result = [];
+    for (let d = 1; d <= 6; d++) {
+        const hs = d === 6 ? [8,9,10,11,12] : [8,9,10,11,12,14,15,16,17];
+        for (let h of hs) {
+            result.push({ dia: d, hora: h, minutos_ocio: Math.round(heatmap[d][h]) });
+        }
+    }
+    return result;
+}
+
 async function getOperativo(inicio, fin) {
     const feriadosSet = await getFeriadosSet();
     const rangeStart = new Date(inicio + 'T00:00:00Z');
     const rangeEnd = new Date(fin + 'T00:00:00Z');
 
-    // Días hábiles ya transcurridos dentro del rango (lunes a sábado, sin feriados).
-    // Sirven de base para detectar en qué días puntuales un mecánico no se logueó.
     const diasHabilesPeriodo = [];
     {
         const limite = new Date(Math.min(rangeEnd.getTime(), Date.now()));
@@ -1157,31 +1295,21 @@ async function getOperativo(inicio, fin) {
         }
     }
 
-    // Arrancamos con TODOS los mecánicos activos (no solo los que tuvieron actividad),
-    // para que quien no se logueó ningún día del período también aparezca en el informe.
-    const mecanicosActivos = await all(`SELECT legajo, nombre FROM legajos WHERE rol = 'mecanico'`);
+   const mecanicosActivos = await all(`SELECT legajo, nombre FROM legajos WHERE rol IN ('mecanico', 'jefe')`);
     const porLegajo = {};
     for (const mec of mecanicosActivos) {
         porLegajo[mec.legajo] = {
             legajo: mec.legajo, nombre: mec.nombre, ot_set: new Set(),
             hs_estimadas: 0, hs_productivas: 0, hs_internas: 0,
-            facturacion_generada: 0, rentabilidad_eficiencia: 0
+            facturacion_generada: 0, rentabilidad_eficiencia: 0, sesiones: []
         };
     }
 
-    // Sesiones de trabajo (tiempos_actividad) que se solapan con el rango.
-    // Ya NO exigimos que la actividad esté Finalizada: si el mecánico trabajó varios días
-    // sobre una tarea que sigue en curso, esas horas deben contar igual como trabajo real.
-    // Solo la atribución de facturación (dinero) sigue esperando el cierre de la actividad,
-    // porque repartir el monto de mano de obra de una tarea aún no finalizada es especulativo.
-    // Además prorrateamos cada sesión a las horas reales caídas dentro del rango, en vez de
-    // sumar la actividad completa (evita que una tarea que cruza fin de mes duplique o fugue horas).
     const sesiones = await all(`
         SELECT
             a.legajo_mecanico AS legajo, l.nombre, a.estado,
             a.id AS actividad_id, a.ot, a.tiempo_estimado, a.tiempo_real AS tiempo_real_total,
-            ta.inicio, ta.fin,
-            c.nombre AS cliente_nombre,
+            ta.inicio, ta.fin, c.nombre AS cliente_nombre,
             (o.monto_mano_obra + o.monto_mano_obra_garantia) AS monto_mano_obra_total,
             (SELECT SUM(tiempo_estimado) FROM actividades WHERE ot = a.ot AND estado = 'Finalizada') AS denom_estimado
         FROM tiempos_actividad ta
@@ -1191,95 +1319,60 @@ async function getOperativo(inicio, fin) {
         JOIN unidades u ON o.patente = u.patente
         JOIN clientes c ON u.cliente_id = c.id
         WHERE ta.inicio < ? AND (ta.fin IS NULL OR ta.fin > ?)
-          -- Descarta sesiones "abiertas" huérfanas (fin NULL que no sea la última del legajo
-          -- ni de una actividad realmente En Curso): un bug de doble-inicio puede dejar filas
-          -- sin cerrar para siempre, y contarlas como "trabajando hasta ahora" infla las horas.
-          AND (ta.fin IS NOT NULL OR (
-                a.estado = 'En Curso'
-                AND ta.id = (SELECT MAX(id) FROM tiempos_actividad WHERE actividad_id = a.id)
-          ))
+          AND (ta.fin IS NOT NULL OR (a.estado = 'En Curso' AND ta.id = (SELECT MAX(id) FROM tiempos_actividad WHERE actividad_id = a.id)))
     `, [fin, inicio]);
 
     for (const s of sesiones) {
         const inicioSesion = new Date(s.inicio + 'Z');
         const finSesion = s.fin ? new Date(s.fin + 'Z') : new Date();
-        const start = inicioSesion < rangeStart ? rangeStart : inicioSesion;
-        const end = finSesion > rangeEnd ? rangeEnd : finSesion;
+        const start = Math.max(inicioSesion, rangeStart);
+        const end = Math.min(finSesion, rangeEnd);
         const horasPeriodo = Math.max(0, (end - start) / 3600000);
+        
         if (horasPeriodo <= 0) continue;
-
-        if (!porLegajo[s.legajo]) {
-            porLegajo[s.legajo] = {
-                legajo: s.legajo, nombre: s.nombre, ot_set: new Set(),
-                hs_estimadas: 0, hs_productivas: 0, hs_internas: 0,
-                facturacion_generada: 0, rentabilidad_eficiencia: 0
-            };
-        }
-        const m = porLegajo[s.legajo];
-
-        if (s.cliente_nombre === 'IVEMAR') {
-            m.hs_internas += horasPeriodo;
-            continue;
-        }
-
-        m.ot_set.add(s.ot);
-        m.hs_productivas += horasPeriodo;
-
-        // Fracción del trabajo real total de la actividad que cayó en este período,
-        // usada para prorratear (sin duplicar) el peso estimado y su facturación asociada.
-        const fraccion = s.tiempo_real_total > 0 ? Math.min(1, horasPeriodo / s.tiempo_real_total) : 0;
-        m.hs_estimadas += s.tiempo_estimado * fraccion;
-
-        if (s.estado === 'Finalizada') {
-            const denom = s.denom_estimado || 0;
-            if (denom > 0) {
-                const tasaPorHoraEstimada = s.monto_mano_obra_total / denom;
-                m.facturacion_generada += s.tiempo_estimado * tasaPorHoraEstimada * fraccion;
-                m.rentabilidad_eficiencia += (s.tiempo_estimado - s.tiempo_real_total) * tasaPorHoraEstimada * fraccion;
+        
+        if (porLegajo[s.legajo]) {
+            porLegajo[s.legajo].sesiones.push(s);
+            const m = porLegajo[s.legajo];
+            
+            if (s.cliente_nombre === 'IVEMAR') {
+                m.hs_internas += horasPeriodo;
+            } else {
+                m.ot_set.add(s.ot);
+                m.hs_productivas += horasPeriodo;
+                const fraccion = s.tiempo_real_total > 0 ? Math.min(1, horasPeriodo / s.tiempo_real_total) : 0;
+                m.hs_estimadas += s.tiempo_estimado * fraccion;
+                
+                if (s.estado === 'Finalizada' && s.denom_estimado > 0) {
+                    const tasaPorHoraEstimada = s.monto_mano_obra_total / s.denom_estimado;
+                    m.facturacion_generada += s.tiempo_estimado * tasaPorHoraEstimada * fraccion;
+                    m.rentabilidad_eficiencia += (s.tiempo_estimado - s.tiempo_real_total) * tasaPorHoraEstimada * fraccion;
+                }
             }
         }
     }
 
-    // 2. Extraer los días que cada mecánico tuvo al menos 1 segundo de actividad (sin filtrar por estado de la tarea)
     const dias_activos = await all(`
         SELECT a.legajo_mecanico AS legajo, DATE(ta.inicio) as fecha
-        FROM tiempos_actividad ta
-        JOIN actividades a ON ta.actividad_id = a.id
-        WHERE ta.inicio >= ? AND ta.inicio < ?
-        GROUP BY a.legajo_mecanico, DATE(ta.inicio)
+        FROM tiempos_actividad ta JOIN actividades a ON ta.actividad_id = a.id
+        WHERE ta.inicio >= ? AND ta.inicio < ? GROUP BY a.legajo_mecanico, DATE(ta.inicio)
     `, [inicio, fin]);
 
-    // 3. Extraer excepciones/justificaciones cargadas por el Jefe (normalizamos ambos lados a DATE)
-    const excepciones = await all(`
-        SELECT id, legajo, DATE(fecha) as fecha, motivo, horas_descontadas
-        FROM excepciones_mecanicos
-        WHERE DATE(fecha) >= ? AND DATE(fecha) < ?
-    `, [inicio, fin]);
+    const excepciones = await all(`SELECT id, legajo, DATE(fecha) as fecha, motivo, horas_descontadas FROM excepciones_mecanicos WHERE DATE(fecha) >= ? AND DATE(fecha) < ?`, [inicio, fin]);
 
-    // 4. Lógica Matemática del Ocio + detección de días puntuales sin login
     const tiempos_mecanicos = Object.values(porLegajo).map(m => {
         let dias_del_mecanico = dias_activos.filter(d => d.legajo === m.legajo);
         const diasTrabajadosSet = new Set(dias_del_mecanico.map(d => d.fecha));
         let hs_exigidas = 0;
 
         for (let d of dias_del_mecanico) {
-            // Evaluamos la fecha al mediodía UTC para evitar saltos de zona horaria
-            let fechaObj = new Date(d.fecha + 'T12:00:00Z');
-            let isSabado = fechaObj.getDay() === 6;
             let esFeriado = feriadosSet.has(d.fecha);
-
-            let base_dia = esFeriado ? 0 : (isSabado ? 5 : 10);
-
-            // Restar horas si el jefe cargó una salida anticipada/permiso para ese día
+            let base_dia = esFeriado ? 0 : (new Date(d.fecha + 'T12:00:00Z').getDay() === 6 ? 5 : 10);
             let exc = excepciones.find(e => e.legajo === m.legajo && e.fecha === d.fecha);
             if (exc) base_dia -= exc.horas_descontadas;
-
             hs_exigidas += Math.max(0, base_dia);
         }
 
-        // Días hábiles del período en los que el mecánico NO registró ningún trabajo.
-        // Si hay una excepción cargada (franco, permiso, vacaciones) se informa el motivo;
-        // si no hay ninguna, queda como ausencia sin justificar para que el Jefe la revise.
         const dias_ausentes = diasHabilesPeriodo
             .filter(fecha => !diasTrabajadosSet.has(fecha))
             .map(fecha => {
@@ -1301,11 +1394,11 @@ async function getOperativo(inicio, fin) {
             hs_empleadas,
             hs_exigidas: parseFloat(hs_exigidas.toFixed(2)),
             dias_asistidos: dias_del_mecanico.length,
-            dias_ausentes,
-            dias_ausentes_count: dias_ausentes.length,
+            dias_ausentes, dias_ausentes_count: dias_ausentes.length,
             tiempo_muerto: Math.max(0, parseFloat((hs_exigidas - hs_productivas - hs_internas).toFixed(2))),
             eficiencia_porcentaje: hs_productivas > 0 ? parseFloat(((hs_estimadas / hs_productivas) * 100).toFixed(2)) : 0,
-            productividad_porcentaje: hs_exigidas > 0 ? parseFloat((hs_empleadas / hs_exigidas * 100).toFixed(2)) : 0
+            productividad_porcentaje: hs_exigidas > 0 ? parseFloat((hs_empleadas / hs_exigidas * 100).toFixed(2)) : 0,
+            mapa_ocio: construirMapaOcio(diasHabilesPeriodo, m.sesiones, excepciones.filter(e => e.legajo === m.legajo))
         };
     }).sort((a, b) => b.facturacion_generada - a.facturacion_generada);
 
@@ -2231,17 +2324,40 @@ onMounted(cargarAgenda)
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="a in data.actividades" :key="a.id">
-                  <td>{{ a.legajo_mecanico }}</td>
-                  <td>{{ a.descripcion }}</td>
-                  <td><span class="badge-sm">{{ a.estado }}</span></td>
-                  <td>{{ a.tiempo_estimado }}</td>
-                  <td>{{ (a.tiempo_real || 0).toFixed(2) }}</td>
-                  <td v-if="esJefe" style="white-space: nowrap;">
-                    <button class="btn btn-sm" @click="$emit('editar-actividad', a)" title="Reasignar/Editar">✏️</button>
-                    <button class="btn btn-danger btn-sm" @click="$emit('eliminar-actividad', a.id)" title="Eliminar asignación">🗑️</button>
-                  </td>
-                </tr>
+                <template v-for="a in data.actividades" :key="a.id">
+                  <tr>
+                    <td>{{ a.legajo_mecanico }}</td>
+                    <td>{{ a.descripcion }}</td>
+                    <td><span class="badge-sm">{{ a.estado }}</span></td>
+                    <td>{{ a.tiempo_estimado }}</td>
+                    <td>{{ (a.tiempo_real || 0).toFixed(2) }}</td>
+                    <td v-if="esJefe" style="white-space: nowrap;">
+                      <button class="btn btn-sm" @click="$emit('editar-actividad', a)" title="Reasignar/Editar">✏️</button>
+                      <button class="btn btn-danger btn-sm" @click="$emit('eliminar-actividad', a.id)" title="Eliminar asignación">🗑️</button>
+                      <button class="btn btn-sm" @click="toggleTiempos(a.id)" title="Ver Tiempos">🕒</button>
+                    </td>
+                  </tr>
+                  <tr v-if="esJefe && tiemposAbiertos === a.id">
+                    <td colspan="6" class="tiempos-edit">
+                      <template v-if="getTiempos(a.id).length || nuevosTiempos[a.id]?.length">
+                        <div v-for="t in getTiempos(a.id)" :key="t.id" class="tiempo-row">
+                          <input type="datetime-local" :value="toLocalInput(t.inicio)" @change="t.inicio = fromLocalInput($event.target.value)">
+                          <input type="datetime-local" :value="toLocalInput(t.fin)" @change="t.fin = fromLocalInput($event.target.value)">
+                          <button class="btn btn-sm" @click="guardarTiempo(t, a.id)" title="Guardar">💾</button>
+                          <button class="btn btn-danger btn-sm" @click="eliminarTiempo(t.id)" title="Eliminar">🗑️</button>
+                        </div>
+                        <div v-for="t in (nuevosTiempos[a.id] || [])" :key="t.tempId" class="tiempo-row">
+                          <input type="datetime-local" :value="toLocalInput(t.inicio)" @change="t.inicio = fromLocalInput($event.target.value)">
+                          <input type="datetime-local" :value="toLocalInput(t.fin)" @change="t.fin = fromLocalInput($event.target.value)">
+                          <button class="btn btn-sm" @click="guardarTiempo(t, a.id)" title="Guardar">💾</button>
+                          <button class="btn btn-danger btn-sm" @click="quitarNuevo(a.id, t.tempId)" title="Quitar">🗑️</button>
+                        </div>
+                      </template>
+                      <p v-else class="empty-state">Sin registros de tiempo.</p>
+                      <button class="btn btn-sm" @click="agregarTiempo(a.id)">➕ Agregar registro</button>
+                    </td>
+                  </tr>
+                </template>
               </tbody>
             </table>
           </div>
@@ -2268,7 +2384,7 @@ import { ref, onMounted } from 'vue'
 import { useApi } from '../../composables/useApi'
 import { useToast, errMsg } from '../../composables/useToast'
 
-const props = defineProps({ 
+const props = defineProps({
   otId: { type: String, required: true },
   esJefe: { type: Boolean, default: false }
 })
@@ -2293,6 +2409,75 @@ onMounted(async () => {
   } catch (err) { toast.error('Error cargando detalle: ' + errMsg(err)) } 
   finally { loading.value = false }
 })
+
+const getTiempos = (actId) => {
+  return (data.value?.tiempos_actividad || []).filter(t => t.actividad_id === actId);
+}
+
+const tiemposAbiertos = ref(null);
+const toggleTiempos = (actId) => tiemposAbiertos.value = (tiemposAbiertos.value === actId ? null : actId);
+
+// Los registros se guardan en UTC (SQLite CURRENT_TIMESTAMP); los inputs datetime-local trabajan en hora local.
+const pad = (n) => String(n).padStart(2, '0');
+
+const toLocalInput = (utcStr) => {
+  if (!utcStr) return '';
+  const d = new Date(utcStr.replace(' ', 'T') + 'Z');
+  if (isNaN(d)) return '';
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
+const fromLocalInput = (localStr) => {
+  if (!localStr) return null;
+  const d = new Date(localStr);
+  if (isNaN(d)) return null;
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`;
+};
+
+const nuevosTiempos = ref({});
+
+const agregarTiempo = (actId) => {
+  if (!nuevosTiempos.value[actId]) nuevosTiempos.value[actId] = [];
+  nuevosTiempos.value[actId].push({ tempId: Date.now(), inicio: null, fin: null });
+};
+
+const quitarNuevo = (actId, tempId) => {
+  nuevosTiempos.value[actId] = (nuevosTiempos.value[actId] || []).filter(t => t.tempId !== tempId);
+};
+
+const eliminarTiempo = async (id) => {
+    if (!confirm("¿Borrar este registro?")) return;
+    try {
+        await fetchJSON(`/actividades/tiempos/${id}`, { method: 'DELETE' });
+        data.value = await fetchJSON(`/ordenes/${props.otId}`);
+        toast.success('Registro eliminado');
+    } catch (err) {
+        toast.error('Error al eliminar: ' + errMsg(err));
+    }
+};
+
+const guardarTiempo = async (t, actId) => {
+    if (!t.inicio) { toast.error('El inicio es obligatorio'); return; }
+    try {
+        if (t.id) {
+            await fetchJSON(`/actividades/tiempos/${t.id}`, {
+                method: 'PUT',
+                body: JSON.stringify({ inicio: t.inicio, fin: t.fin })
+            });
+        } else {
+            await fetchJSON(`/actividades/${actId}/tiempos`, {
+                method: 'POST',
+                body: JSON.stringify({ inicio: t.inicio, fin: t.fin })
+            });
+            quitarNuevo(actId, t.tempId);
+        }
+        data.value = await fetchJSON(`/ordenes/${props.otId}`);
+        toast.success('Guardado');
+    } catch (err) {
+        toast.error('Error al guardar: ' + errMsg(err));
+    }
+};
+
 </script>
 
 <style scoped>
@@ -2318,6 +2503,8 @@ th { background: #f8fafc; }
 .aportes-list { list-style: none; padding: 0; margin: 0; }
 .aportes-list li { border-bottom: 1px solid #eee; padding: 10px 0; font-size: 0.95rem; }
 .btn { margin-right: 4px; }
+.tiempos-edit { background: #f8fafc; }
+.tiempo-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
 </style>
 </file>
 
@@ -3885,68 +4072,137 @@ const count = ref(0)
 <file path="ivemar-frontend/src/components/informes/TableroOperativo.vue">
 <template>
   <div class="im-group">
-    <span class="im-eyebrow">Rendimiento Operativo (Mecánicos)</span>
+    <!-- Selector de Mecánicos -->
+    <div class="header-with-actions" style="margin-bottom: 25px; border-bottom: 2px solid var(--border-soft); padding-bottom: 15px;">
+      <div>
+        <span class="im-eyebrow">Evaluación de Rendimiento Individual</span>
+        <select v-model="mecanicoSeleccionado" class="form-control select-sm mt-10" style="min-width: 250px; font-weight: bold; font-size: 1rem;">
+          <option value="todos">Ver Taller Completo (Consolidado)</option>
+          <option v-for="m in tiempos" :key="m.legajo" :value="m.legajo">{{ m.nombre }} ({{ m.legajo }})</option>
+        </select>
+      </div>
+    </div>
     
     <div v-if="!tiempos || tiempos.length === 0" class="empty-state">
-      No hay actividad de mecánicos en este período.
+      No hay actividad registrada para el personal del taller en las fechas seleccionadas.
     </div>
     
-    <div class="table-wrapper" v-else>
-      <table>
-        <thead>
-          <tr>
-            <th>Mecánico</th>
-            <th>Asistencia</th>
-            <th>Hs Productivas</th>
-            <th>Hs Internas</th>
-            <th>Ocio</th>
-            <th>Días sin login</th>
-            <th>Productividad</th>
-            <th>Eficiencia (Cumplimiento)</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="m in tiempos" :key="m.legajo">
-            <td><strong>{{ m.nombre }}</strong></td>
-            <td>{{ m.dias_asistidos }} días</td>
-            <td><span class="text-success">{{ m.hs_productivas }} hs</span></td>
-            <td class="text-muted">{{ m.hs_internas }} hs</td>
-            <td :class="{'text-danger': m.tiempo_muerto > 10}">
-              <strong>{{ m.tiempo_muerto }} hs</strong>
-            </td>
-            <td>
-              <button
-                v-if="m.dias_ausentes_count > 0"
-                class="btn btn-sm"
-                :class="sinJustificar(m) > 0 ? 'btn-danger' : 'btn-secondary'"
-                @click="verAusencias(m)"
-              >
-                {{ m.dias_ausentes_count }} día{{ m.dias_ausentes_count > 1 ? 's' : '' }}
-                <template v-if="sinJustificar(m) > 0">({{ sinJustificar(m) }} sin justificar)</template>
-              </button>
-              <span v-else class="text-muted">-</span>
-            </td>
-            <td>
-              <span :class="['badge', m.productividad_porcentaje >= 80 ? 'bg-success' : 'bg-warning']" title="(Hs Productivas + Hs Internas) / Hs Exigidas">
-                {{ m.productividad_porcentaje }}%
-              </span>
-            </td>
-            <td>
-              <span :class="['badge', m.eficiencia_porcentaje >= 100 ? 'bg-success' : 'bg-danger']" title="Hs Estimadas / Hs Productivas">
-                {{ m.eficiencia_porcentaje }}%
-              </span>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+    <div v-else>
+      <!-- VISTA GENERAL: TABLA CONSOLIDADA -->
+      <div v-if="mecanicoSeleccionado === 'todos'" class="table-wrapper mb-15">
+        <table>
+          <thead>
+            <tr>
+              <th>Personal</th>
+              <th>Hs Productivas</th>
+              <th>Ocio Total</th>
+              <th>Días sin login</th>
+              <th>Eficacia (Uso del tiempo)</th>
+              <th>Eficiencia (T. Est vs Real)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="m in tiempos" :key="m.legajo">
+              <td><strong>{{ m.nombre }}</strong></td>
+              <td><span class="text-success">{{ m.hs_productivas }} hs</span></td>
+              <td :class="{'text-danger': m.tiempo_muerto > 10}">
+                <strong>{{ m.tiempo_muerto }} hs</strong>
+              </td>
+              <td>
+                <button v-if="m.dias_ausentes_count > 0" class="btn btn-sm" :class="sinJustificar(m) > 0 ? 'btn-danger' : 'btn-secondary'" @click="verAusencias(m)">
+                  {{ m.dias_ausentes_count }} día(s)
+                </button>
+                <span v-else class="text-muted">-</span>
+              </td>
+              <td>
+                <span :class="['badge', calcularEficacia(m) >= 85 ? 'bg-success' : 'bg-warning']" title="(Hs Trabajadas / Hs Exigidas) * 100">
+                  {{ calcularEficacia(m) }}%
+                </span>
+              </td>
+              <td>
+                <span :class="['badge', m.eficiencia_porcentaje >= 100 ? 'bg-success' : 'bg-danger']" title="(Hs Estimadas / Hs Productivas) * 100">
+                  {{ m.eficiencia_porcentaje }}%
+                </span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- VISTA INDIVIDUAL: GRÁFICOS Y MAPA DE CALOR -->
+      <div v-if="mecanicoFiltrado && mecanicoSeleccionado !== 'todos'">
+        
+        <!-- 1. Tarjetas Numéricas -->
+        <div class="stats-grid mb-15">
+          <div class="stat-card"><strong>Días Asistidos</strong><br>{{ mecanicoFiltrado.dias_asistidos }}</div>
+          <div class="stat-card"><strong>Horas Trabajadas</strong><br>{{ mecanicoFiltrado.hs_empleadas }} hs</div>
+          <div class="stat-card"><strong>OTs Finalizadas</strong><br>{{ mecanicoFiltrado.ot_trabajadas }}</div>
+          <div class="stat-card highlight-card"><strong>Tiempo Ocioso</strong><br>{{ mecanicoFiltrado.tiempo_muerto }} hs</div>
+        </div>
+
+        <!-- 2. Gráficos Visuales (Chart.js) -->
+        <div class="charts-grid mb-15" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
+            <div class="card" style="margin-bottom: 0; padding: 15px;">
+                <h3 style="font-size: 1rem; color: var(--primary); text-align: center; margin-bottom: 10px;">Distribución del Tiempo</h3>
+                <div style="height: 220px; position: relative;">
+                    <Doughnut v-if="chartDistribucion" :data="chartDistribucion" :options="opcionesGraficoTorta" />
+                </div>
+            </div>
+            <div class="card" style="margin-bottom: 0; padding: 15px;">
+                <h3 style="font-size: 1rem; color: var(--primary); text-align: center; margin-bottom: 10px;">Eficacia vs Eficiencia</h3>
+                <div style="height: 220px; position: relative;">
+                    <Bar v-if="chartEficiencia" :data="chartEficiencia" :options="opcionesGraficoBarras" />
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. Detalle de Ausencias -->
+        <div v-if="mecanicoFiltrado.dias_ausentes_count > 0" class="alert mt-10 mb-15">
+          <strong>Días hábiles sin registro de actividad:</strong>
+          <ul style="margin: 5px 0 0 15px; font-size: 0.85rem;">
+            <li v-for="aus in mecanicoFiltrado.dias_ausentes" :key="aus.fecha">
+              {{ formatFecha(aus.fecha) }} - {{ aus.motivo || 'FALTA INJUSTIFICADA' }}
+            </li>
+          </ul>
+        </div>
+
+        <!-- 4. Mapa de Calor de Dispersión -->
+        <div v-if="mecanicoFiltrado.mapa_ocio" class="heatmap-container mt-15" style="background: white; padding: 20px; border-radius: 8px; border: 1px solid var(--border-soft);">
+           <h3 style="color: var(--primary); margin-bottom: 5px;">Mapa de Dispersión de Ocio</h3>
+           <p class="chart-hint" style="margin-bottom: 20px;">
+              Distribución de inactividad durante el rango de fechas. Los recuadros rojos indican los horarios donde el mecánico acumuló más minutos sin trabajar.
+           </p>
+           
+           <div class="table-wrapper">
+              <table class="heatmap-table" style="width: 100%; border-collapse: separate; border-spacing: 2px;">
+                 <thead>
+                   <tr>
+                     <th style="background: transparent; border: none; padding: 5px;">Día \ Hora</th>
+                     <th v-for="h in horasHeatmap" :key="h" style="text-align: center; padding: 5px; background: #f8fafc; font-size: 0.8rem; border-radius: 4px;">
+                       {{ h }}:00
+                     </th>
+                   </tr>
+                 </thead>
+                 <tbody>
+                   <tr v-for="d in diasHeatmap" :key="d.id">
+                     <td style="font-weight: bold; color: var(--text-soft); border: none; padding: 8px 5px; font-size: 0.9rem;">
+                       {{ d.nombre }}
+                     </td>
+                     <td v-for="h in horasHeatmap" :key="h" 
+                         :style="{ backgroundColor: getHeatColor(mecanicoFiltrado.mapa_ocio, d.id, h), textAlign: 'center', borderRadius: '4px', transition: 'background 0.3s', padding: '6px' }">
+                       <span class="heat-text" style="font-size: 0.75rem; font-weight: bold; color: #fff; text-shadow: 1px 1px 2px rgba(0,0,0,0.5);" v-if="getOcioMins(mecanicoFiltrado.mapa_ocio, d.id, h) > 0">
+                         {{ getOcioMins(mecanicoFiltrado.mapa_ocio, d.id, h) }}m
+                       </span>
+                       <span v-else style="color: transparent; user-select: none;">-</span>
+                     </td>
+                   </tr>
+                 </tbody>
+              </table>
+           </div>
+        </div>
+
+      </div>
     </div>
-
-    <p class="chart-hint im-mt">
-      * <strong>Hs Internas:</strong> Tareas realizadas en OTs donde el cliente es "IVEMAR". Suman a la productividad pero no a la facturación.<br>
-      * <strong>Ocio:</strong> Horas hábiles donde el mecánico estuvo presente pero no registró actividad en el panel.<br>
-      * <strong>Días sin login:</strong> días hábiles del período sin ningún registro de actividad. Se pueden justificar (franco, permiso, vacaciones, etc.).
-    </p>
-
     <ModalAusencias v-if="mecanicoModalLegajo" :mecanico="mecanicoModal" @close="mecanicoModalLegajo = null" @justificado="store.cargarInformes" />
   </div>
 </template>
@@ -3955,20 +4211,96 @@ const count = ref(0)
 import { computed, ref } from 'vue'
 import { useInformesStore } from '../../stores/useInformesStore'
 import ModalAusencias from '../jefe/ModalAusencias.vue'
+import { Doughnut, Bar } from 'vue-chartjs'
+import { Chart as ChartJS, Title, Tooltip, Legend, ArcElement, BarElement, CategoryScale, LinearScale } from 'chart.js'
+
+ChartJS.register(Title, Tooltip, Legend, ArcElement, BarElement, CategoryScale, LinearScale)
 
 const store = useInformesStore()
 const tiempos = computed(() => store.operativo?.tiempos_mecanicos || [])
+
+const mecanicoSeleccionado = ref('todos')
+
+const mecanicoFiltrado = computed(() => tiempos.value.find(m => m.legajo === mecanicoSeleccionado.value) || null)
+
+const calcularEficacia = (m) => {
+    if (m.hs_exigidas === 0) return 0;
+    return ((m.hs_empleadas / m.hs_exigidas) * 100).toFixed(2);
+}
 
 const mecanicoModalLegajo = ref(null)
 const mecanicoModal = computed(() => tiempos.value.find(m => m.legajo === mecanicoModalLegajo.value) || null)
 
 const sinJustificar = (m) => (m.dias_ausentes || []).filter(d => !d.motivo).length
 const verAusencias = (m) => { mecanicoModalLegajo.value = m.legajo }
+
+const formatFecha = (f) => new Date(f + 'T12:00:00Z').toLocaleDateString('es-AR', { weekday: 'long', day: '2-digit', month: '2-digit' })
+
+// --- CONFIGURACIÓN DE GRÁFICOS (Chart.js) ---
+const opcionesGraficoTorta = {
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, padding: 15 } } }
+}
+
+const opcionesGraficoBarras = {
+  responsive: true,
+  maintainAspectRatio: false,
+  scales: { y: { beginAtZero: true, max: 120 } },
+  plugins: { legend: { display: false } }
+}
+
+const chartDistribucion = computed(() => {
+  if (!mecanicoFiltrado.value) return null;
+  const m = mecanicoFiltrado.value;
+  return {
+    labels: ['Productivo (hs)', 'Internas (hs)', 'Ocio (hs)'],
+    datasets: [{
+      data: [m.hs_productivas, m.hs_internas, m.tiempo_muerto],
+      backgroundColor: ['#1d8a4f', '#0056a7', '#b22234']
+    }]
+  }
+})
+
+const chartEficiencia = computed(() => {
+  if (!mecanicoFiltrado.value) return null;
+  const m = mecanicoFiltrado.value;
+  return {
+    labels: ['Eficacia', 'Eficiencia'],
+    datasets: [{
+      data: [calcularEficacia(m), m.eficiencia_porcentaje],
+      backgroundColor: ['#0056a7', '#1d8a4f'],
+      borderRadius: 4
+    }]
+  }
+})
+
+// --- LÓGICA DEL MAPA DE CALOR ---
+const horasHeatmap = [8, 9, 10, 11, 12, 14, 15, 16, 17];
+const diasHeatmap = [
+  {id: 1, nombre: 'Lunes'}, {id: 2, nombre: 'Martes'}, {id: 3, nombre: 'Miércoles'},
+  {id: 4, nombre: 'Jueves'}, {id: 5, nombre: 'Viernes'}, {id: 6, nombre: 'Sábado'}
+];
+
+const getOcioMins = (mapa, dia, hora) => {
+  if (!mapa) return 0;
+  const celda = mapa.find(x => x.dia === dia && x.hora === hora);
+  return celda ? celda.minutos_ocio : 0;
+}
+
+const getHeatColor = (mapa, dia, hora) => {
+  if (dia === 6 && hora >= 13) return '#f0f0f0'; 
+  const mins = getOcioMins(mapa, dia, hora);
+  if (mins <= 0) return '#f8fafc'; 
+  const opacity = Math.min(mins / 60, 1) * 0.9; 
+  return `rgba(178, 34, 52, ${opacity + 0.1})`; 
+}
 </script>
 
 <style scoped>
-.im-group { padding-top: 18px; border-top: 1px solid var(--border-soft); margin-top: 24px; }
-.im-eyebrow { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); display: block; margin-bottom: 16px; }
+.im-group { padding-top: 10px; }
+.header-with-actions { display: flex; justify-content: space-between; align-items: start; flex-wrap: wrap; gap: 15px; }
+.im-eyebrow { font-size: 0.85rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--primary); display: block; }
 .table-wrapper { overflow-x: auto; background: white; border: 1px solid var(--border-soft); border-radius: var(--radius); box-shadow: var(--shadow-sm); }
 table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
 th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid var(--border-soft); }
@@ -3980,8 +4312,14 @@ th { background: #f8fafc; font-weight: 600; color: #1a2a3a; text-transform: uppe
 .text-success { color: #1d8a4f; font-weight: 600; }
 .text-muted { color: #6c7a8a; }
 .text-danger { color: #b22234; }
-.im-mt { margin-top: 12px; }
-.chart-hint { font-size: 0.8rem; color: var(--muted); line-height: 1.5; }
+.mb-15 { margin-bottom: 15px; }
+.mt-15 { margin-top: 15px; }
+.mt-10 { margin-top: 10px; }
+.stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; }
+.stat-card { background: white; border: 1px solid var(--border-soft); border-radius: 8px; padding: 15px; text-align: center; box-shadow: var(--shadow-sm); font-size: 1.05rem; }
+.highlight-card { background: #b22234; color: white; border: none; font-size: 1.15rem; }
+.chart-hint { font-size: 0.85rem; color: var(--muted); }
+.card { background: white; border-radius: 8px; border: 1px solid var(--border-soft); box-shadow: var(--shadow-sm); }
 </style>
 </file>
 

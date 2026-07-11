@@ -169,4 +169,23 @@ router.get('/:ot/explicacion', async (req, res) => {
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
+router.put('/aportes/:id', async (req, res) => {
+    const { actividades, horas } = req.body;
+    try {
+        await withTransaction(async () => {
+            const aporte = await get(`SELECT ot FROM aportes WHERE id = ?`, [req.params.id]);
+            if (!aporte) throw new Error('Aporte no encontrado');
+
+            await run(`UPDATE aportes SET actividades = ?, horas = ? WHERE id = ?`, 
+                [actividades, horas, req.params.id]);
+            
+            await recalcularTiempoEmpleado(aporte.ot);
+        });
+        res.json({ status: 'Aporte corregido exitosamente' });
+    } catch (error) { 
+        console.error('Error editando aporte:', error);
+        res.status(500).json({ error: error.message }); 
+    }
+});
+
 module.exports = router;
