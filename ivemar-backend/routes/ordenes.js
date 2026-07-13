@@ -60,8 +60,9 @@ router.get('/:ot', async (req, res) => {
         const explicacion = await get(`SELECT * FROM explicaciones WHERE ot = ?`, [req.params.ot]);
         const aportes = await all(`SELECT ap.*, l.nombre, l.firma_path FROM aportes ap JOIN legajos l ON ap.legajo = l.legajo WHERE ap.ot = ?`, [req.params.ot]);
         const historial = await all(`SELECT * FROM estados_historial WHERE ot = ? ORDER BY id`, [req.params.ot]);
+        const tiempos_actividad = await all(`SELECT ta.* FROM tiempos_actividad ta JOIN actividades a ON ta.actividad_id = a.id WHERE a.ot = ?`, [req.params.ot]);
 
-        res.json({ ...ot, asignaciones, actividades, explicacion, aportes, historial });
+        res.json({ ...ot, asignaciones, actividades, explicacion, aportes, historial, tiempos_actividad });
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
@@ -166,6 +167,25 @@ router.get('/:ot/explicacion', async (req, res) => {
         let jefe = orden.jefe_legajo ? await get(`SELECT legajo, nombre, firma_path FROM legajos WHERE legajo = ?`, [orden.jefe_legajo]) : null;
         res.json({ orden, explicacion, aportes, jefe, controlada: !!orden.controlada });
     } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+router.put('/aportes/:id', async (req, res) => {
+    const { actividades, horas } = req.body;
+    try {
+        await withTransaction(async () => {
+            const aporte = await get(`SELECT ot FROM aportes WHERE id = ?`, [req.params.id]);
+            if (!aporte) throw new Error('Aporte no encontrado');
+
+            await run(`UPDATE aportes SET actividades = ?, horas = ? WHERE id = ?`, 
+                [actividades, horas, req.params.id]);
+            
+            await recalcularTiempoEmpleado(aporte.ot);
+        });
+        res.json({ status: 'Aporte corregido exitosamente' });
+    } catch (error) { 
+        console.error('Error editando aporte:', error);
+        res.status(500).json({ error: error.message }); 
+    }
 });
 
 module.exports = router;
