@@ -8,7 +8,7 @@ router.get('/', async (req, res) => {
         const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 25));
         const offset = (page - 1) * limit;
 
-        let where = ' WHERE 1=1';
+        let where = " WHERE o.ot != '0000'";
         const params = [];
 
         if (req.query.estado === 'activas') where += ` AND o.estado_actual != 'Finalizada'`;
@@ -16,7 +16,7 @@ router.get('/', async (req, res) => {
         else if (req.query.estado) { where += ` AND o.estado_actual = ?`; params.push(req.query.estado); }
 
         if (req.query.garantia !== undefined) { where += ` AND o.es_garantia = ?`; params.push(req.query.garantia); }
-
+        
         if (req.query.busqueda) {
             where += ` AND (o.ot LIKE ? OR o.patente LIKE ? OR c.nombre LIKE ?)`;
             const q = `%${req.query.busqueda}%`;

@@ -132,6 +132,80 @@ function construirMapaOcio(diasHabiles, sesiones, excepcionesPorFecha) {
     return result;
 }
 
+const TIPO_DESCANSO = {
+  NORMAL: 'normal',
+  FIN_DE_SEMANA: 'fin_de_semana',
+  FIN_DE_SEMANA_LARGO: 'fin_de_semana_largo', // finde con feriado pegado (puente)
+  PERMISO_PREVIO: 'permiso_previo'            // el día calendario anterior tuvo excepción >= 8hs
+};
+
+// Serie diaria de ocio por mecánico: a diferencia del heatmap semanal (que agrupa
+// por día-de-semana + hora, perdiendo la fecha real), esta serie conserva cada
+// fecha puntual y la etiqueta según qué la precedió, para poder comparar
+// "primer día después de un descanso" vs "día normal".
+function construirSerieDiaria(diasHabilesPeriodo, sesiones, excepcionesMecanico) {
+    const minutosTrabajadosPorFecha = new Map();
+    for (const s of sesiones) {
+        let curr = new Date(s.inicio + 'Z');
+        const end = s.fin ? new Date(s.fin + 'Z') : new Date();
+
+        while (curr < end) {
+            const fecha = curr.toISOString().split('T')[0];
+            const h = curr.getHours();
+            const nextHour = new Date(curr);
+            nextHour.setHours(h + 1, 0, 0, 0);
+            const chunkEnd = nextHour < end ? nextHour : end;
+            const mins = (chunkEnd - curr) / 60000;
+
+            if (horasDelDia(curr.getDay()).includes(h)) {
+                minutosTrabajadosPorFecha.set(fecha, (minutosTrabajadosPorFecha.get(fecha) || 0) + mins);
+            }
+            curr = chunkEnd;
+        }
+    }
+
+    const result = [];
+    for (let i = 0; i < diasHabilesPeriodo.length; i++) {
+        const fecha = diasHabilesPeriodo[i];
+        const exc = excepcionesMecanico.get(fecha);
+        const horasDescontadas = exc ? exc.horas_descontadas : 0;
+
+        // Día completo ausente/justificado: sin señal de "cómo trabajó", se excluye del patrón
+        if (horasDescontadas >= 8) continue;
+
+        const dSemana = new Date(fecha + 'T12:00:00Z').getDay();
+        const capacidadMin = horasDelDia(dSemana).length * 60 - Math.round(horasDescontadas * 60);
+        if (capacidadMin <= 0) continue;
+
+        const trabajadosMin = minutosTrabajadosPorFecha.get(fecha) || 0;
+        const ocioMin = Math.max(0, capacidadMin - trabajadosMin);
+
+        // ¿Qué precedió a este día hábil?
+        const fechaAnteriorHabil = diasHabilesPeriodo[i - 1];
+        const gapCalendario = fechaAnteriorHabil
+            ? Math.round((new Date(fecha) - new Date(fechaAnteriorHabil)) / 86400000)
+            : 0;
+
+        const fechaCalAnteriorStr = new Date(new Date(fecha + 'T12:00:00Z').getTime() - 86400000).toISOString().split('T')[0];
+        const excDiaAnteriorCalendario = excepcionesMecanico.get(fechaCalAnteriorStr);
+
+        let tipo_descanso = TIPO_DESCANSO.NORMAL;
+        if (gapCalendario >= 3) tipo_descanso = TIPO_DESCANSO.FIN_DE_SEMANA_LARGO;
+        else if (gapCalendario === 2) tipo_descanso = TIPO_DESCANSO.FIN_DE_SEMANA;
+        else if (excDiaAnteriorCalendario && excDiaAnteriorCalendario.horas_descontadas >= 8) tipo_descanso = TIPO_DESCANSO.PERMISO_PREVIO;
+
+        result.push({
+            fecha,
+            minutos_ocio: Math.round(ocioMin),
+            minutos_trabajados: Math.round(trabajadosMin),
+            capacidad_minutos: Math.round(capacidadMin),
+            ocio_porcentaje: parseFloat(((ocioMin / capacidadMin) * 100).toFixed(1)),
+            tipo_descanso
+        });
+    }
+    return result;
+}
+
 async function getOperativo(inicio, fin) {
     if (!inicio || !fin) {
         throw new Error('Debe indicar fecha de inicio y fin para el informe operativo');
@@ -200,7 +274,7 @@ async function getOperativo(inicio, fin) {
 
         m.sesiones.push(s);
 
-        if (s.cliente_nombre === 'IVEMAR') {
+        if (s.ot === '0000') {
             m.hs_internas += horasPeriodo;
             continue;
         }
@@ -267,6 +341,8 @@ async function getOperativo(inicio, fin) {
         const hs_internas = parseFloat(m.hs_internas.toFixed(2));
         const hs_empleadas = parseFloat((hs_productivas + hs_internas).toFixed(2));
 
+        
+
         return {
             legajo: m.legajo, nombre: m.nombre,
             ot_trabajadas: m.ot_set.size,
@@ -279,12 +355,39 @@ async function getOperativo(inicio, fin) {
             dias_ausentes, dias_ausentes_count: dias_ausentes.length,
             tiempo_muerto: Math.max(0, parseFloat((hs_exigidas - hs_productivas - hs_internas).toFixed(2))),
             eficiencia_porcentaje: hs_productivas > 0 ? parseFloat(((hs_estimadas / hs_productivas) * 100).toFixed(2)) : 0,
-            productividad_porcentaje: hs_exigidas > 0 ? parseFloat((hs_empleadas / hs_exigidas * 100).toFixed(2)) : 0,
-            mapa_ocio: construirMapaOcio(diasHabilesPeriodo, m.sesiones, excepcionesMecanico)
+            productividad_porcentaje: hs_exigidas > 0 ? parseFloat((hs_productivas / hs_exigidas * 100).toFixed(2)) : 0,
+            mapa_ocio: construirMapaOcio(diasHabilesPeriodo, m.sesiones, excepcionesMecanico),
+            serie_diaria: construirSerieDiaria(diasHabilesPeriodo, m.sesiones, excepcionesMecanico)
         };
     }).sort((a, b) => b.facturacion_generada - a.facturacion_generada);
+    
+    const gruposDescanso = {};
+    for (const m of tiempos_mecanicos) {
+        // Se excluyen mecánicos sin ninguna sesión registrada en el período
+        // (ej: jefe que no carga tiempos_actividad, altas nuevas, cuentas
+        // inactivas). Sin actividad real no hay dato de "cómo trabajó" ese
+        // día — incluirlos como 100% ocio todos los días distorsiona el
+        // promedio del taller completo.
+        if (m.hs_productivas === 0 && m.hs_internas === 0) continue;
 
-    return { tiempos_mecanicos };
+        for (const dia of m.serie_diaria) {
+            if (!gruposDescanso[dia.tipo_descanso]) {
+                gruposDescanso[dia.tipo_descanso] = { tipo_descanso: dia.tipo_descanso, dias: 0, suma_ocio_pct: 0 };
+            }
+            gruposDescanso[dia.tipo_descanso].dias += 1;
+            gruposDescanso[dia.tipo_descanso].suma_ocio_pct += dia.ocio_porcentaje;
+        }
+    }
+    const patrones_descanso = Object.values(gruposDescanso)
+        .map(g => ({
+            tipo_descanso: g.tipo_descanso,
+            cantidad_dias: g.dias,
+            ocio_promedio_porcentaje: parseFloat((g.suma_ocio_pct / g.dias).toFixed(1))
+        }))
+        .sort((a, b) => a.ocio_promedio_porcentaje - b.ocio_promedio_porcentaje);
+
+    return { tiempos_mecanicos, patrones_descanso };
+
 }
 
 async function getTaller(inicio, fin, filtroCuellosStr) {

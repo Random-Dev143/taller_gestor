@@ -66,8 +66,13 @@ const paginatedOts = computed(() => {
   return ots.value.slice(start, start + itemsPerPage.value)
 })
 
-const MAX_COLS = 5
-const MAX_ROWS = 4
+// Modificado: Máximo de 3 columnas y 3 filas = máximo 9 tarjetas por página
+const MAX_COLS = 3
+const MAX_ROWS = 3
+
+// Tamaño mínimo de card para que el contenido entre sin apretarse
+const MIN_CARD_W = 240
+const MIN_CARD_H = 280
 
 const calcularGrilla = () => {
   if (!gridWrapper.value) return
@@ -76,11 +81,21 @@ const calcularGrilla = () => {
   if (w === 0 || h === 0) return
 
   const cantidad = Math.max(1, ots.value.length)
-  const tope = Math.min(cantidad, MAX_COLS * MAX_ROWS)
+
+  // Nunca elegir más columnas/filas de las que entran con un tamaño mínimo
+  // legible. Si no entran todas con ese piso, se reparten en más páginas
+  // en vez de achicar las cards hasta solaparse.
+  const maxColsFit = Math.max(1, Math.floor(w / MIN_CARD_W))
+  const maxRowsFit = Math.max(1, Math.floor(h / MIN_CARD_H))
+  const maxCols = Math.min(MAX_COLS, maxColsFit)
+  const maxRows = Math.min(MAX_ROWS, maxRowsFit)
+
+  const tope = Math.min(cantidad, maxCols * maxRows)
 
   let mejor = { cols: 1, rows: 1, score: Infinity }
-  for (let c = 1; c <= MAX_COLS; c++) {
-    const r = Math.min(MAX_ROWS, Math.ceil(tope / c))
+  for (let c = 1; c <= maxCols; c++) {
+    const r = Math.min(maxRows, Math.ceil(tope / c))
+    if (c * r < tope) continue // descarta grillas que no alcanzan a cubrir "tope" items
     const cardW = w / c
     const cardH = h / r
     const aspecto = cardW / cardH
@@ -174,7 +189,7 @@ const calcularFechaFinHabil = (horasRestantes) => {
     }
   }
   const diaStr = fecha.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })
-  const horaStr = fecha.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
+  const horaStr = fecha.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false })
   const hoy = new Date()
   const mañana = new Date(); mañana.setDate(mañana.getDate() + 1)
   if (fecha.toDateString() === hoy.toDateString()) return `Hoy a las ${horaStr} hs`
@@ -185,7 +200,11 @@ const calcularFechaFinHabil = (horasRestantes) => {
 const calcularETA = (ot) => {
   if (ot.estado_actual === 'Finalizada') return 'COMPLETADO'
   if (['Trabajos de Terceros', 'Espera de Repuestos'].includes(ot.estado_actual)) return 'A DETERMINAR'
+  
   const asignado = Math.max(0, ot.tiempo_asignado_horas || 0)
+  
+  if (asignado === 0) return 'A DETERMINAR'
+  
   let empleado = Math.max(0, ot.tiempo_empleado_horas || 0)
   if (ot.inicio_curso) {
       const inicioUTC = new Date(ot.inicio_curso.replace(' ', 'T') + 'Z')
@@ -252,10 +271,11 @@ onUnmounted(() => {
 .card-sala {
   background: #1e1e1e; border-radius: 12px; padding: 1.6vh 1.4vw; border-left: 0.5vw solid #555;
   display: flex; flex-direction: column; justify-content: space-between;
+  gap: 8px;
   box-shadow: 0 4px 15px rgba(0,0,0,0.3);
   box-sizing: border-box;
   min-width: 0; min-height: 0; overflow: hidden;
-  container-type: inline-size;
+  container-type: size;
   container-name: card-sala;
 }
 
@@ -271,9 +291,9 @@ onUnmounted(() => {
 .card-top { display: flex; justify-content: space-between; align-items: center; }
 .ot-number { font-weight: bold; color: #aaa; font-size: clamp(0.8rem, 3.2vw, 1.3rem); }
 .patente { background: white; color: black; padding: 0.3vh 0.8vw; border-radius: 4px; font-family: monospace; font-weight: bold; font-size: clamp(0.75rem, 3vw, 1.2rem); }
-.unidad-name { font-weight: bold; margin-top: 0.5vh; font-size: clamp(0.85rem, 3.6vw, 1.5rem); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.unidad-name { font-weight: bold; margin-top: 0.5vh; font-size: clamp(0.85rem, 3.6vw, 1.5rem); line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.cliente-name { color: #9e9e9e; font-weight: 500; margin-top: 0.2vh; font-size: clamp(0.8rem, 3.2vw, 1.3rem); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-transform: uppercase; }
+.cliente-name { color: #9e9e9e; font-weight: 500; margin-top: 0.2vh; font-size: clamp(0.8rem, 3.2vw, 1.3rem); line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-transform: uppercase; }
 
 .card-mid { background: #2a2a2a; padding: 1vh 1vw; border-radius: 8px; margin: auto 0; }
 .mecanico { margin-bottom: 0.5vh; color: #ccc; font-size: clamp(0.7rem, 2.6vw, 1.05rem); }
@@ -284,13 +304,13 @@ onUnmounted(() => {
 .eta-value { font-weight: bold; color: #a4c2f4; font-size: clamp(0.85rem, 3.4vw, 1.35rem); }
 
 @container card-sala (min-width: 1px) {
-  .ot-number { font-size: clamp(0.8rem, 9cqw, 1.4rem); }
-  .patente { font-size: clamp(0.75rem, 8.5cqw, 1.25rem); }
-  .unidad-name { font-size: clamp(0.85rem, 10cqw, 1.6rem); }
-  .cliente-name { font-size: clamp(0.8rem, 9cqw, 1.4rem); }
-  .mecanico { font-size: clamp(0.7rem, 7cqw, 1.1rem); }
-  .estado-text { font-size: clamp(0.75rem, 7.5cqw, 1.2rem); }
-  .eta-label { font-size: clamp(0.6rem, 5.5cqw, 0.9rem); }
-  .eta-value { font-size: clamp(0.85rem, 9.5cqw, 1.4rem); }
+  .ot-number { font-size: clamp(0.8rem, min(9cqw, 14cqh), 1.4rem); }
+  .patente { font-size: clamp(0.75rem, min(8.5cqw, 13cqh), 1.25rem); }
+  .unidad-name { font-size: clamp(0.85rem, min(10cqw, 15cqh), 1.6rem); line-height: 1.25; }
+  .cliente-name { font-size: clamp(0.8rem, min(9cqw, 13cqh), 1.4rem); line-height: 1.25; }
+  .mecanico { font-size: clamp(0.7rem, min(7cqw, 10cqh), 1.1rem); }
+  .estado-text { font-size: clamp(0.75rem, min(7.5cqw, 11cqh), 1.2rem); }
+  .eta-label { font-size: clamp(0.6rem, min(5.5cqw, 8cqh), 0.9rem); }
+  .eta-value { font-size: clamp(0.85rem, min(9.5cqw, 13cqh), 1.4rem); }
 }
 </style>

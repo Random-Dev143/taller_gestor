@@ -6,11 +6,11 @@
       <div v-if="loading" class="loading-state"><div class="spinner"></div>Cargando detalles...</div>
       <div v-else-if="data">
         <div class="header-section">
-          <h2>OT {{ data.ot }}</h2>
-          <span class="badge">{{ data.estado_actual }}</span>
+          <h2>{{ data.ot === '0000' ? 'Gestión de Rutinas y Tareas Internas' : `OT ${data.ot}` }}</h2>
+          <span v-if="data.ot !== '0000'" class="badge">{{ data.estado_actual }}</span>
         </div>
         
-        <div class="info-grid">
+        <div v-if="data.ot !== '0000'" class="info-grid">
           <p><strong>Cliente:</strong> {{ data.cliente }}</p>
           <p><strong>Patente:</strong> {{ data.patente }}</p>
           <p><strong>Unidad:</strong> {{ data.unidad }}</p>
@@ -26,7 +26,7 @@
           <p><strong>Total General:</strong> <span class="highlight bold">{{ formatCurrency((data.monto_repuestos || 0) + (data.monto_mano_obra || 0)) }}</span></p>
         </div>
 
-        <hr />
+        <hr v-if="data.ot !== '0000'" />
 
         <div v-if="data.explicacion?.causa">
           <h3>Causa / Diagnóstico</h3>
