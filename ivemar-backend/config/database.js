@@ -151,6 +151,17 @@ db.serialize(async () => {
     db.run(`CREATE TABLE IF NOT EXISTS tiempos_actividad (id INTEGER PRIMARY KEY AUTOINCREMENT, actividad_id INTEGER NOT NULL, inicio DATETIME NOT NULL, fin DATETIME, FOREIGN KEY(actividad_id) REFERENCES actividades(id) ON DELETE CASCADE ON UPDATE CASCADE)`);
     db.run(`CREATE TABLE IF NOT EXISTS excepciones_mecanicos (id INTEGER PRIMARY KEY AUTOINCREMENT, legajo TEXT NOT NULL, fecha DATE NOT NULL, motivo TEXT NOT NULL, horas_descontadas REAL DEFAULT 10, FOREIGN KEY(legajo) REFERENCES legajos(legajo) ON DELETE CASCADE ON UPDATE CASCADE)`);
     db.run(`CREATE TABLE IF NOT EXISTS feriados (fecha DATE PRIMARY KEY, descripcion TEXT DEFAULT '')`);
+    db.run(`CREATE TABLE IF NOT EXISTS usuarios (
+        id TEXT PRIMARY KEY, 
+        email TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL, 
+        nombre_completo TEXT NOT NULL,
+        estado TEXT DEFAULT 'pendiente' CHECK(estado IN ('pendiente', 'aprobado', 'suspendido')),
+        rol TEXT CHECK(rol IN ('admin', 'asesor', 'jefe', 'mecanico')),
+        legajo TEXT,
+        fecha_registro DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(legajo) REFERENCES legajos(legajo) ON DELETE SET NULL ON UPDATE CASCADE
+    )`);
     setTimeout(() => { migrarEstructura(); inicializarTallerInterno(); }, 500);
 });
 

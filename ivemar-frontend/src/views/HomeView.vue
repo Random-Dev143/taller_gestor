@@ -4,6 +4,10 @@
     <p>Sistema de gestión de órdenes de trabajo</p>
 
     <div class="role-buttons">
+      <button class="role-btn" @click="goTo('admin')">
+        <span class="role-icon">⚙️</span>
+        Administración
+      </button>
       <button class="role-btn" @click="goTo('asesor')">
         <span class="role-icon">👔</span>
         Asesor de Servicio
