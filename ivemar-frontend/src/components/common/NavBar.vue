@@ -1,8 +1,11 @@
 <template>
   <div class="navbar" :style="customStyle">
+    <!-- NUEVO BOTÓN DE INICIO -->
+    <button class="home-btn" @click="goHome" title="Volver al menú principal">🏠</button>
+    
     <span class="brand" :style="brandStyle">{{ brand }}</span>
     
-    <!-- Pestañas dinámicas (solo se muestran si se envían) -->
+    <!-- Pestañas dinámicas -->
     <button
       v-for="tab in tabs"
       :key="tab.id"
@@ -12,7 +15,7 @@
       {{ tab.label }}
     </button>
     
-    <!-- Espacio para inyectar elementos extra (como el Legajo del mecánico) -->
+    <!-- Espacio para inyectar elementos extra -->
     <slot name="extra"></slot>
     
     <button class="logout" @click="handleLogout">{{ logoutText }}</button>
@@ -21,8 +24,10 @@
 
 <script setup>
 import { useRouter } from 'vue-router'
+import { useAuthStore } from '../../stores/useAuthStore'
 
 const router = useRouter()
+const authStore = useAuthStore()
 
 const props = defineProps({
   brand: { type: String, required: true },
@@ -31,16 +36,24 @@ const props = defineProps({
   logoutText: { type: String, default: 'Cerrar sesión' },
   customStyle: { type: Object, default: () => ({}) },
   brandStyle: { type: Object, default: () => ({}) },
-  // Si es true, el botón sólo emite 'logout' y NO navega automáticamente
-  // al inicio (la vista se encarga, ej: MecanicoView limpia su sesión).
   customLogout: { type: Boolean, default: false }
 })
 
 const emit = defineEmits(['update:activeTab', 'logout'])
 
-const handleLogout = () => {
-  emit('logout')
-  if (!props.customLogout) router.push({ name: 'home' })
+// Función para volver al menú principal
+const goHome = () => {
+  router.push({ name: 'home' })
+}
+
+const handleLogout = async () => {
+  if (props.customLogout) {
+    emit('logout')
+  } else {
+    await authStore.logout()
+    emit('logout')
+    router.push({ name: 'login' })
+  }
 }
 </script>
 
@@ -57,6 +70,26 @@ const handleLogout = () => {
     margin-bottom: 30px;
 }
 
+/* Estilos del nuevo botón de inicio */
+.navbar .home-btn {
+    background: #f4f7fc;
+    border: 1px solid #eef3f9;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 1.2rem;
+    cursor: pointer;
+    color: #333;
+    transition: background 0.2s, transform 0.1s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.navbar .home-btn:hover {
+    background: #e9edf4;
+    transform: scale(1.05);
+}
+
 .navbar .brand {
     font-weight: 700;
     font-size: 1.3rem;
@@ -64,7 +97,7 @@ const handleLogout = () => {
     margin-right: auto;
 }
 
-.navbar button {
+.navbar button:not(.home-btn):not(.logout) {
     background: transparent;
     border: none;
     padding: 8px 16px;
@@ -75,7 +108,7 @@ const handleLogout = () => {
     transition: background 0.2s;
 }
 
-.navbar button:hover {
+.navbar button:not(.home-btn):not(.logout):hover {
     background: #e9edf4;
 }
 
@@ -85,8 +118,19 @@ const handleLogout = () => {
 }
 
 .navbar .logout {
+    background: transparent;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    cursor: pointer;
     color: #c00;
     font-weight: 500;
+    transition: background 0.2s;
+}
+
+.navbar .logout:hover {
+    background: #ffe5e5;
 }
 
 @media (max-width: 768px) {
@@ -97,10 +141,14 @@ const handleLogout = () => {
     .navbar .brand {
         margin-right: 0;
         text-align: center;
+        margin-top: 10px;
     }
     .navbar button {
         text-align: center;
         padding: 10px;
+    }
+    .navbar .home-btn {
+        align-self: center;
     }
 }
 </style>

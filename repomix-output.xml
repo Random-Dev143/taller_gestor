@@ -6362,13 +6362,13 @@ const paginatedOts = computed(() => {
   return ots.value.slice(start, start + itemsPerPage.value)
 })
 
-const MAX_COLS = 5
-const MAX_ROWS = 4
+// Modificado: Máximo de 3 columnas y 3 filas = máximo 9 tarjetas por página
+const MAX_COLS = 3
+const MAX_ROWS = 3
 
-// Tamaño mínimo de card para que el contenido (patente, unidad, cliente,
-// mecánico, estado y ETA) entre sin apretarse ni solaparse.
+// Tamaño mínimo de card para que el contenido entre sin apretarse
 const MIN_CARD_W = 240
-const MIN_CARD_H = 185
+const MIN_CARD_H = 280
 
 const calcularGrilla = () => {
   if (!gridWrapper.value) return
@@ -6485,7 +6485,7 @@ const calcularFechaFinHabil = (horasRestantes) => {
     }
   }
   const diaStr = fecha.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })
-  const horaStr = fecha.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
+  const horaStr = fecha.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false })
   const hoy = new Date()
   const mañana = new Date(); mañana.setDate(mañana.getDate() + 1)
   if (fecha.toDateString() === hoy.toDateString()) return `Hoy a las ${horaStr} hs`
@@ -6496,7 +6496,11 @@ const calcularFechaFinHabil = (horasRestantes) => {
 const calcularETA = (ot) => {
   if (ot.estado_actual === 'Finalizada') return 'COMPLETADO'
   if (['Trabajos de Terceros', 'Espera de Repuestos'].includes(ot.estado_actual)) return 'A DETERMINAR'
+  
   const asignado = Math.max(0, ot.tiempo_asignado_horas || 0)
+  
+  if (asignado === 0) return 'A DETERMINAR'
+  
   let empleado = Math.max(0, ot.tiempo_empleado_horas || 0)
   if (ot.inicio_curso) {
       const inicioUTC = new Date(ot.inicio_curso.replace(' ', 'T') + 'Z')
@@ -6563,6 +6567,7 @@ onUnmounted(() => {
 .card-sala {
   background: #1e1e1e; border-radius: 12px; padding: 1.6vh 1.4vw; border-left: 0.5vw solid #555;
   display: flex; flex-direction: column; justify-content: space-between;
+  gap: 8px;
   box-shadow: 0 4px 15px rgba(0,0,0,0.3);
   box-sizing: border-box;
   min-width: 0; min-height: 0; overflow: hidden;
@@ -6993,6 +6998,7 @@ dist/
 backups/
 *.bat
 *.xml
+*.env
 </file>
 
 <file path="README.md">
