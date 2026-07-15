@@ -151,9 +151,51 @@ db.serialize(async () => {
     db.run(`CREATE TABLE IF NOT EXISTS tiempos_actividad (id INTEGER PRIMARY KEY AUTOINCREMENT, actividad_id INTEGER NOT NULL, inicio DATETIME NOT NULL, fin DATETIME, FOREIGN KEY(actividad_id) REFERENCES actividades(id) ON DELETE CASCADE ON UPDATE CASCADE)`);
     db.run(`CREATE TABLE IF NOT EXISTS excepciones_mecanicos (id INTEGER PRIMARY KEY AUTOINCREMENT, legajo TEXT NOT NULL, fecha DATE NOT NULL, motivo TEXT NOT NULL, horas_descontadas REAL DEFAULT 10, FOREIGN KEY(legajo) REFERENCES legajos(legajo) ON DELETE CASCADE ON UPDATE CASCADE)`);
     db.run(`CREATE TABLE IF NOT EXISTS feriados (fecha DATE PRIMARY KEY, descripcion TEXT DEFAULT '')`);
-    setTimeout(() => migrarEstructura(), 500);
+    db.run(`CREATE TABLE IF NOT EXISTS usuarios (
+        id TEXT PRIMARY KEY, 
+        email TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL, 
+        nombre_completo TEXT NOT NULL,
+        estado TEXT DEFAULT 'pendiente' CHECK(estado IN ('pendiente', 'aprobado', 'suspendido')),
+        rol TEXT CHECK(rol IN ('admin', 'asesor', 'jefe', 'mecanico')),
+        legajo TEXT,
+        fecha_registro DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(legajo) REFERENCES legajos(legajo) ON DELETE SET NULL ON UPDATE CASCADE
+    )`);
+    setTimeout(() => { migrarEstructura(); inicializarTallerInterno(); }, 500);
 });
 
+async function inicializarTallerInterno() {
+    try {
+        // 1. Asegurar Cliente IVEMAR
+        let cli = await get(`SELECT id FROM clientes WHERE nombre = 'IVEMAR'`);
+        if (!cli) {
+            await run(`INSERT INTO clientes (nombre) VALUES ('IVEMAR')`);
+            cli = await get(`SELECT id FROM clientes WHERE nombre = 'IVEMAR'`);
+        }
+
+        // 2. Asegurar Unidad Interna
+        let uni = await get(`SELECT id FROM unidades WHERE patente = 'INT000'`);
+        if (!uni) {
+            await run(`INSERT INTO unidades (patente, cliente_id, unidad) VALUES ('INT000', ?, 'TALLER INTERNO')`, [cli.id]);
+        }
+
+        // 3. Asegurar OT 0000
+        let ot = await get(`SELECT ot FROM ordenes WHERE ot = '0000'`);
+        if (!ot) {
+            // Buscamos cualquier asesor para cumplir el constraint, o creamos un comodín
+            let asesor = await get(`SELECT legajo FROM legajos WHERE rol = 'asesor' LIMIT 1`);
+            let legajo_asesor = asesor ? asesor.legajo : 'ADMIN';
+            if(!asesor) await run(`INSERT OR IGNORE INTO legajos (legajo, nombre, rol) VALUES ('ADMIN', 'Sistema', 'asesor')`);
+            
+            await run(`INSERT INTO ordenes (ot, patente, asesor_legajo, fecha_apertura, estado_actual) 
+                       VALUES ('0000', 'INT000', ?, CURRENT_TIMESTAMP, 'En Proceso')`, [legajo_asesor]);
+            console.log('✅ OT 0000 (Trabajos Internos) inicializada correctamente.');
+        }
+    } catch (error) {
+        console.error('❌ Error inicializando OT Interna:', error.message);
+    }
+}
 async function cambiarEstado(ot, nuevoEstado) {
     const ahora = new Date().toISOString().replace('T', ' ').substring(0, 19);
     const abierto = await get(`SELECT id, ts_desde FROM estados_historial WHERE ot = ? AND ts_hasta IS NULL ORDER BY id DESC LIMIT 1`, [ot]);

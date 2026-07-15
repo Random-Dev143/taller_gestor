@@ -30,6 +30,7 @@ export function useApi() {
             res = await fetch(url, {
                 headers: { 'Content-Type': 'application/json' },
                 cache: 'no-cache',
+                credentials: 'include',
                 ...options,
             })
         } catch (networkErr) {

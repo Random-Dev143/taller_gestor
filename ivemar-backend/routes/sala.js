@@ -13,6 +13,7 @@ router.get('/', async (req, res) => {
             FROM ordenes o
             JOIN unidades u ON o.patente = u.patente
             JOIN clientes c ON u.cliente_id = c.id
+            WHERE o.ot != '0000'
             ORDER BY CAST(o.ot AS INTEGER) DESC, o.fecha_apertura DESC
         `);
         res.json(rows);

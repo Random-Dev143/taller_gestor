@@ -40,137 +40,102 @@ The content is organized as follows:
 </file_summary>
 
 <directory_structure>
+ivemar-backend/
+  config/
+    database.js
+  middlewares/
+    upload.js
+  routes/
+    actividades.js
+    feriados.js
+    informes.js
+    legajos.js
+    ordenes.js
+    sala.js
+    unidades.js
+  services/
+    feriados.service.js
+    informes.service.js
+    tiempos.service.js
+  utils/
+    cron.js
+  .gitignore
+  package.json
+  server.js
+  sql.js
+ivemar-frontend/
+  .vscode/
+    extensions.json
+  public/
+    img/
+      logo-1.png
+    favicom.jpg
+    favicon.svg
+    icons.svg
+  src/
+    assets/
+      hero.png
+      vite.svg
+      vue.svg
+    components/
+      asesor/
+        AdminLegajos.vue
+        AgendaClientes.vue
+        ModalDetalleOT.vue
+        ModalEditarOT.vue
+        ModalHistorialCliente.vue
+        NuevaOT.vue
+      common/
+        DeltaBadge.vue
+        InformesMensuales.vue
+        NavBar.vue
+        OTTable.vue
+        PaginationBar.vue
+        SvgBarChart.vue
+        SvgPieChart.vue
+        ToastContainer.vue
+      informes/
+        TableroOperativo.vue
+      jefe/
+        ControlFinalOT.vue
+        ModalAsignar.vue
+        ModalAusencias.vue
+        TableroRendimiento.vue
+      mecanico/
+        ModalFinalizarTarea.vue
+        ModalPausarTarea.vue
+      HelloWorld.vue
+    composables/
+      useApi.js
+      useChartConfig.js
+      useDashboardExporter.js
+      usePdfGenerator.js
+      useToast.js
+    router/
+      index.js
+    stores/
+      useInformesStore.js
+    views/
+      AsesorView.vue
+      HomeView.vue
+      JefeView.vue
+      LoginMecanico.vue
+      MecanicoView.vue
+      SalaEsperaView.vue
+    App.vue
+    main.js
+    style.css
+  .gitignore
+  index.html
+  package.json
+  README.md
+  vite.config.js
 .gitignore
-ivemar-backend/.gitignore
-ivemar-backend/config/database.js
-ivemar-backend/middlewares/upload.js
-ivemar-backend/package.json
-ivemar-backend/routes/actividades.js
-ivemar-backend/routes/feriados.js
-ivemar-backend/routes/informes.js
-ivemar-backend/routes/legajos.js
-ivemar-backend/routes/ordenes.js
-ivemar-backend/routes/sala.js
-ivemar-backend/routes/unidades.js
-ivemar-backend/server.js
-ivemar-backend/services/feriados.service.js
-ivemar-backend/services/informes.service.js
-ivemar-backend/services/tiempos.service.js
-ivemar-backend/sql.js
-ivemar-backend/utils/cron.js
-ivemar-frontend/.gitignore
-ivemar-frontend/.vscode/extensions.json
-ivemar-frontend/index.html
-ivemar-frontend/package.json
-ivemar-frontend/public/favicom.jpg
-ivemar-frontend/public/favicon.svg
-ivemar-frontend/public/icons.svg
-ivemar-frontend/public/img/logo-1.png
-ivemar-frontend/README.md
-ivemar-frontend/src/App.vue
-ivemar-frontend/src/assets/hero.png
-ivemar-frontend/src/assets/vite.svg
-ivemar-frontend/src/assets/vue.svg
-ivemar-frontend/src/components/asesor/AdminLegajos.vue
-ivemar-frontend/src/components/asesor/AgendaClientes.vue
-ivemar-frontend/src/components/asesor/ModalDetalleOT.vue
-ivemar-frontend/src/components/asesor/ModalEditarOT.vue
-ivemar-frontend/src/components/asesor/ModalHistorialCliente.vue
-ivemar-frontend/src/components/asesor/NuevaOT.vue
-ivemar-frontend/src/components/common/DeltaBadge.vue
-ivemar-frontend/src/components/common/InformesMensuales.vue
-ivemar-frontend/src/components/common/NavBar.vue
-ivemar-frontend/src/components/common/OTTable.vue
-ivemar-frontend/src/components/common/PaginationBar.vue
-ivemar-frontend/src/components/common/SvgBarChart.vue
-ivemar-frontend/src/components/common/SvgPieChart.vue
-ivemar-frontend/src/components/common/ToastContainer.vue
-ivemar-frontend/src/components/HelloWorld.vue
-ivemar-frontend/src/components/informes/TableroOperativo.vue
-ivemar-frontend/src/components/jefe/ControlFinalOT.vue
-ivemar-frontend/src/components/jefe/ModalAsignar.vue
-ivemar-frontend/src/components/jefe/ModalAusencias.vue
-ivemar-frontend/src/components/jefe/TableroRendimiento.vue
-ivemar-frontend/src/components/mecanico/ModalFinalizarTarea.vue
-ivemar-frontend/src/components/mecanico/ModalPausarTarea.vue
-ivemar-frontend/src/composables/useApi.js
-ivemar-frontend/src/composables/useChartConfig.js
-ivemar-frontend/src/composables/useDashboardExporter.js
-ivemar-frontend/src/composables/usePdfGenerator.js
-ivemar-frontend/src/composables/useToast.js
-ivemar-frontend/src/main.js
-ivemar-frontend/src/router/index.js
-ivemar-frontend/src/stores/useInformesStore.js
-ivemar-frontend/src/style.css
-ivemar-frontend/src/views/AsesorView.vue
-ivemar-frontend/src/views/HomeView.vue
-ivemar-frontend/src/views/JefeView.vue
-ivemar-frontend/src/views/LoginMecanico.vue
-ivemar-frontend/src/views/MecanicoView.vue
-ivemar-frontend/src/views/SalaEsperaView.vue
-ivemar-frontend/vite.config.js
 README.md
 </directory_structure>
 
 <files>
 This section contains the contents of the repository's files.
-
-<file path=".gitignore">
-# Este proyecto tiene dos sub-carpetas (ivemar-backend/ e
-# ivemar-frontend/), cada una con su propio .gitignore específico.
-# Este archivo raíz cubre lo que pueda quedar fuera de esas dos carpetas
-# si en algún momento se sube todo como un único repositorio.
-
-node_modules/
-dist/
-*.log
-.DS_Store
-.vscode/*
-!.vscode/extensions.json
-.idea
-
-# Base de datos y backups (ver también ivemar-backend/.gitignore)
-*.db
-*.db-wal
-*.db-shm
-backups/
-*.bat
-*.xml
-</file>
-
-<file path="ivemar-backend/.gitignore">
-# Dependencias
-node_modules/
-
-# Variables de entorno (cuando se agregue configuración sensible)
-.env
-.env.local
-
-# Base de datos SQLite: NUNCA debe versionarse. Contiene datos reales de
-# clientes (nombre, teléfono, correo) y crece indefinidamente con el uso.
-*.db
-*.db-wal
-*.db-shm
-*.db-journal
-
-# Backups automáticos generados por utils/cron.js
-backups/
-
-# Firmas de legajos subidas por los usuarios (contenido generado en runtime,
-# no código fuente)
-firmas/*
-!firmas/.gitkeep
-
-# Logs
-*.log
-npm-debug.log*
-
-# Editor / SO
-.vscode/*
-!.vscode/extensions.json
-.idea
-.DS_Store
-</file>
 
 <file path="ivemar-backend/config/database.js">
 const sqlite3 = require('sqlite3').verbose();
@@ -326,9 +291,40 @@ db.serialize(async () => {
     db.run(`CREATE TABLE IF NOT EXISTS tiempos_actividad (id INTEGER PRIMARY KEY AUTOINCREMENT, actividad_id INTEGER NOT NULL, inicio DATETIME NOT NULL, fin DATETIME, FOREIGN KEY(actividad_id) REFERENCES actividades(id) ON DELETE CASCADE ON UPDATE CASCADE)`);
     db.run(`CREATE TABLE IF NOT EXISTS excepciones_mecanicos (id INTEGER PRIMARY KEY AUTOINCREMENT, legajo TEXT NOT NULL, fecha DATE NOT NULL, motivo TEXT NOT NULL, horas_descontadas REAL DEFAULT 10, FOREIGN KEY(legajo) REFERENCES legajos(legajo) ON DELETE CASCADE ON UPDATE CASCADE)`);
     db.run(`CREATE TABLE IF NOT EXISTS feriados (fecha DATE PRIMARY KEY, descripcion TEXT DEFAULT '')`);
-    setTimeout(() => migrarEstructura(), 500);
+    setTimeout(() => { migrarEstructura(); inicializarTallerInterno(); }, 500);
 });
 
+async function inicializarTallerInterno() {
+    try {
+        // 1. Asegurar Cliente IVEMAR
+        let cli = await get(`SELECT id FROM clientes WHERE nombre = 'IVEMAR'`);
+        if (!cli) {
+            await run(`INSERT INTO clientes (nombre) VALUES ('IVEMAR')`);
+            cli = await get(`SELECT id FROM clientes WHERE nombre = 'IVEMAR'`);
+        }
+
+        // 2. Asegurar Unidad Interna
+        let uni = await get(`SELECT id FROM unidades WHERE patente = 'INT000'`);
+        if (!uni) {
+            await run(`INSERT INTO unidades (patente, cliente_id, unidad) VALUES ('INT000', ?, 'TALLER INTERNO')`, [cli.id]);
+        }
+
+        // 3. Asegurar OT 0000
+        let ot = await get(`SELECT ot FROM ordenes WHERE ot = '0000'`);
+        if (!ot) {
+            // Buscamos cualquier asesor para cumplir el constraint, o creamos un comodín
+            let asesor = await get(`SELECT legajo FROM legajos WHERE rol = 'asesor' LIMIT 1`);
+            let legajo_asesor = asesor ? asesor.legajo : 'ADMIN';
+            if(!asesor) await run(`INSERT OR IGNORE INTO legajos (legajo, nombre, rol) VALUES ('ADMIN', 'Sistema', 'asesor')`);
+            
+            await run(`INSERT INTO ordenes (ot, patente, asesor_legajo, fecha_apertura, estado_actual) 
+                       VALUES ('0000', 'INT000', ?, CURRENT_TIMESTAMP, 'En Proceso')`, [legajo_asesor]);
+            console.log('✅ OT 0000 (Trabajos Internos) inicializada correctamente.');
+        }
+    } catch (error) {
+        console.error('❌ Error inicializando OT Interna:', error.message);
+    }
+}
 async function cambiarEstado(ot, nuevoEstado) {
     const ahora = new Date().toISOString().replace('T', ' ').substring(0, 19);
     const abierto = await get(`SELECT id, ts_desde FROM estados_historial WHERE ot = ? AND ts_hasta IS NULL ORDER BY id DESC LIMIT 1`, [ot]);
@@ -396,28 +392,6 @@ const upload = multer({
 });
 
 module.exports = upload;
-</file>
-
-<file path="ivemar-backend/package.json">
-{
-  "name": "ivemar-backend",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
-  "dependencies": {
-    "cors": "^2.8.6",
-    "express": "^5.2.1",
-    "multer": "^2.2.0",
-    "sqlite3": "^6.0.1"
-  }
-}
 </file>
 
 <file path="ivemar-backend/routes/actividades.js">
@@ -813,7 +787,7 @@ router.get('/', async (req, res) => {
         const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 25));
         const offset = (page - 1) * limit;
 
-        let where = ' WHERE 1=1';
+        let where = " WHERE o.ot != '0000'";
         const params = [];
 
         if (req.query.estado === 'activas') where += ` AND o.estado_actual != 'Finalizada'`;
@@ -821,7 +795,7 @@ router.get('/', async (req, res) => {
         else if (req.query.estado) { where += ` AND o.estado_actual = ?`; params.push(req.query.estado); }
 
         if (req.query.garantia !== undefined) { where += ` AND o.es_garantia = ?`; params.push(req.query.garantia); }
-
+        
         if (req.query.busqueda) {
             where += ` AND (o.ot LIKE ? OR o.patente LIKE ? OR c.nombre LIKE ?)`;
             const q = `%${req.query.busqueda}%`;
@@ -1012,6 +986,7 @@ router.get('/', async (req, res) => {
             FROM ordenes o
             JOIN unidades u ON o.patente = u.patente
             JOIN clientes c ON u.cliente_id = c.id
+            WHERE o.ot != '0000'
             ORDER BY CAST(o.ot AS INTEGER) DESC, o.fecha_apertura DESC
         `);
         res.json(rows);
@@ -1097,58 +1072,6 @@ router.delete('/:id', async (req, res) => {
 module.exports = router;
 </file>
 
-<file path="ivemar-backend/server.js">
-'use strict';
-
-const express = require('express');
-const cors = require('cors');
-const path = require('path');
-const fs = require('fs');
-const iniciarCron = require('./utils/cron');
-
-const app = express();
-const PORT = 5881;
-const FIRMAS_DIR = path.join(__dirname, 'firmas');
-
-// Asegurar que exista la carpeta de firmas
-if (!fs.existsSync(FIRMAS_DIR)) {
-    fs.mkdirSync(FIRMAS_DIR, { recursive: true });
-}
-
-// ─── MIDDLEWARE ────────────────────────────────────────────────────
-app.use(express.json());
-app.use(cors({
-    origin: '*',
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
-}));
-
-// ─── ARCHIVOS ESTÁTICOS ───────────────────────────────────────────
-app.use('/firmas', express.static(FIRMAS_DIR));
-
-// ─── RUTAS (API REST) ─────────────────────────────────────────────
-app.get('/status', (req, res) => {
-    res.json({ status: 'API IVEMAR activa', version: '2.0 - Modular' });
-});
-
-app.use('/api/unidades', require('./routes/unidades'));
-app.use('/api/legajos', require('./routes/legajos'));
-app.use('/api/ordenes', require('./routes/ordenes'));
-app.use('/api/actividades', require('./routes/actividades'));
-app.use('/api/informes', require('./routes/informes'));
-app.use('/api/sala', require('./routes/sala'));
-app.use('/api/feriados', require('./routes/feriados'));
-
-// ─── INICIAR TAREAS PROGRAMADAS ────────────────────────────────────
-iniciarCron();
-
-// ─── ARRANQUE ──────────────────────────────────────────────────────
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 API IVEMAR activa en http://0.0.0.0:${PORT}`);
-    console.log(`📁 Firmas: ${FIRMAS_DIR}`);
-});
-</file>
-
 <file path="ivemar-backend/services/feriados.service.js">
 // ivemar-backend/services/feriados.service.js
 const { all } = require('../config/database');
@@ -1216,45 +1139,63 @@ async function getFinanciero(inicio, fin, inicioAnterior, finAnterior) {
     return { resumen, resumen_anterior, facturacion_diaria, facturacion_por_marca, rentabilidad_unidad, top_clientes };
 }
 
-// ivemar-backend/services/informes.service.js (Reemplaza getOperativo y añade el helper)
+// ==========================================================================
+// INFORME OPERATIVO / RENDIMIENTO
+// ==========================================================================
+
+// Horarios laborales centralizados: antes estaban hardcodeados en 3 lugares
+// distintos (construirMapaOcio, cálculo de días hábiles y hs_exigidas).
+const HORAS_LABORALES = { habil: [8, 9, 10, 11, 12, 14, 15, 16, 17], sabado: [8, 9, 10, 11, 12] };
+const horasDelDia = (diaSemana) => diaSemana === 6 ? HORAS_LABORALES.sabado : HORAS_LABORALES.habil;
 
 // Función matemática para escanear huecos de inactividad
-function construirMapaOcio(diasHabiles, sesiones, excepciones) {
-    const heatmap = {}; 
+// Función matemática para escanear huecos de inactividad
+function construirMapaOcio(diasHabiles, sesiones, excepcionesPorFecha) {
+    const heatmap = {};
     for (let d = 1; d <= 6; d++) {
         heatmap[d] = {};
-        const hs = d === 6 ? [8,9,10,11,12] : [8,9,10,11,12,14,15,16,17];
-        for (let h of hs) heatmap[d][h] = 0;
+        for (const h of horasDelDia(d)) heatmap[d][h] = 0;
     }
 
-    // Si el jefe descontó 8hs o más, consideramos que fue un día de ausencia justificada completa
-    const diasConExcepcionTotal = new Set(excepciones.filter(e => e.horas_descontadas >= 8).map(e => e.fecha));
-    const bucketCapacity = {}; 
+    const bucketCapacity = {};
 
-    // 1. Llenar los "baldes" de horas hábiles disponibles (60 min por hora)
+    // 1. Llenar los "baldes" de horas hábiles disponibles (60 min por hora),
+    //    prorrateando las excepciones parciales (ej: 4hs de permiso) en vez de
+    //    solo excluir el día completo cuando son >= 8hs.
     for (const fecha of diasHabiles) {
-        if (diasConExcepcionTotal.has(fecha)) continue; 
-        const dateObj = new Date(fecha + 'T12:00:00Z');
-        const dSemana = dateObj.getDay();
-        const hs = dSemana === 6 ? [8,9,10,11,12] : [8,9,10,11,12,14,15,16,17];
-        for (let h of hs) {
+        const exc = excepcionesPorFecha.get(fecha);
+        const horasDescontadas = exc ? exc.horas_descontadas : 0;
+
+        // Día completo justificado: no aporta capacidad, no cuenta como ocio.
+        if (horasDescontadas >= 8) continue;
+
+        const dSemana = new Date(fecha + 'T12:00:00Z').getDay();
+        const slots = horasDelDia(dSemana);
+
+        // Minutos a descontar del total de franjas de ese día (permiso parcial),
+        // repartidos secuencialmente entre las franjas disponibles.
+        let minutosADescontar = Math.round(horasDescontadas * 60);
+
+        for (const h of slots) {
             const key = `${fecha}-${h}`;
-            bucketCapacity[key] = 60;
-            heatmap[dSemana][h] += 60; // Añadir 60 min de "Ocio Potencial"
+            const capacidadFranja = Math.max(0, 60 - minutosADescontar);
+            minutosADescontar = Math.max(0, minutosADescontar - 60);
+
+            bucketCapacity[key] = capacidadFranja;
+            heatmap[dSemana][h] += capacidadFranja; // Ocio potencial ya neto de permisos
         }
     }
 
     // 2. Restar los minutos exactos trabajados en cada balde
     for (const s of sesiones) {
-        let start = new Date(s.inicio + 'Z');
-        let end = s.fin ? new Date(s.fin + 'Z') : new Date();
-        
-        let curr = new Date(start);
+        let curr = new Date(s.inicio + 'Z');
+        const end = s.fin ? new Date(s.fin + 'Z') : new Date();
+
         while (curr < end) {
             const fecha = curr.toISOString().split('T')[0];
             const h = curr.getHours();
             const dSemana = curr.getDay();
-            
+
             const nextHour = new Date(curr);
             nextHour.setHours(h + 1, 0, 0, 0);
             const chunkEnd = nextHour < end ? nextHour : end;
@@ -1262,8 +1203,7 @@ function construirMapaOcio(diasHabiles, sesiones, excepciones) {
 
             const key = `${fecha}-${h}`;
             if (bucketCapacity[key] && heatmap[dSemana] && heatmap[dSemana][h] !== undefined) {
-                heatmap[dSemana][h] -= mins;
-                if (heatmap[dSemana][h] < 0) heatmap[dSemana][h] = 0;
+                heatmap[dSemana][h] = Math.max(0, heatmap[dSemana][h] - mins);
             }
             curr = chunkEnd;
         }
@@ -1272,15 +1212,92 @@ function construirMapaOcio(diasHabiles, sesiones, excepciones) {
     // 3. Formatear para el Frontend
     const result = [];
     for (let d = 1; d <= 6; d++) {
-        const hs = d === 6 ? [8,9,10,11,12] : [8,9,10,11,12,14,15,16,17];
-        for (let h of hs) {
+        for (const h of horasDelDia(d)) {
             result.push({ dia: d, hora: h, minutos_ocio: Math.round(heatmap[d][h]) });
         }
     }
     return result;
 }
 
+const TIPO_DESCANSO = {
+  NORMAL: 'normal',
+  FIN_DE_SEMANA: 'fin_de_semana',
+  FIN_DE_SEMANA_LARGO: 'fin_de_semana_largo', // finde con feriado pegado (puente)
+  PERMISO_PREVIO: 'permiso_previo'            // el día calendario anterior tuvo excepción >= 8hs
+};
+
+// Serie diaria de ocio por mecánico: a diferencia del heatmap semanal (que agrupa
+// por día-de-semana + hora, perdiendo la fecha real), esta serie conserva cada
+// fecha puntual y la etiqueta según qué la precedió, para poder comparar
+// "primer día después de un descanso" vs "día normal".
+function construirSerieDiaria(diasHabilesPeriodo, sesiones, excepcionesMecanico) {
+    const minutosTrabajadosPorFecha = new Map();
+    for (const s of sesiones) {
+        let curr = new Date(s.inicio + 'Z');
+        const end = s.fin ? new Date(s.fin + 'Z') : new Date();
+
+        while (curr < end) {
+            const fecha = curr.toISOString().split('T')[0];
+            const h = curr.getHours();
+            const nextHour = new Date(curr);
+            nextHour.setHours(h + 1, 0, 0, 0);
+            const chunkEnd = nextHour < end ? nextHour : end;
+            const mins = (chunkEnd - curr) / 60000;
+
+            if (horasDelDia(curr.getDay()).includes(h)) {
+                minutosTrabajadosPorFecha.set(fecha, (minutosTrabajadosPorFecha.get(fecha) || 0) + mins);
+            }
+            curr = chunkEnd;
+        }
+    }
+
+    const result = [];
+    for (let i = 0; i < diasHabilesPeriodo.length; i++) {
+        const fecha = diasHabilesPeriodo[i];
+        const exc = excepcionesMecanico.get(fecha);
+        const horasDescontadas = exc ? exc.horas_descontadas : 0;
+
+        // Día completo ausente/justificado: sin señal de "cómo trabajó", se excluye del patrón
+        if (horasDescontadas >= 8) continue;
+
+        const dSemana = new Date(fecha + 'T12:00:00Z').getDay();
+        const capacidadMin = horasDelDia(dSemana).length * 60 - Math.round(horasDescontadas * 60);
+        if (capacidadMin <= 0) continue;
+
+        const trabajadosMin = minutosTrabajadosPorFecha.get(fecha) || 0;
+        const ocioMin = Math.max(0, capacidadMin - trabajadosMin);
+
+        // ¿Qué precedió a este día hábil?
+        const fechaAnteriorHabil = diasHabilesPeriodo[i - 1];
+        const gapCalendario = fechaAnteriorHabil
+            ? Math.round((new Date(fecha) - new Date(fechaAnteriorHabil)) / 86400000)
+            : 0;
+
+        const fechaCalAnteriorStr = new Date(new Date(fecha + 'T12:00:00Z').getTime() - 86400000).toISOString().split('T')[0];
+        const excDiaAnteriorCalendario = excepcionesMecanico.get(fechaCalAnteriorStr);
+
+        let tipo_descanso = TIPO_DESCANSO.NORMAL;
+        if (gapCalendario >= 3) tipo_descanso = TIPO_DESCANSO.FIN_DE_SEMANA_LARGO;
+        else if (gapCalendario === 2) tipo_descanso = TIPO_DESCANSO.FIN_DE_SEMANA;
+        else if (excDiaAnteriorCalendario && excDiaAnteriorCalendario.horas_descontadas >= 8) tipo_descanso = TIPO_DESCANSO.PERMISO_PREVIO;
+
+        result.push({
+            fecha,
+            minutos_ocio: Math.round(ocioMin),
+            minutos_trabajados: Math.round(trabajadosMin),
+            capacidad_minutos: Math.round(capacidadMin),
+            ocio_porcentaje: parseFloat(((ocioMin / capacidadMin) * 100).toFixed(1)),
+            tipo_descanso
+        });
+    }
+    return result;
+}
+
 async function getOperativo(inicio, fin) {
+    if (!inicio || !fin) {
+        throw new Error('Debe indicar fecha de inicio y fin para el informe operativo');
+    }
+
     const feriadosSet = await getFeriadosSet();
     const rangeStart = new Date(inicio + 'T00:00:00Z');
     const rangeEnd = new Date(fin + 'T00:00:00Z');
@@ -1295,7 +1312,7 @@ async function getOperativo(inicio, fin) {
         }
     }
 
-   const mecanicosActivos = await all(`SELECT legajo, nombre FROM legajos WHERE rol IN ('mecanico', 'jefe')`);
+    const mecanicosActivos = await all(`SELECT legajo, nombre FROM legajos WHERE rol IN ('mecanico', 'jefe')`);
     const porLegajo = {};
     for (const mec of mecanicosActivos) {
         porLegajo[mec.legajo] = {
@@ -1305,13 +1322,21 @@ async function getOperativo(inicio, fin) {
         };
     }
 
+    // Antes: subquery correlacionada "(SELECT SUM(tiempo_estimado) FROM actividades
+    // WHERE ot = a.ot AND estado = 'Finalizada')" ejecutada por CADA fila de sesiones.
+    // Ahora: se precalcula una sola vez y se consulta en memoria con un Map.
+    const denomEstimadoPorOT = await all(`
+        SELECT ot, SUM(tiempo_estimado) AS denom_estimado
+        FROM actividades WHERE estado = 'Finalizada' GROUP BY ot
+    `);
+    const denomPorOTMap = new Map(denomEstimadoPorOT.map(r => [r.ot, r.denom_estimado]));
+
     const sesiones = await all(`
         SELECT
             a.legajo_mecanico AS legajo, l.nombre, a.estado,
             a.id AS actividad_id, a.ot, a.tiempo_estimado, a.tiempo_real AS tiempo_real_total,
             ta.inicio, ta.fin, c.nombre AS cliente_nombre,
-            (o.monto_mano_obra + o.monto_mano_obra_garantia) AS monto_mano_obra_total,
-            (SELECT SUM(tiempo_estimado) FROM actividades WHERE ot = a.ot AND estado = 'Finalizada') AS denom_estimado
+            (o.monto_mano_obra + o.monto_mano_obra_garantia) AS monto_mano_obra_total
         FROM tiempos_actividad ta
         JOIN actividades a ON ta.actividad_id = a.id
         JOIN legajos l ON a.legajo_mecanico = l.legajo
@@ -1328,47 +1353,65 @@ async function getOperativo(inicio, fin) {
         const start = Math.max(inicioSesion, rangeStart);
         const end = Math.min(finSesion, rangeEnd);
         const horasPeriodo = Math.max(0, (end - start) / 3600000);
-        
+
         if (horasPeriodo <= 0) continue;
-        
-        if (porLegajo[s.legajo]) {
-            porLegajo[s.legajo].sesiones.push(s);
-            const m = porLegajo[s.legajo];
-            
-            if (s.cliente_nombre === 'IVEMAR') {
-                m.hs_internas += horasPeriodo;
-            } else {
-                m.ot_set.add(s.ot);
-                m.hs_productivas += horasPeriodo;
-                const fraccion = s.tiempo_real_total > 0 ? Math.min(1, horasPeriodo / s.tiempo_real_total) : 0;
-                m.hs_estimadas += s.tiempo_estimado * fraccion;
-                
-                if (s.estado === 'Finalizada' && s.denom_estimado > 0) {
-                    const tasaPorHoraEstimada = s.monto_mano_obra_total / s.denom_estimado;
-                    m.facturacion_generada += s.tiempo_estimado * tasaPorHoraEstimada * fraccion;
-                    m.rentabilidad_eficiencia += (s.tiempo_estimado - s.tiempo_real_total) * tasaPorHoraEstimada * fraccion;
-                }
-            }
+
+        const m = porLegajo[s.legajo];
+        if (!m) continue;
+
+        m.sesiones.push(s);
+
+        if (s.ot === '0000') {
+            m.hs_internas += horasPeriodo;
+            continue;
+        }
+
+        m.ot_set.add(s.ot);
+        m.hs_productivas += horasPeriodo;
+        const fraccion = s.tiempo_real_total > 0 ? Math.min(1, horasPeriodo / s.tiempo_real_total) : 0;
+        m.hs_estimadas += s.tiempo_estimado * fraccion;
+
+        const denomEstimado = denomPorOTMap.get(s.ot) || 0;
+        if (s.estado === 'Finalizada' && denomEstimado > 0) {
+            const tasaPorHoraEstimada = s.monto_mano_obra_total / denomEstimado;
+            m.facturacion_generada += s.tiempo_estimado * tasaPorHoraEstimada * fraccion;
+            m.rentabilidad_eficiencia += (s.tiempo_estimado - s.tiempo_real_total) * tasaPorHoraEstimada * fraccion;
         }
     }
 
-    const dias_activos = await all(`
+    const diasActivosRows = await all(`
         SELECT a.legajo_mecanico AS legajo, DATE(ta.inicio) as fecha
         FROM tiempos_actividad ta JOIN actividades a ON ta.actividad_id = a.id
         WHERE ta.inicio >= ? AND ta.inicio < ? GROUP BY a.legajo_mecanico, DATE(ta.inicio)
     `, [inicio, fin]);
 
-    const excepciones = await all(`SELECT id, legajo, DATE(fecha) as fecha, motivo, horas_descontadas FROM excepciones_mecanicos WHERE DATE(fecha) >= ? AND DATE(fecha) < ?`, [inicio, fin]);
+    const excepcionesRows = await all(`SELECT id, legajo, DATE(fecha) as fecha, motivo, horas_descontadas FROM excepciones_mecanicos WHERE DATE(fecha) >= ? AND DATE(fecha) < ?`, [inicio, fin]);
+
+    // Antes: dentro del .map() de cada mecánico se hacía dias_activos.filter(...) y
+    // excepciones.find(...) recorriendo TODO el array en cada iteración (O(n*m)).
+    // Ahora: se indexa una sola vez por legajo/fecha con Map.
+    const diasActivosPorLegajo = new Map();
+    for (const d of diasActivosRows) {
+        if (!diasActivosPorLegajo.has(d.legajo)) diasActivosPorLegajo.set(d.legajo, []);
+        diasActivosPorLegajo.get(d.legajo).push(d.fecha);
+    }
+
+    const excepcionesPorLegajoFecha = new Map(); // legajo -> Map(fecha -> excepcion)
+    for (const e of excepcionesRows) {
+        if (!excepcionesPorLegajoFecha.has(e.legajo)) excepcionesPorLegajoFecha.set(e.legajo, new Map());
+        excepcionesPorLegajoFecha.get(e.legajo).set(e.fecha, e);
+    }
 
     const tiempos_mecanicos = Object.values(porLegajo).map(m => {
-        let dias_del_mecanico = dias_activos.filter(d => d.legajo === m.legajo);
-        const diasTrabajadosSet = new Set(dias_del_mecanico.map(d => d.fecha));
-        let hs_exigidas = 0;
+        const diasDelMecanico = diasActivosPorLegajo.get(m.legajo) || [];
+        const diasTrabajadosSet = new Set(diasDelMecanico);
+        const excepcionesMecanico = excepcionesPorLegajoFecha.get(m.legajo) || new Map();
 
-        for (let d of dias_del_mecanico) {
-            let esFeriado = feriadosSet.has(d.fecha);
-            let base_dia = esFeriado ? 0 : (new Date(d.fecha + 'T12:00:00Z').getDay() === 6 ? 5 : 10);
-            let exc = excepciones.find(e => e.legajo === m.legajo && e.fecha === d.fecha);
+        let hs_exigidas = 0;
+        for (const fecha of diasDelMecanico) {
+            const esFeriado = feriadosSet.has(fecha);
+            let base_dia = esFeriado ? 0 : (new Date(fecha + 'T12:00:00Z').getDay() === 6 ? 5 : 10);
+            const exc = excepcionesMecanico.get(fecha);
             if (exc) base_dia -= exc.horas_descontadas;
             hs_exigidas += Math.max(0, base_dia);
         }
@@ -1376,7 +1419,7 @@ async function getOperativo(inicio, fin) {
         const dias_ausentes = diasHabilesPeriodo
             .filter(fecha => !diasTrabajadosSet.has(fecha))
             .map(fecha => {
-                const exc = excepciones.find(e => e.legajo === m.legajo && e.fecha === fecha);
+                const exc = excepcionesMecanico.get(fecha);
                 return { fecha, motivo: exc ? exc.motivo : null, excepcion_id: exc ? exc.id : null };
             });
 
@@ -1384,6 +1427,8 @@ async function getOperativo(inicio, fin) {
         const hs_productivas = parseFloat(m.hs_productivas.toFixed(2));
         const hs_internas = parseFloat(m.hs_internas.toFixed(2));
         const hs_empleadas = parseFloat((hs_productivas + hs_internas).toFixed(2));
+
+        
 
         return {
             legajo: m.legajo, nombre: m.nombre,
@@ -1393,16 +1438,43 @@ async function getOperativo(inicio, fin) {
             rentabilidad_eficiencia: parseFloat(m.rentabilidad_eficiencia.toFixed(2)),
             hs_empleadas,
             hs_exigidas: parseFloat(hs_exigidas.toFixed(2)),
-            dias_asistidos: dias_del_mecanico.length,
+            dias_asistidos: diasDelMecanico.length,
             dias_ausentes, dias_ausentes_count: dias_ausentes.length,
             tiempo_muerto: Math.max(0, parseFloat((hs_exigidas - hs_productivas - hs_internas).toFixed(2))),
             eficiencia_porcentaje: hs_productivas > 0 ? parseFloat(((hs_estimadas / hs_productivas) * 100).toFixed(2)) : 0,
-            productividad_porcentaje: hs_exigidas > 0 ? parseFloat((hs_empleadas / hs_exigidas * 100).toFixed(2)) : 0,
-            mapa_ocio: construirMapaOcio(diasHabilesPeriodo, m.sesiones, excepciones.filter(e => e.legajo === m.legajo))
+            productividad_porcentaje: hs_exigidas > 0 ? parseFloat((hs_productivas / hs_exigidas * 100).toFixed(2)) : 0,
+            mapa_ocio: construirMapaOcio(diasHabilesPeriodo, m.sesiones, excepcionesMecanico),
+            serie_diaria: construirSerieDiaria(diasHabilesPeriodo, m.sesiones, excepcionesMecanico)
         };
     }).sort((a, b) => b.facturacion_generada - a.facturacion_generada);
+    
+    const gruposDescanso = {};
+    for (const m of tiempos_mecanicos) {
+        // Se excluyen mecánicos sin ninguna sesión registrada en el período
+        // (ej: jefe que no carga tiempos_actividad, altas nuevas, cuentas
+        // inactivas). Sin actividad real no hay dato de "cómo trabajó" ese
+        // día — incluirlos como 100% ocio todos los días distorsiona el
+        // promedio del taller completo.
+        if (m.hs_productivas === 0 && m.hs_internas === 0) continue;
 
-    return { tiempos_mecanicos };
+        for (const dia of m.serie_diaria) {
+            if (!gruposDescanso[dia.tipo_descanso]) {
+                gruposDescanso[dia.tipo_descanso] = { tipo_descanso: dia.tipo_descanso, dias: 0, suma_ocio_pct: 0 };
+            }
+            gruposDescanso[dia.tipo_descanso].dias += 1;
+            gruposDescanso[dia.tipo_descanso].suma_ocio_pct += dia.ocio_porcentaje;
+        }
+    }
+    const patrones_descanso = Object.values(gruposDescanso)
+        .map(g => ({
+            tipo_descanso: g.tipo_descanso,
+            cantidad_dias: g.dias,
+            ocio_promedio_porcentaje: parseFloat((g.suma_ocio_pct / g.dias).toFixed(1))
+        }))
+        .sort((a, b) => a.ocio_promedio_porcentaje - b.ocio_promedio_porcentaje);
+
+    return { tiempos_mecanicos, patrones_descanso };
+
 }
 
 async function getTaller(inicio, fin, filtroCuellosStr) {
@@ -1504,27 +1576,6 @@ function calcularMinutosHabiles(startStr, endStr, estado, feriadosSet = new Set(
 // 2. Aquí agregaremos en el futuro la función para calcular Días Activos y Ocio.
 
 module.exports = { calcularMinutosHabiles };
-</file>
-
-<file path="ivemar-backend/sql.js">
-const sqlite3 = require('sqlite3').verbose();
-
-const db = new sqlite3.Database('./taller.db');
-
-const sql = process.argv.slice(2).join(' ');
-
-db.all(sql, [], (err, rows) => {
-    if (err) {
-        db.run(sql, function(err){
-            if(err) console.error(err.message);
-            else console.log("OK - Filas modificadas:", this.changes);
-            db.close();
-        });
-    } else {
-        console.table(rows);
-        db.close();
-    }
-});
 </file>
 
 <file path="ivemar-backend/utils/cron.js">
@@ -1647,81 +1698,138 @@ function iniciarCron() {
 module.exports = iniciarCron;
 </file>
 
-<file path="ivemar-frontend/.gitignore">
+<file path="ivemar-backend/.gitignore">
+# Dependencias
+node_modules/
+
+# Variables de entorno (cuando se agregue configuración sensible)
+.env
+.env.local
+
+# Base de datos SQLite: NUNCA debe versionarse. Contiene datos reales de
+# clientes (nombre, teléfono, correo) y crece indefinidamente con el uso.
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+
+# Backups automáticos generados por utils/cron.js
+backups/
+
+# Firmas de legajos subidas por los usuarios (contenido generado en runtime,
+# no código fuente)
+firmas/*
+!firmas/.gitkeep
+
 # Logs
-logs
 *.log
 npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
-*.local
-
-# Editor directories and files
+# Editor / SO
 .vscode/*
 !.vscode/extensions.json
 .idea
 .DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
+</file>
+
+<file path="ivemar-backend/package.json">
+{
+  "name": "ivemar-backend",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "multer": "^2.2.0",
+    "sqlite3": "^6.0.1"
+  }
+}
+</file>
+
+<file path="ivemar-backend/server.js">
+'use strict';
+
+const express = require('express');
+const cors = require('cors');
+const path = require('path');
+const fs = require('fs');
+const iniciarCron = require('./utils/cron');
+
+const app = express();
+const PORT = 5881;
+const FIRMAS_DIR = path.join(__dirname, 'firmas');
+
+// Asegurar que exista la carpeta de firmas
+if (!fs.existsSync(FIRMAS_DIR)) {
+    fs.mkdirSync(FIRMAS_DIR, { recursive: true });
+}
+
+// ─── MIDDLEWARE ────────────────────────────────────────────────────
+app.use(express.json());
+app.use(cors({
+    origin: '*',
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
+// ─── ARCHIVOS ESTÁTICOS ───────────────────────────────────────────
+app.use('/firmas', express.static(FIRMAS_DIR));
+
+// ─── RUTAS (API REST) ─────────────────────────────────────────────
+app.get('/status', (req, res) => {
+    res.json({ status: 'API IVEMAR activa', version: '2.0 - Modular' });
+});
+
+app.use('/api/unidades', require('./routes/unidades'));
+app.use('/api/legajos', require('./routes/legajos'));
+app.use('/api/ordenes', require('./routes/ordenes'));
+app.use('/api/actividades', require('./routes/actividades'));
+app.use('/api/informes', require('./routes/informes'));
+app.use('/api/sala', require('./routes/sala'));
+app.use('/api/feriados', require('./routes/feriados'));
+
+// ─── INICIAR TAREAS PROGRAMADAS ────────────────────────────────────
+iniciarCron();
+
+// ─── ARRANQUE ──────────────────────────────────────────────────────
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 API IVEMAR activa en http://0.0.0.0:${PORT}`);
+    console.log(`📁 Firmas: ${FIRMAS_DIR}`);
+});
+</file>
+
+<file path="ivemar-backend/sql.js">
+const sqlite3 = require('sqlite3').verbose();
+
+const db = new sqlite3.Database('./taller.db');
+
+const sql = process.argv.slice(2).join(' ');
+
+db.all(sql, [], (err, rows) => {
+    if (err) {
+        db.run(sql, function(err){
+            if(err) console.error(err.message);
+            else console.log("OK - Filas modificadas:", this.changes);
+            db.close();
+        });
+    } else {
+        console.table(rows);
+        db.close();
+    }
+});
 </file>
 
 <file path="ivemar-frontend/.vscode/extensions.json">
 {
   "recommendations": ["Vue.volar"]
-}
-</file>
-
-<file path="ivemar-frontend/index.html">
-<!doctype html>
-<html lang="es">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="IVEMAR - Sistema de gestión de órdenes de trabajo del taller" />
-    <title>IVEMAR · Taller</title>
-  </head>
-  <body>
-    <div id="app"></div>
-    <script type="module" src="/src/main.js"></script>
-  </body>
-</html>
-</file>
-
-<file path="ivemar-frontend/package.json">
-{
-  "name": "ivemar-frontend",
-  "private": true,
-  "version": "0.0.0",
-  "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "chart.js": "^4.4.9",
-    "html2canvas": "^1.4.1",
-    "jspdf": "^4.2.1",
-    "jspdf-autotable": "^5.0.8",
-    "pinia": "^3.0.4",
-    "vue": "^3.5.39",
-    "vue-chartjs": "^5.3.2",
-    "vue-router": "^4.4.5"
-  },
-  "devDependencies": {
-    "@vitejs/plugin-vue": "^6.0.7",
-    "vite": "^8.1.1"
-  }
 }
 </file>
 
@@ -1832,28 +1940,6 @@ c140 -138 239 -320 285 -526 8 -34 13 -118 13 -199 0 -113 -4 -157 -23 -229
     <path fill="#08060d" fill-rule="evenodd" d="M1.893 1.98c.052.072 1.245 1.769 2.653 3.77l2.892 4.114c.183.261.333.48.333.486s-.068.089-.152.183l-.522.593-.765.867-3.597 4.087c-.375.426-.734.834-.798.905a1 1 0 0 0-.118.148c0 .01.236.017.664.017h.663l.729-.83c.4-.457.796-.906.879-.999a692 692 0 0 0 1.794-2.038c.034-.037.301-.34.594-.675l.551-.624.345-.392a7 7 0 0 1 .34-.374c.006 0 .93 1.306 2.052 2.903l2.084 2.965.045.063h2.275c1.87 0 2.273-.003 2.266-.021-.008-.02-1.098-1.572-3.894-5.547-2.013-2.862-2.28-3.246-2.273-3.266.008-.019.282-.332 2.085-2.38l2-2.274 1.567-1.782c.022-.028-.016-.03-.65-.03h-.674l-.3.342a871 871 0 0 1-1.782 2.025c-.067.075-.405.458-.75.852a100 100 0 0 1-.803.91c-.148.172-.299.344-.99 1.127-.304.343-.32.358-.345.327-.015-.019-.904-1.282-1.976-2.808L6.365 1.85H1.8zm1.782.91 8.078 11.294c.772 1.08 1.413 1.973 1.425 1.984.016.017.241.02 1.05.017l1.03-.004-2.694-3.766L7.796 5.75 5.722 2.852l-1.039-.004-1.039-.004z" clip-rule="evenodd"/>
   </symbol>
 </svg>
-</file>
-
-<file path="ivemar-frontend/README.md">
-# Vue 3 + Vite
-
-This template should help get you started developing with Vue 3 in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
-
-Learn more about IDE Support for Vue in the [Vue Docs Scaling up Guide](https://vuejs.org/guide/scaling-up/tooling.html#ide-support).
-</file>
-
-<file path="ivemar-frontend/src/App.vue">
-<template>
-  <div class="container" id="app">
-    <!-- Aquí se inyecta HomeView, AsesorView, etc., según la URL -->
-    <router-view />
-    <ToastContainer />
-  </div>
-</template>
-
-<script setup>
-import ToastContainer from './components/common/ToastContainer.vue'
-</script>
 </file>
 
 <file path="ivemar-frontend/src/assets/vite.svg">
@@ -2282,11 +2368,11 @@ onMounted(cargarAgenda)
       <div v-if="loading" class="loading-state"><div class="spinner"></div>Cargando detalles...</div>
       <div v-else-if="data">
         <div class="header-section">
-          <h2>OT {{ data.ot }}</h2>
-          <span class="badge">{{ data.estado_actual }}</span>
+          <h2>{{ data.ot === '0000' ? 'Gestión de Rutinas y Tareas Internas' : `OT ${data.ot}` }}</h2>
+          <span v-if="data.ot !== '0000'" class="badge">{{ data.estado_actual }}</span>
         </div>
         
-        <div class="info-grid">
+        <div v-if="data.ot !== '0000'" class="info-grid">
           <p><strong>Cliente:</strong> {{ data.cliente }}</p>
           <p><strong>Patente:</strong> {{ data.patente }}</p>
           <p><strong>Unidad:</strong> {{ data.unidad }}</p>
@@ -2302,7 +2388,7 @@ onMounted(cargarAgenda)
           <p><strong>Total General:</strong> <span class="highlight bold">{{ formatCurrency((data.monto_repuestos || 0) + (data.monto_mano_obra || 0)) }}</span></p>
         </div>
 
-        <hr />
+        <hr v-if="data.ot !== '0000'" />
 
         <div v-if="data.explicacion?.causa">
           <h3>Causa / Diagnóstico</h3>
@@ -3477,18 +3563,62 @@ onMounted(() => { store.cargarInformes() })
 .date-group { display: flex; align-items: center; gap: 8px; }
 .date-input { width: auto; }
 .divider { border: 0; border-top: 1px dashed var(--border); margin: 30px 0; }
-.section-block { background: white; padding: 20px; border-radius: var(--radius); border: 1px solid var(--border-soft); box-shadow: var(--shadow-sm); break-inside: avoid; }
-.header-with-actions { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; margin-bottom: 20px; border-bottom: 1px solid var(--border-soft); padding-bottom: 10px;}
+.section-block {
+  background: white;
+  padding: 20px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-soft);
+  box-shadow: var(--shadow-sm);
+  break-inside: avoid;
+  min-width: 0;             
+  min-height: 0;
+  overflow: hidden;         
+  position: relative;
+  z-index: 0;
+}
+.header-with-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--border-soft);
+  padding-bottom: 10px;
+  position: relative;
+  z-index: 2;
+}
 .header-with-actions h3 { margin: 0; color: var(--primary); font-size: 1.1rem; }
-.select-sm { width: auto; padding: 4px 8px; font-size: 0.9rem; }
+.select-sm { width: auto; padding: 4px 8px; font-size: 0.9rem; position: relative; z-index: 2; }
 .chart-hint { font-size: 0.8rem; color: var(--muted); margin: -10px 0 12px; }
 
-.stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 15px; }
-.stat-card { background: white; border: 1px solid var(--border-soft); border-radius: 8px; padding: 15px; text-align: center; box-shadow: var(--shadow-sm); font-size: 1.05rem; position: relative; }
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 15px;
+  align-items: start;
+}
+.stat-card {
+  background: white;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  padding: 15px;
+  text-align: center;
+  box-shadow: var(--shadow-sm);
+  font-size: 1.05rem;
+  position: relative;
+  z-index: 0;
+  min-width: 0;
+}
 .highlight-card { background: #0056a7; color: white; border: none; font-size: 1.15rem; }
 
-.chart-box { height: 280px; position: relative; }
+.chart-box {
+  height: 280px;
+  position: relative;
+  z-index: 0;
+  overflow: hidden;         
+}
 .chart-box-doughnut { height: 240px; }
+.chart-box canvas { max-width: 100% !important; max-height: 100% !important; }
 
 .table-wrapper { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
@@ -3496,7 +3626,12 @@ th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--bo
 th { background: #f8fafc; font-weight: 600; color: #1a2a3a; }
 .highlight { color: #0056a7; font-weight: bold; }
 
-.charts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 20px; }
+.charts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+  gap: 20px;
+  align-items: start;
+}
 
 @media print {
   .no-print { display: none !important; }
@@ -3971,241 +4106,139 @@ const icon = (type) => ({ success: '✅', error: '⚠️', info: 'ℹ️' }[type
 </style>
 </file>
 
-<file path="ivemar-frontend/src/components/HelloWorld.vue">
-<script setup>
-import { ref } from 'vue'
-import viteLogo from '../assets/vite.svg'
-import heroImg from '../assets/hero.png'
-import vueLogo from '../assets/vue.svg'
-
-const count = ref(0)
-</script>
-
-<template>
-  <section id="center">
-    <div class="hero">
-      <img :src="heroImg" class="base" width="170" height="179" alt="" />
-      <img :src="vueLogo" class="framework" alt="Vue logo" />
-      <img :src="viteLogo" class="vite" alt="Vite logo" />
-    </div>
-    <div>
-      <h1>Get started</h1>
-      <p>Edit <code>src/App.vue</code> and save to test <code>HMR</code></p>
-    </div>
-    <button type="button" class="counter" @click="count++">
-      Count is {{ count }}
-    </button>
-  </section>
-
-  <div class="ticks"></div>
-
-  <section id="next-steps">
-    <div id="docs">
-      <svg class="icon" role="presentation" aria-hidden="true">
-        <use href="/icons.svg#documentation-icon"></use>
-      </svg>
-      <h2>Documentation</h2>
-      <p>Your questions, answered</p>
-      <ul>
-        <li>
-          <a href="https://vite.dev/" target="_blank">
-            <img class="logo" :src="viteLogo" alt="" />
-            Explore Vite
-          </a>
-        </li>
-        <li>
-          <a href="https://vuejs.org/" target="_blank">
-            <img class="button-icon" :src="vueLogo" alt="" />
-            Learn more
-          </a>
-        </li>
-      </ul>
-    </div>
-    <div id="social">
-      <svg class="icon" role="presentation" aria-hidden="true">
-        <use href="/icons.svg#social-icon"></use>
-      </svg>
-      <h2>Connect with us</h2>
-      <p>Join the Vite community</p>
-      <ul>
-        <li>
-          <a href="https://github.com/vitejs/vite" target="_blank">
-            <svg class="button-icon" role="presentation" aria-hidden="true">
-              <use href="/icons.svg#github-icon"></use>
-            </svg>
-            GitHub
-          </a>
-        </li>
-        <li>
-          <a href="https://chat.vite.dev/" target="_blank">
-            <svg class="button-icon" role="presentation" aria-hidden="true">
-              <use href="/icons.svg#discord-icon"></use>
-            </svg>
-            Discord
-          </a>
-        </li>
-        <li>
-          <a href="https://x.com/vite_js" target="_blank">
-            <svg class="button-icon" role="presentation" aria-hidden="true">
-              <use href="/icons.svg#x-icon"></use>
-            </svg>
-            X.com
-          </a>
-        </li>
-        <li>
-          <a href="https://bsky.app/profile/vite.dev" target="_blank">
-            <svg class="button-icon" role="presentation" aria-hidden="true">
-              <use href="/icons.svg#bluesky-icon"></use>
-            </svg>
-            Bluesky
-          </a>
-        </li>
-      </ul>
-    </div>
-  </section>
-
-  <div class="ticks"></div>
-  <section id="spacer"></section>
-</template>
-</file>
-
 <file path="ivemar-frontend/src/components/informes/TableroOperativo.vue">
 <template>
   <div class="im-group">
-    <!-- Selector de Mecánicos -->
-    <div class="header-with-actions" style="margin-bottom: 25px; border-bottom: 2px solid var(--border-soft); padding-bottom: 15px;">
-      <div>
-        <span class="im-eyebrow">Evaluación de Rendimiento Individual</span>
-        <select v-model="mecanicoSeleccionado" class="form-control select-sm mt-10" style="min-width: 250px; font-weight: bold; font-size: 1rem;">
+    <!-- CABECERA Y FILTROS -->
+    <header class="header-with-actions mb-25 pb-15 border-bottom">
+      <span class="im-eyebrow">Evaluación de Rendimiento Individual</span>
+      
+      <div class="d-flex align-items-center mt-10 gap-20">
+        <select v-model="mecanicoSeleccionado" class="form-control select-sm" style="min-width: 250px z-index= 2 position= relative;">
           <option value="todos">Ver Taller Completo (Consolidado)</option>
           <option v-for="m in tiempos" :key="m.legajo" :value="m.legajo">{{ m.nombre }} ({{ m.legajo }})</option>
         </select>
+
+        <div class="view-toggle">
+          <button class="btn btn-sm" :class="vistaOcio === 'semanal' ? 'btn-primary' : 'btn-secondary'" @click="vistaOcio = 'semanal'">Vista Semanal</button>
+          <button class="btn btn-sm" :class="vistaOcio === 'mensual' ? 'btn-primary' : 'btn-secondary'" @click="vistaOcio = 'mensual'">Vista Mensual</button>
+        </div>
       </div>
-    </div>
-    
-    <div v-if="!tiempos || tiempos.length === 0" class="empty-state">
-      No hay actividad registrada para el personal del taller en las fechas seleccionadas.
-    </div>
-    
-    <div v-else>
-      <!-- VISTA GENERAL: TABLA CONSOLIDADA -->
-      <div v-if="mecanicoSeleccionado === 'todos'" class="table-wrapper mb-15">
-        <table>
-          <thead>
-            <tr>
-              <th>Personal</th>
-              <th>Hs Productivas</th>
-              <th>Ocio Total</th>
-              <th>Días sin login</th>
-              <th>Eficacia (Uso del tiempo)</th>
-              <th>Eficiencia (T. Est vs Real)</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="m in tiempos" :key="m.legajo">
-              <td><strong>{{ m.nombre }}</strong></td>
-              <td><span class="text-success">{{ m.hs_productivas }} hs</span></td>
-              <td :class="{'text-danger': m.tiempo_muerto > 10}">
-                <strong>{{ m.tiempo_muerto }} hs</strong>
-              </td>
-              <td>
-                <button v-if="m.dias_ausentes_count > 0" class="btn btn-sm" :class="sinJustificar(m) > 0 ? 'btn-danger' : 'btn-secondary'" @click="verAusencias(m)">
-                  {{ m.dias_ausentes_count }} día(s)
-                </button>
-                <span v-else class="text-muted">-</span>
-              </td>
-              <td>
-                <span :class="['badge', calcularEficacia(m) >= 85 ? 'bg-success' : 'bg-warning']" title="(Hs Trabajadas / Hs Exigidas) * 100">
-                  {{ calcularEficacia(m) }}%
-                </span>
-              </td>
-              <td>
-                <span :class="['badge', m.eficiencia_porcentaje >= 100 ? 'bg-success' : 'bg-danger']" title="(Hs Estimadas / Hs Productivas) * 100">
-                  {{ m.eficiencia_porcentaje }}%
-                </span>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+    </header>
+
+    <!-- ESTADOS DE CARGA / VACÍO -->
+    <div v-if="store.loading" class="empty-state">Cargando informe de rendimiento...</div>
+    <div v-else-if="!tiempos?.length" class="empty-state">No hay actividad registrada para el personal.</div>
+
+    <!-- VISTA CONSOLIDADA (TALLER) -->
+    <section v-else-if="mecanicoSeleccionado === 'todos'" class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Personal</th>
+            <th>Hs Productivas</th>
+            <th>Ocio Total</th>
+            <th>Días sin login</th>
+            <th>Eficacia</th>
+            <th>Eficiencia</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="m in tiempos" :key="m.legajo">
+            <td><strong>{{ m.nombre }}</strong></td>
+            <td><span class="text-success">{{ formatHoras(m.hs_productivas) }} hs</span></td>
+            <td><strong :class="{'text-danger': m.tiempo_muerto > 10}">{{ formatHoras(m.tiempo_muerto) }} hs</strong></td>
+            <td>
+              <button v-if="m.dias_ausentes_count > 0" class="btn btn-sm" :class="sinJustificar(m) > 0 ? 'btn-danger' : 'btn-secondary'" @click="verAusencias(m)">
+                {{ m.dias_ausentes_count }} día(s)
+              </button>
+              <span v-else class="text-muted">-</span>
+            </td>
+            <td><span :class="['badge', eficaciaDe(m) >= 85 ? 'bg-success' : 'bg-warning']">{{ eficaciaDe(m) }}%</span></td>
+            <td><span :class="['badge', m.eficiencia_porcentaje >= 100 ? 'bg-success' : 'bg-danger']">{{ m.eficiencia_porcentaje }}%</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- VISTA INDIVIDUAL -->
+    <section v-else-if="mecanicoFiltrado" class="individual-view">
+      
+      <!-- Métricas Principales -->
+      <div class="stats-grid mb-20">
+        <div class="stat-card"><strong>Días Asistidos</strong><br>{{ mecanicoFiltrado.dias_asistidos }}</div>
+        <div class="stat-card"><strong>Horas Trabajadas</strong><br>{{ formatHoras(mecanicoFiltrado.hs_empleadas) }} hs</div>
+        <div class="stat-card"><strong>OTs Finalizadas</strong><br>{{ mecanicoFiltrado.ot_trabajadas }}</div>
+        <div class="stat-card highlight-card"><strong>Tiempo Ocioso</strong><br>{{ formatHoras(mecanicoFiltrado.tiempo_muerto) }} hs</div>
       </div>
 
-      <!-- VISTA INDIVIDUAL: GRÁFICOS Y MAPA DE CALOR -->
-      <div v-if="mecanicoFiltrado && mecanicoSeleccionado !== 'todos'">
+      <!-- Gráficos -->
+      <div class="charts-grid mb-20">
+        <div class="card p-15">
+          <h3 class="chart-title">Distribución del Tiempo</h3>
+          <div class="chart-wrapper">
+            <Doughnut v-if="chartDistribucion" :data="chartDistribucion" :options="opcionesGraficoTorta" />
+          </div>
+        </div>
+        <div class="card p-15">
+          <h3 class="chart-title">Eficacia vs Eficiencia</h3>
+          <div class="chart-wrapper">
+            <Bar v-if="chartEficiencia" :data="chartEficiencia" :options="opcionesGraficoBarras" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Detalle de Ausencias -->
+      <div v-if="mecanicoFiltrado.dias_ausentes_count > 0" class="alert mb-20">
+        <strong>Días hábiles sin registro:</strong>
+        <ul>
+          <li v-for="aus in mecanicoFiltrado.dias_ausentes" :key="aus.fecha">
+            {{ formatFecha(aus.fecha) }} - {{ aus.motivo || 'FALTA INJUSTIFICADA' }}
+          </li>
+        </ul>
+      </div>
+
+      <!-- Visualización Temporal (Mapa/Serie) -->
+      <div class="visual-time-data mt-20">
+        <div v-if="vistaOcio === 'semanal'" class="card p-15">
+          <h3 class="chart-title">Mapa de Calor: Ocio Semanal</h3>
+          <div class="table-wrapper">
+            <table class="heatmap-table">
+              <thead>
+                <tr>
+                  <th>Día \ Hora</th>
+                  <th v-for="h in horasHeatmap" :key="h">{{ h }}:00</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="d in diasHeatmap" :key="d.id">
+                  <td><strong>{{ d.nombre }}</strong></td>
+                  <td v-for="h in horasHeatmap" :key="h" 
+                      :style="{ backgroundColor: getHeatColor(d.id, h) }"
+                      class="heatmap-cell"
+                      :title="`${d.nombre} a las ${h}:00 - ${getOcioMins(d.id, h)} min ocio`">
+                    <span v-if="getOcioMins(d.id, h) > 0" class="heat-text">{{ getOcioMins(d.id, h) }}m</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
         
-        <!-- 1. Tarjetas Numéricas -->
-        <div class="stats-grid mb-15">
-          <div class="stat-card"><strong>Días Asistidos</strong><br>{{ mecanicoFiltrado.dias_asistidos }}</div>
-          <div class="stat-card"><strong>Horas Trabajadas</strong><br>{{ mecanicoFiltrado.hs_empleadas }} hs</div>
-          <div class="stat-card"><strong>OTs Finalizadas</strong><br>{{ mecanicoFiltrado.ot_trabajadas }}</div>
-          <div class="stat-card highlight-card"><strong>Tiempo Ocioso</strong><br>{{ mecanicoFiltrado.tiempo_muerto }} hs</div>
+        <div v-else class="card p-15">
+          <h3 class="chart-title">Evolución de Ocio Diario</h3>
+          <div class="chart-wrapper">
+            <Bar v-if="chartSerieMensual" :data="chartSerieMensual" :options="opcionesGraficoSerieMensual" />
+            <p v-else class="text-muted text-center mt-10">Sin datos mensuales registrados</p>
+          </div>
         </div>
-
-        <!-- 2. Gráficos Visuales (Chart.js) -->
-        <div class="charts-grid mb-15" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
-            <div class="card" style="margin-bottom: 0; padding: 15px;">
-                <h3 style="font-size: 1rem; color: var(--primary); text-align: center; margin-bottom: 10px;">Distribución del Tiempo</h3>
-                <div style="height: 220px; position: relative;">
-                    <Doughnut v-if="chartDistribucion" :data="chartDistribucion" :options="opcionesGraficoTorta" />
-                </div>
-            </div>
-            <div class="card" style="margin-bottom: 0; padding: 15px;">
-                <h3 style="font-size: 1rem; color: var(--primary); text-align: center; margin-bottom: 10px;">Eficacia vs Eficiencia</h3>
-                <div style="height: 220px; position: relative;">
-                    <Bar v-if="chartEficiencia" :data="chartEficiencia" :options="opcionesGraficoBarras" />
-                </div>
-            </div>
-        </div>
-
-        <!-- 3. Detalle de Ausencias -->
-        <div v-if="mecanicoFiltrado.dias_ausentes_count > 0" class="alert mt-10 mb-15">
-          <strong>Días hábiles sin registro de actividad:</strong>
-          <ul style="margin: 5px 0 0 15px; font-size: 0.85rem;">
-            <li v-for="aus in mecanicoFiltrado.dias_ausentes" :key="aus.fecha">
-              {{ formatFecha(aus.fecha) }} - {{ aus.motivo || 'FALTA INJUSTIFICADA' }}
-            </li>
-          </ul>
-        </div>
-
-        <!-- 4. Mapa de Calor de Dispersión -->
-        <div v-if="mecanicoFiltrado.mapa_ocio" class="heatmap-container mt-15" style="background: white; padding: 20px; border-radius: 8px; border: 1px solid var(--border-soft);">
-           <h3 style="color: var(--primary); margin-bottom: 5px;">Mapa de Dispersión de Ocio</h3>
-           <p class="chart-hint" style="margin-bottom: 20px;">
-              Distribución de inactividad durante el rango de fechas. Los recuadros rojos indican los horarios donde el mecánico acumuló más minutos sin trabajar.
-           </p>
-           
-           <div class="table-wrapper">
-              <table class="heatmap-table" style="width: 100%; border-collapse: separate; border-spacing: 2px;">
-                 <thead>
-                   <tr>
-                     <th style="background: transparent; border: none; padding: 5px;">Día \ Hora</th>
-                     <th v-for="h in horasHeatmap" :key="h" style="text-align: center; padding: 5px; background: #f8fafc; font-size: 0.8rem; border-radius: 4px;">
-                       {{ h }}:00
-                     </th>
-                   </tr>
-                 </thead>
-                 <tbody>
-                   <tr v-for="d in diasHeatmap" :key="d.id">
-                     <td style="font-weight: bold; color: var(--text-soft); border: none; padding: 8px 5px; font-size: 0.9rem;">
-                       {{ d.nombre }}
-                     </td>
-                     <td v-for="h in horasHeatmap" :key="h" 
-                         :style="{ backgroundColor: getHeatColor(mecanicoFiltrado.mapa_ocio, d.id, h), textAlign: 'center', borderRadius: '4px', transition: 'background 0.3s', padding: '6px' }">
-                       <span class="heat-text" style="font-size: 0.75rem; font-weight: bold; color: #fff; text-shadow: 1px 1px 2px rgba(0,0,0,0.5);" v-if="getOcioMins(mecanicoFiltrado.mapa_ocio, d.id, h) > 0">
-                         {{ getOcioMins(mecanicoFiltrado.mapa_ocio, d.id, h) }}m
-                       </span>
-                       <span v-else style="color: transparent; user-select: none;">-</span>
-                     </td>
-                   </tr>
-                 </tbody>
-              </table>
-           </div>
-        </div>
-
       </div>
-    </div>
+    </section>
+
     <ModalAusencias v-if="mecanicoModalLegajo" :mecanico="mecanicoModal" @close="mecanicoModalLegajo = null" @justificado="store.cargarInformes" />
   </div>
 </template>
+
 
 <script setup>
 import { computed, ref } from 'vue'
@@ -4220,13 +4253,9 @@ const store = useInformesStore()
 const tiempos = computed(() => store.operativo?.tiempos_mecanicos || [])
 
 const mecanicoSeleccionado = ref('todos')
-
 const mecanicoFiltrado = computed(() => tiempos.value.find(m => m.legajo === mecanicoSeleccionado.value) || null)
 
-const calcularEficacia = (m) => {
-    if (m.hs_exigidas === 0) return 0;
-    return ((m.hs_empleadas / m.hs_exigidas) * 100).toFixed(2);
-}
+const eficaciaDe = (m) => m.productividad_porcentaje ?? 0
 
 const mecanicoModalLegajo = ref(null)
 const mecanicoModal = computed(() => tiempos.value.find(m => m.legajo === mecanicoModalLegajo.value) || null)
@@ -4235,6 +4264,7 @@ const sinJustificar = (m) => (m.dias_ausentes || []).filter(d => !d.motivo).leng
 const verAusencias = (m) => { mecanicoModalLegajo.value = m.legajo }
 
 const formatFecha = (f) => new Date(f + 'T12:00:00Z').toLocaleDateString('es-AR', { weekday: 'long', day: '2-digit', month: '2-digit' })
+const formatHoras = (n) => (n ?? 0).toLocaleString('es-AR', { maximumFractionDigits: 1 })
 
 // --- CONFIGURACIÓN DE GRÁFICOS (Chart.js) ---
 const opcionesGraficoTorta = {
@@ -4268,7 +4298,7 @@ const chartEficiencia = computed(() => {
   return {
     labels: ['Eficacia', 'Eficiencia'],
     datasets: [{
-      data: [calcularEficacia(m), m.eficiencia_porcentaje],
+      data: [eficaciaDe(m), m.eficiencia_porcentaje],
       backgroundColor: ['#0056a7', '#1d8a4f'],
       borderRadius: 4
     }]
@@ -4276,30 +4306,96 @@ const chartEficiencia = computed(() => {
 })
 
 // --- LÓGICA DEL MAPA DE CALOR ---
+const nombresTipoDescanso = {
+  normal: 'Día normal',
+  fin_de_semana: 'Después de finde',
+  fin_de_semana_largo: 'Después de finde largo / feriado',
+  permiso_previo: 'Después de permiso'
+}
+const coloresTipoDescanso = {
+  normal: '#94a3b8',
+  fin_de_semana: '#0056a7',
+  fin_de_semana_largo: '#1d8a4f',
+  permiso_previo: '#b8860b'
+}
+
+const vistaOcio = ref('semanal') // 'semanal' | 'mensual'
+
+const patronesDescanso = computed(() => store.operativo?.patrones_descanso || [])
+
+const chartPatrones = computed(() => {
+  if (!patronesDescanso.value.length) return null
+  return {
+    labels: patronesDescanso.value.map(p => nombresTipoDescanso[p.tipo_descanso] || p.tipo_descanso),
+    datasets: [{
+      label: '% de ocio promedio',
+      data: patronesDescanso.value.map(p => p.ocio_promedio_porcentaje),
+      backgroundColor: patronesDescanso.value.map(p => coloresTipoDescanso[p.tipo_descanso] || '#94a3b8')
+    }]
+  }
+})
+
+const opcionesGraficoPatrones = {
+  responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+  scales: { x: { beginAtZero: true, max: 100, title: { display: true, text: '% de tiempo ocioso' } } },
+  plugins: { legend: { display: false } }
+}
+
+const serieDiariaMecanico = computed(() => mecanicoFiltrado.value?.serie_diaria || [])
+const formatFechaCorta = (f) => new Date(f + 'T12:00:00Z').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })
+
+const chartSerieMensual = computed(() => {
+  if (!serieDiariaMecanico.value.length) return null
+  return {
+    labels: serieDiariaMecanico.value.map(d => formatFechaCorta(d.fecha)),
+    datasets: [{
+      label: '% de ocio',
+      data: serieDiariaMecanico.value.map(d => d.ocio_porcentaje),
+      backgroundColor: serieDiariaMecanico.value.map(d => coloresTipoDescanso[d.tipo_descanso] || '#94a3b8')
+    }]
+  }
+})
+
+const opcionesGraficoSerieMensual = {
+  responsive: true, maintainAspectRatio: false,
+  scales: { y: { beginAtZero: true, max: 100 } },
+  plugins: { legend: { display: false } }
+}
+
 const horasHeatmap = [8, 9, 10, 11, 12, 14, 15, 16, 17];
 const diasHeatmap = [
   {id: 1, nombre: 'Lunes'}, {id: 2, nombre: 'Martes'}, {id: 3, nombre: 'Miércoles'},
   {id: 4, nombre: 'Jueves'}, {id: 5, nombre: 'Viernes'}, {id: 6, nombre: 'Sábado'}
 ];
 
-const getOcioMins = (mapa, dia, hora) => {
-  if (!mapa) return 0;
-  const celda = mapa.find(x => x.dia === dia && x.hora === hora);
-  return celda ? celda.minutos_ocio : 0;
-}
+const mapaOcioIndexado = computed(() => {
+  const mapa = mecanicoFiltrado.value?.mapa_ocio
+  if (!mapa) return new Map()
+  return new Map(mapa.map(celda => [`${celda.dia}-${celda.hora}`, celda.minutos_ocio]))
+})
 
-const getHeatColor = (mapa, dia, hora) => {
-  if (dia === 6 && hora >= 13) return '#f0f0f0'; 
-  const mins = getOcioMins(mapa, dia, hora);
-  if (mins <= 0) return '#f8fafc'; 
-  const opacity = Math.min(mins / 60, 1) * 0.9; 
-  return `rgba(178, 34, 52, ${opacity + 0.1})`; 
+const getOcioMins = (dia, hora) => mapaOcioIndexado.value.get(`${dia}-${hora}`) || 0
+
+const getHeatColor = (dia, hora) => {
+  if (dia === 6 && hora >= 13) return '#f0f0f0';
+  const mins = getOcioMins(dia, hora);
+  if (mins <= 0) return '#f8fafc';
+  const opacity = Math.min(mins / 60, 1) * 0.9;
+  return `rgba(178, 34, 52, ${opacity + 0.1})`;
 }
 </script>
 
 <style scoped>
 .im-group { padding-top: 10px; }
-.header-with-actions { display: flex; justify-content: space-between; align-items: start; flex-wrap: wrap; gap: 15px; }
+.header-with-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  flex-wrap: wrap;
+  gap: 15px;
+  position: relative;
+  z-index: 2;
+}
 .im-eyebrow { font-size: 0.85rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--primary); display: block; }
 .table-wrapper { overflow-x: auto; background: white; border: 1px solid var(--border-soft); border-radius: var(--radius); box-shadow: var(--shadow-sm); }
 table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
@@ -4319,7 +4415,60 @@ th { background: #f8fafc; font-weight: 600; color: #1a2a3a; text-transform: uppe
 .stat-card { background: white; border: 1px solid var(--border-soft); border-radius: 8px; padding: 15px; text-align: center; box-shadow: var(--shadow-sm); font-size: 1.05rem; }
 .highlight-card { background: #b22234; color: white; border: none; font-size: 1.15rem; }
 .chart-hint { font-size: 0.85rem; color: var(--muted); }
-.card { background: white; border-radius: 8px; border: 1px solid var(--border-soft); box-shadow: var(--shadow-sm); }
+.card {
+  background: white;
+  border-radius: 8px;
+  border: 1px solid var(--border-soft);
+  box-shadow: var(--shadow-sm);
+  position: relative;
+  z-index: 0;
+  overflow: hidden;
+  min-width: 0;
+}
+.view-toggle { display: flex; gap: 8px; }
+.legend-inline { display: flex; flex-wrap: wrap; gap: 14px; font-size: 0.8rem; color: var(--text-soft); }
+.legend-item { display: flex; align-items: center; gap: 6px; }
+.legend-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+
+.chart-title { font-size: 1rem; color: var(--primary); text-align: center; margin-bottom: 10px; }
+.charts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 20px;
+  align-items: start;
+}
+.stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; }
+
+/* 
+  Contenedor envolvente fundamental para Chart.js 
+  Evita que vue-chartjs crezca de forma infinita cuando maintainAspectRatio=false
+*/
+.chart-wrapper {
+  position: relative;
+  height: 250px;
+  width: 100%;
+}
+
+/* Estilos para el Mapa de Calor */
+.heatmap-table th, .heatmap-table td { 
+  padding: 6px; 
+  text-align: center; 
+  border: 1px solid var(--border-soft); 
+  font-size: 0.8rem; 
+}
+.heatmap-cell { 
+  min-width: 45px; 
+  transition: filter 0.2s; 
+}
+.heatmap-cell:hover { 
+  filter: brightness(0.9); 
+}
+.heat-text { 
+  font-size: 0.75rem; 
+  font-weight: bold; 
+  color: #842029; 
+}
+
 </style>
 </file>
 
@@ -4690,6 +4839,104 @@ import { ref } from 'vue'
 const emit = defineEmits(['close', 'confirm'])
 const motivo = ref('En Espera')
 </script>
+</file>
+
+<file path="ivemar-frontend/src/components/HelloWorld.vue">
+<script setup>
+import { ref } from 'vue'
+import viteLogo from '../assets/vite.svg'
+import heroImg from '../assets/hero.png'
+import vueLogo from '../assets/vue.svg'
+
+const count = ref(0)
+</script>
+
+<template>
+  <section id="center">
+    <div class="hero">
+      <img :src="heroImg" class="base" width="170" height="179" alt="" />
+      <img :src="vueLogo" class="framework" alt="Vue logo" />
+      <img :src="viteLogo" class="vite" alt="Vite logo" />
+    </div>
+    <div>
+      <h1>Get started</h1>
+      <p>Edit <code>src/App.vue</code> and save to test <code>HMR</code></p>
+    </div>
+    <button type="button" class="counter" @click="count++">
+      Count is {{ count }}
+    </button>
+  </section>
+
+  <div class="ticks"></div>
+
+  <section id="next-steps">
+    <div id="docs">
+      <svg class="icon" role="presentation" aria-hidden="true">
+        <use href="/icons.svg#documentation-icon"></use>
+      </svg>
+      <h2>Documentation</h2>
+      <p>Your questions, answered</p>
+      <ul>
+        <li>
+          <a href="https://vite.dev/" target="_blank">
+            <img class="logo" :src="viteLogo" alt="" />
+            Explore Vite
+          </a>
+        </li>
+        <li>
+          <a href="https://vuejs.org/" target="_blank">
+            <img class="button-icon" :src="vueLogo" alt="" />
+            Learn more
+          </a>
+        </li>
+      </ul>
+    </div>
+    <div id="social">
+      <svg class="icon" role="presentation" aria-hidden="true">
+        <use href="/icons.svg#social-icon"></use>
+      </svg>
+      <h2>Connect with us</h2>
+      <p>Join the Vite community</p>
+      <ul>
+        <li>
+          <a href="https://github.com/vitejs/vite" target="_blank">
+            <svg class="button-icon" role="presentation" aria-hidden="true">
+              <use href="/icons.svg#github-icon"></use>
+            </svg>
+            GitHub
+          </a>
+        </li>
+        <li>
+          <a href="https://chat.vite.dev/" target="_blank">
+            <svg class="button-icon" role="presentation" aria-hidden="true">
+              <use href="/icons.svg#discord-icon"></use>
+            </svg>
+            Discord
+          </a>
+        </li>
+        <li>
+          <a href="https://x.com/vite_js" target="_blank">
+            <svg class="button-icon" role="presentation" aria-hidden="true">
+              <use href="/icons.svg#x-icon"></use>
+            </svg>
+            X.com
+          </a>
+        </li>
+        <li>
+          <a href="https://bsky.app/profile/vite.dev" target="_blank">
+            <svg class="button-icon" role="presentation" aria-hidden="true">
+              <use href="/icons.svg#bluesky-icon"></use>
+            </svg>
+            Bluesky
+          </a>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <div class="ticks"></div>
+  <section id="spacer"></section>
+</template>
 </file>
 
 <file path="ivemar-frontend/src/composables/useApi.js">
@@ -5149,21 +5396,6 @@ export function errMsg(err) {
 }
 </file>
 
-<file path="ivemar-frontend/src/main.js">
-import { createApp } from 'vue'
-import { createPinia } from 'pinia'
-import App from './App.vue'
-import router from './router'
-import './style.css'
-
-const app = createApp(App)
-
-app.use(createPinia())
-app.use(router)
-
-app.mount('#app')
-</file>
-
 <file path="ivemar-frontend/src/router/index.js">
 import { createRouter, createWebHistory } from 'vue-router'
 import HomeView from '../views/HomeView.vue'
@@ -5289,250 +5521,6 @@ export const useInformesStore = defineStore('informes', () => {
     loading, cargarInformes, limpiar
   }
 })
-</file>
-
-<file path="ivemar-frontend/src/style.css">
-/* ────────────────────────────────────────────────────────────────
-   IVEMAR · Sistema de diseño global
-   Antes este archivo no se importaba desde ningún lugar de la app,
-   por eso clases usadas en casi todos los componentes (.card, .btn,
-   .btn-primary, .btn-warning, .form-control, .badge, .alert, etc.)
-   no tenían ninguna definición real. Se reescribe como un sistema
-   de diseño coherente y se importa desde main.js.
-   ──────────────────────────────────────────────────────────────── */
-
-:root {
-  --primary: #0056a7;
-  --primary-dark: #003f7d;
-  --primary-light: #e9edf4;
-  --success: #1d8a4f;
-  --success-light: #d4edda;
-  --danger: #b22234;
-  --danger-light: #f8d7da;
-  --warning: #b8860b;
-  --warning-light: #fff3cd;
-  --muted: #6c7a8a;
-
-  --text: #1a2a3a;
-  --text-soft: #445;
-  --border: #d0d7e2;
-  --border-soft: #eef3f9;
-  --bg: #f4f7fc;
-  --surface: #ffffff;
-
-  --radius: 10px;
-  --radius-sm: 6px;
-  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.06);
-  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.1);
-
-  font-family: 'Segoe UI', Roboto, Tahoma, Geneva, Verdana, sans-serif;
-  color-scheme: light;
-}
-
-* {
-  box-sizing: border-box;
-}
-
-html,
-body {
-  margin: 0;
-  padding: 0;
-}
-
-body {
-  background: var(--bg);
-  color: var(--text);
-  -webkit-font-smoothing: antialiased;
-}
-
-#app {
-  min-height: 100vh;
-}
-
-.container {
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 20px;
-}
-
-h1, h2, h3, h4 {
-  color: var(--text);
-  margin: 0 0 12px;
-}
-
-a { color: var(--primary); }
-
-/* ─── Tarjeta base ─────────────────────────────────────────── */
-.card {
-  background: var(--surface);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-sm);
-  padding: 22px 24px;
-  margin-bottom: 24px;
-}
-
-/* ─── Botones ──────────────────────────────────────────────── */
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 9px 20px;
-  border: none;
-  border-radius: var(--radius-sm);
-  font-size: 0.95rem;
-  font-weight: 600;
-  cursor: pointer;
-  background: var(--primary);
-  color: white;
-  transition: filter 0.15s, transform 0.05s;
-  white-space: nowrap;
-}
-.btn:hover { filter: brightness(1.08); }
-.btn:active { transform: translateY(1px); }
-.btn:disabled { opacity: 0.5; cursor: not-allowed; filter: none; }
-
-.btn-primary { background: var(--primary); color: white; }
-.btn-secondary { background: var(--muted); color: white; }
-.btn-success { background: var(--success); color: white; }
-.btn-danger { background: var(--danger); color: white; }
-.btn-warning { background: var(--warning); color: white; }
-.btn-outline { background: transparent; color: var(--primary); border: 1px solid var(--primary); }
-.btn-sm { padding: 5px 12px; font-size: 0.8rem; }
-.w-100 { width: 100%; }
-
-/* ─── Formularios ──────────────────────────────────────────── */
-.form-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 15px;
-  margin-bottom: 20px;
-}
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.form-group label {
-  font-weight: 600;
-  font-size: 0.85rem;
-  color: var(--text-soft);
-}
-.form-control,
-.form-group input,
-.form-group select,
-.form-group textarea,
-input[type="text"],
-input[type="number"],
-input[type="month"],
-input[type="datetime-local"],
-select,
-textarea {
-  padding: 9px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  font-size: 0.95rem;
-  background: white;
-  color: var(--text);
-  width: 100%;
-  font-family: inherit;
-  transition: border-color 0.15s, box-shadow 0.15s;
-}
-.form-control:focus,
-input:focus,
-select:focus,
-textarea:focus {
-  outline: none;
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(0, 86, 167, 0.12);
-}
-input:disabled,
-.form-group input:disabled {
-  background: #f0f0f0;
-  cursor: not-allowed;
-}
-
-/* ─── Tablas ───────────────────────────────────────────────── */
-.table-wrapper { overflow-x: auto; }
-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
-th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border-soft); }
-th { background: var(--border-soft); font-weight: 700; color: var(--text); }
-tr:hover td { background: #fafcfe; }
-.empty-state, .text-center { text-align: center; color: var(--muted); padding: 24px; }
-
-/* ─── Badges / estados ─────────────────────────────────────── */
-.badge {
-  display: inline-block;
-  padding: 4px 10px;
-  border-radius: 30px;
-  font-size: 0.78rem;
-  font-weight: 700;
-  background: var(--primary-light);
-  color: var(--primary);
-  text-transform: capitalize;
-}
-.badge-sm { padding: 2px 8px; border-radius: 10px; font-size: 0.72rem; font-weight: 600; background: var(--muted); color: white; }
-
-/* ─── Alertas ──────────────────────────────────────────────── */
-.alert {
-  padding: 12px 18px;
-  border-radius: var(--radius-sm);
-  margin-top: 15px;
-  background: var(--danger-light);
-  color: #721c24;
-  border: 1px solid #f5c6cb;
-  font-size: 0.9rem;
-}
-.alert-success { background: var(--success-light); color: #155724; border-color: #c3e6cb; }
-.mt-10 { margin-top: 10px; }
-.mt-15 { margin-top: 15px; }
-
-/* ─── Modales (base compartida) ────────────────────────────── */
-.modal-overlay {
-  position: fixed; inset: 0;
-  background: rgba(15, 23, 42, 0.55);
-  z-index: 1000;
-  display: flex; justify-content: center; align-items: center;
-  padding: 20px;
-}
-.modal-content {
-  background: white;
-  width: 100%;
-  max-width: 600px;
-  border-radius: var(--radius);
-  padding: 25px;
-  position: relative;
-  max-height: 90vh;
-  overflow-y: auto;
-  box-shadow: var(--shadow-md);
-}
-.modal-large { max-width: 900px; }
-.close-btn {
-  position: absolute; top: 12px; right: 16px;
-  font-size: 1.6rem; line-height: 1; background: none; border: none;
-  cursor: pointer; color: var(--muted);
-}
-.close-btn:hover { color: var(--danger); }
-
-/* ─── Utilidades de carga / vacío ──────────────────────────── */
-.loading-state { text-align: center; padding: 40px; color: var(--muted); }
-.spinner {
-  width: 28px; height: 28px; margin: 0 auto 10px;
-  border: 3px solid var(--border-soft);
-  border-top-color: var(--primary);
-  border-radius: 50%;
-  animation: spin 0.7s linear infinite;
-}
-@keyframes spin { to { transform: rotate(360deg); } }
-
-/* ─── Scrollbars discretos ─────────────────────────────────── */
-::-webkit-scrollbar { height: 8px; width: 8px; }
-::-webkit-scrollbar-thumb { background: #c7d0dc; border-radius: 4px; }
-
-@media (max-width: 640px) {
-  .container { padding: 12px; }
-  .card { padding: 16px; }
-}
 </file>
 
 <file path="ivemar-frontend/src/views/AsesorView.vue">
@@ -5805,6 +5793,12 @@ const goTo = (routeName) => {
       <div class="header-row">
         <h2>{{ activeTab === 'jefe-ots' ? 'Gestión de OTs en Taller' : 'OTs Finalizadas' }}</h2>
         <input type="text" v-model="busqueda" placeholder="🔍 Buscar por patente, OT o cliente..." class="form-control search-input" @input="onBuscar" />
+        <button class="btn btn-outline btn-sm" @click="abrirAsignacion('0000')" title="Asignar limpieza, capacitaciones, etc.">
+        🧹 Tarea Interna
+      </button>
+      <button class="btn btn-secondary btn-sm" @click="abrirDetalle('0000')" title="Corregir tiempos de tareas internas">
+            ⏱️ Gestionar Tiempos
+      </button>
         <button class="btn btn-secondary btn-sm" @click="cargarDatos">↻ Actualizar</button>
       </div>
 
@@ -6109,41 +6103,66 @@ const ingresar = () => {
         No tiene tareas asignadas por el momento.
       </div>
 
-      <div v-else class="grid-tareas">
-        <div v-for="tarea in tareas" :key="tarea.id" class="card-tarea">
-          <div class="tarea-header">
-            <h3>OT {{ tarea.ot }}</h3>
-            <span :class="['badge-sm', estadoClass(tarea.estado)]">{{ tarea.estado }}</span>
+     <div v-else>
+        <!-- SECCIÓN TAREAS INTERNAS -->
+        <div v-if="tareasInternas.length > 0" style="margin-bottom: 30px;">
+          <h3 style="color: var(--muted); border-bottom: 1px solid var(--border-soft); padding-bottom: 8px;">Rutinas y Tareas Internas</h3>
+          <div class="grid-tareas">
+            <div v-for="tarea in tareasInternas" :key="tarea.id" class="card-tarea" style="background-color: #f8fafc; border-left: 4px solid #b8860b;">
+              <div class="tarea-header">
+                <h3>{{ tarea.descripcion }}</h3>
+                <span :class="['badge-sm', estadoClass(tarea.estado)]">{{ tarea.estado }}</span>
+              </div>
+              <p class="tarea-horas">Asignado por Jefe de Taller</p>
+              <div class="acciones-tarea mt-10">
+                <button v-if="tarea.estado !== 'En Curso'" @click="toggleTareaInterna(tarea)" class="btn btn-outline btn-sm w-100">▶ Iniciar Rutina</button>
+                <button v-else @click="toggleTareaInterna(tarea)" class="btn btn-warning btn-sm w-100">⏸ Detener / Pausar</button>
+              </div>
+            </div>
           </div>
-          <p class="tarea-vehiculo">{{ tarea.unidad }} · <strong>{{ tarea.patente }}</strong></p>
-          <p class="tarea-cliente">{{ tarea.cliente }}</p>
-          <p class="tarea-desc"><strong>Tarea:</strong> {{ tarea.descripcion }}</p>
-          <p class="tarea-horas">Estimado: {{ tarea.tiempo_estimado }} hs</p>
+        </div>
 
-          <div class="acciones-tarea">
-            <button v-if="['Asignada', 'Pendiente'].includes(tarea.estado)" @click="cambiarEstado(tarea, 'En Curso')" class="btn btn-primary btn-sm">▶ Iniciar</button>
-            <button v-if="tarea.estado === 'Pausada'" @click="cambiarEstado(tarea, 'En Curso')" class="btn btn-primary btn-sm">▶ Reanudar</button>
-            
-            <button v-if="tarea.estado === 'En Curso'" @click="abrirPausa(tarea)" class="btn btn-warning btn-sm">⏸ Pausar</button>
-            <button v-if="tarea.estado === 'En Curso'" @click="abrirFinalizar(tarea)" class="btn btn-success btn-sm">✔ Finalizar</button>
+        <!-- SECCIÓN OTs DE CLIENTES -->
+        <div v-if="tareasCliente.length > 0">
+          <h3 style="color: var(--primary-dark); border-bottom: 1px solid var(--border-soft); padding-bottom: 8px;">Órdenes de Trabajo</h3>
+          <div class="grid-tareas">
+            <div v-for="tarea in tareasCliente" :key="tarea.id" class="card-tarea">
+              <div class="tarea-header">
+                <h3>OT {{ tarea.ot }}</h3>
+                <span :class="['badge-sm', estadoClass(tarea.estado)]">{{ tarea.estado }}</span>
+              </div>
+              <p class="tarea-vehiculo">{{ tarea.unidad }} · <strong>{{ tarea.patente }}</strong></p>
+              <p class="tarea-cliente">{{ tarea.cliente }}</p>
+              <p class="tarea-desc"><strong>Tarea:</strong> {{ tarea.descripcion }}</p>
+              <p class="tarea-horas">Estimado: {{ tarea.tiempo_estimado }} hs</p>
+
+              <div class="acciones-tarea mt-10">
+                <button v-if="['Asignada', 'Pendiente'].includes(tarea.estado)" @click="cambiarEstado(tarea, 'En Curso')" class="btn btn-primary btn-sm">▶ Iniciar</button>
+                <button v-if="tarea.estado === 'Pausada'" @click="cambiarEstado(tarea, 'En Curso')" class="btn btn-primary btn-sm">▶ Reanudar</button>
+                
+                <button v-if="tarea.estado === 'En Curso'" @click="abrirPausa(tarea)" class="btn btn-warning btn-sm">⏸ Pausar</button>
+                <button v-if="tarea.estado === 'En Curso'" @click="abrirFinalizar(tarea)" class="btn btn-success btn-sm">✔ Finalizar</button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
-    </div>
 
     <ModalPausarTarea v-if="showModalPausa" @close="showModalPausa = false" @confirm="ejecutarPausa" />
     <ModalFinalizarTarea v-if="showModalFinalizar" @close="showModalFinalizar = false" @confirm="ejecutarFinalizacion" />
   </div>
+  </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useApi } from '../composables/useApi'
 import { useToast, errMsg } from '../composables/useToast'
 import NavBar from '../components/common/NavBar.vue'
 import ModalPausarTarea from '../components/mecanico/ModalPausarTarea.vue'
 import ModalFinalizarTarea from '../components/mecanico/ModalFinalizarTarea.vue'
+
 
 const { fetchJSON } = useApi()
 const toast = useToast()
@@ -6224,6 +6243,25 @@ const cambiarLegajo = () => {
   localStorage.removeItem('legajoMecanico')
   router.push({ name: 'mecanico-login' })
 }
+
+const tareasCliente = computed(() => tareas.value.filter(t => t.ot !== '0000'))
+const tareasInternas = computed(() => tareas.value.filter(t => t.ot === '0000'))
+
+const toggleTareaInterna = async (tarea) => {
+  const nuevo_estado = tarea.estado === 'En Curso' ? 'Pausada' : 'En Curso';
+  try {
+    await fetchJSON(`/actividades/${tarea.id}/estado`, {
+      method: 'POST',
+      body: JSON.stringify({ nuevo_estado, motivo: 'En Espera' })
+    })
+    toast.success(`Tarea interna ${nuevo_estado}`);
+    cargarTareas();
+  } catch (err) {
+    toast.error(errMsg(err));
+  }
+}
+
+
 
 onMounted(() => {
   if (!legajo.value) {
@@ -6324,8 +6362,13 @@ const paginatedOts = computed(() => {
   return ots.value.slice(start, start + itemsPerPage.value)
 })
 
-const MAX_COLS = 5
-const MAX_ROWS = 4
+// Modificado: Máximo de 3 columnas y 3 filas = máximo 9 tarjetas por página
+const MAX_COLS = 3
+const MAX_ROWS = 3
+
+// Tamaño mínimo de card para que el contenido entre sin apretarse
+const MIN_CARD_W = 240
+const MIN_CARD_H = 280
 
 const calcularGrilla = () => {
   if (!gridWrapper.value) return
@@ -6334,11 +6377,21 @@ const calcularGrilla = () => {
   if (w === 0 || h === 0) return
 
   const cantidad = Math.max(1, ots.value.length)
-  const tope = Math.min(cantidad, MAX_COLS * MAX_ROWS)
+
+  // Nunca elegir más columnas/filas de las que entran con un tamaño mínimo
+  // legible. Si no entran todas con ese piso, se reparten en más páginas
+  // en vez de achicar las cards hasta solaparse.
+  const maxColsFit = Math.max(1, Math.floor(w / MIN_CARD_W))
+  const maxRowsFit = Math.max(1, Math.floor(h / MIN_CARD_H))
+  const maxCols = Math.min(MAX_COLS, maxColsFit)
+  const maxRows = Math.min(MAX_ROWS, maxRowsFit)
+
+  const tope = Math.min(cantidad, maxCols * maxRows)
 
   let mejor = { cols: 1, rows: 1, score: Infinity }
-  for (let c = 1; c <= MAX_COLS; c++) {
-    const r = Math.min(MAX_ROWS, Math.ceil(tope / c))
+  for (let c = 1; c <= maxCols; c++) {
+    const r = Math.min(maxRows, Math.ceil(tope / c))
+    if (c * r < tope) continue // descarta grillas que no alcanzan a cubrir "tope" items
     const cardW = w / c
     const cardH = h / r
     const aspecto = cardW / cardH
@@ -6432,7 +6485,7 @@ const calcularFechaFinHabil = (horasRestantes) => {
     }
   }
   const diaStr = fecha.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })
-  const horaStr = fecha.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
+  const horaStr = fecha.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false })
   const hoy = new Date()
   const mañana = new Date(); mañana.setDate(mañana.getDate() + 1)
   if (fecha.toDateString() === hoy.toDateString()) return `Hoy a las ${horaStr} hs`
@@ -6443,7 +6496,11 @@ const calcularFechaFinHabil = (horasRestantes) => {
 const calcularETA = (ot) => {
   if (ot.estado_actual === 'Finalizada') return 'COMPLETADO'
   if (['Trabajos de Terceros', 'Espera de Repuestos'].includes(ot.estado_actual)) return 'A DETERMINAR'
+  
   const asignado = Math.max(0, ot.tiempo_asignado_horas || 0)
+  
+  if (asignado === 0) return 'A DETERMINAR'
+  
   let empleado = Math.max(0, ot.tiempo_empleado_horas || 0)
   if (ot.inicio_curso) {
       const inicioUTC = new Date(ot.inicio_curso.replace(' ', 'T') + 'Z')
@@ -6510,10 +6567,11 @@ onUnmounted(() => {
 .card-sala {
   background: #1e1e1e; border-radius: 12px; padding: 1.6vh 1.4vw; border-left: 0.5vw solid #555;
   display: flex; flex-direction: column; justify-content: space-between;
+  gap: 8px;
   box-shadow: 0 4px 15px rgba(0,0,0,0.3);
   box-sizing: border-box;
   min-width: 0; min-height: 0; overflow: hidden;
-  container-type: inline-size;
+  container-type: size;
   container-name: card-sala;
 }
 
@@ -6529,9 +6587,9 @@ onUnmounted(() => {
 .card-top { display: flex; justify-content: space-between; align-items: center; }
 .ot-number { font-weight: bold; color: #aaa; font-size: clamp(0.8rem, 3.2vw, 1.3rem); }
 .patente { background: white; color: black; padding: 0.3vh 0.8vw; border-radius: 4px; font-family: monospace; font-weight: bold; font-size: clamp(0.75rem, 3vw, 1.2rem); }
-.unidad-name { font-weight: bold; margin-top: 0.5vh; font-size: clamp(0.85rem, 3.6vw, 1.5rem); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.unidad-name { font-weight: bold; margin-top: 0.5vh; font-size: clamp(0.85rem, 3.6vw, 1.5rem); line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.cliente-name { color: #9e9e9e; font-weight: 500; margin-top: 0.2vh; font-size: clamp(0.8rem, 3.2vw, 1.3rem); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-transform: uppercase; }
+.cliente-name { color: #9e9e9e; font-weight: 500; margin-top: 0.2vh; font-size: clamp(0.8rem, 3.2vw, 1.3rem); line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-transform: uppercase; }
 
 .card-mid { background: #2a2a2a; padding: 1vh 1vw; border-radius: 8px; margin: auto 0; }
 .mecanico { margin-bottom: 0.5vh; color: #ccc; font-size: clamp(0.7rem, 2.6vw, 1.05rem); }
@@ -6542,16 +6600,369 @@ onUnmounted(() => {
 .eta-value { font-weight: bold; color: #a4c2f4; font-size: clamp(0.85rem, 3.4vw, 1.35rem); }
 
 @container card-sala (min-width: 1px) {
-  .ot-number { font-size: clamp(0.8rem, 9cqw, 1.4rem); }
-  .patente { font-size: clamp(0.75rem, 8.5cqw, 1.25rem); }
-  .unidad-name { font-size: clamp(0.85rem, 10cqw, 1.6rem); }
-  .cliente-name { font-size: clamp(0.8rem, 9cqw, 1.4rem); }
-  .mecanico { font-size: clamp(0.7rem, 7cqw, 1.1rem); }
-  .estado-text { font-size: clamp(0.75rem, 7.5cqw, 1.2rem); }
-  .eta-label { font-size: clamp(0.6rem, 5.5cqw, 0.9rem); }
-  .eta-value { font-size: clamp(0.85rem, 9.5cqw, 1.4rem); }
+  .ot-number { font-size: clamp(0.8rem, min(9cqw, 14cqh), 1.4rem); }
+  .patente { font-size: clamp(0.75rem, min(8.5cqw, 13cqh), 1.25rem); }
+  .unidad-name { font-size: clamp(0.85rem, min(10cqw, 15cqh), 1.6rem); line-height: 1.25; }
+  .cliente-name { font-size: clamp(0.8rem, min(9cqw, 13cqh), 1.4rem); line-height: 1.25; }
+  .mecanico { font-size: clamp(0.7rem, min(7cqw, 10cqh), 1.1rem); }
+  .estado-text { font-size: clamp(0.75rem, min(7.5cqw, 11cqh), 1.2rem); }
+  .eta-label { font-size: clamp(0.6rem, min(5.5cqw, 8cqh), 0.9rem); }
+  .eta-value { font-size: clamp(0.85rem, min(9.5cqw, 13cqh), 1.4rem); }
 }
 </style>
+</file>
+
+<file path="ivemar-frontend/src/App.vue">
+<template>
+  <div class="container" id="app">
+    <!-- Aquí se inyecta HomeView, AsesorView, etc., según la URL -->
+    <router-view />
+    <ToastContainer />
+  </div>
+</template>
+
+<script setup>
+import ToastContainer from './components/common/ToastContainer.vue'
+</script>
+</file>
+
+<file path="ivemar-frontend/src/main.js">
+import { createApp } from 'vue'
+import { createPinia } from 'pinia'
+import App from './App.vue'
+import router from './router'
+import './style.css'
+
+const app = createApp(App)
+
+app.use(createPinia())
+app.use(router)
+
+app.mount('#app')
+</file>
+
+<file path="ivemar-frontend/src/style.css">
+/* ────────────────────────────────────────────────────────────────
+   IVEMAR · Sistema de diseño global
+   Antes este archivo no se importaba desde ningún lugar de la app,
+   por eso clases usadas en casi todos los componentes (.card, .btn,
+   .btn-primary, .btn-warning, .form-control, .badge, .alert, etc.)
+   no tenían ninguna definición real. Se reescribe como un sistema
+   de diseño coherente y se importa desde main.js.
+   ──────────────────────────────────────────────────────────────── */
+
+:root {
+  --primary: #0056a7;
+  --primary-dark: #003f7d;
+  --primary-light: #e9edf4;
+  --success: #1d8a4f;
+  --success-light: #d4edda;
+  --danger: #b22234;
+  --danger-light: #f8d7da;
+  --warning: #b8860b;
+  --warning-light: #fff3cd;
+  --muted: #6c7a8a;
+
+  --text: #1a2a3a;
+  --text-soft: #445;
+  --border: #d0d7e2;
+  --border-soft: #eef3f9;
+  --bg: #f4f7fc;
+  --surface: #ffffff;
+
+  --radius: 10px;
+  --radius-sm: 6px;
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.1);
+
+  font-family: 'Segoe UI', Roboto, Tahoma, Geneva, Verdana, sans-serif;
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+
+#app {
+  min-height: 100vh;
+}
+
+.container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+h1, h2, h3, h4 {
+  color: var(--text);
+  margin: 0 0 12px;
+}
+
+a { color: var(--primary); }
+
+/* ─── Tarjeta base ─────────────────────────────────────────── */
+.card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  padding: 22px 24px;
+  margin-bottom: 24px;
+}
+
+/* ─── Botones ──────────────────────────────────────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 20px;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--primary);
+  color: white;
+  transition: filter 0.15s, transform 0.05s;
+  white-space: nowrap;
+}
+.btn:hover { filter: brightness(1.08); }
+.btn:active { transform: translateY(1px); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; filter: none; }
+
+.btn-primary { background: var(--primary); color: white; }
+.btn-secondary { background: var(--muted); color: white; }
+.btn-success { background: var(--success); color: white; }
+.btn-danger { background: var(--danger); color: white; }
+.btn-warning { background: var(--warning); color: white; }
+.btn-outline { background: transparent; color: var(--primary); border: 1px solid var(--primary); }
+.btn-sm { padding: 5px 12px; font-size: 0.8rem; }
+.w-100 { width: 100%; }
+
+/* ─── Formularios ──────────────────────────────────────────── */
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 15px;
+  margin-bottom: 20px;
+}
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.form-group label {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--text-soft);
+}
+.form-control,
+.form-group input,
+.form-group select,
+.form-group textarea,
+input[type="text"],
+input[type="number"],
+input[type="month"],
+input[type="datetime-local"],
+select,
+textarea {
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.95rem;
+  background: white;
+  color: var(--text);
+  width: 100%;
+  font-family: inherit;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.form-control:focus,
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(0, 86, 167, 0.12);
+}
+input:disabled,
+.form-group input:disabled {
+  background: #f0f0f0;
+  cursor: not-allowed;
+}
+
+/* ─── Tablas ───────────────────────────────────────────────── */
+.table-wrapper { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border-soft); }
+th { background: var(--border-soft); font-weight: 700; color: var(--text); }
+tr:hover td { background: #fafcfe; }
+.empty-state, .text-center { text-align: center; color: var(--muted); padding: 24px; }
+
+/* ─── Badges / estados ─────────────────────────────────────── */
+.badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 30px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  background: var(--primary-light);
+  color: var(--primary);
+  text-transform: capitalize;
+}
+.badge-sm { padding: 2px 8px; border-radius: 10px; font-size: 0.72rem; font-weight: 600; background: var(--muted); color: white; }
+
+/* ─── Alertas ──────────────────────────────────────────────── */
+.alert {
+  padding: 12px 18px;
+  border-radius: var(--radius-sm);
+  margin-top: 15px;
+  background: var(--danger-light);
+  color: #721c24;
+  border: 1px solid #f5c6cb;
+  font-size: 0.9rem;
+}
+.alert-success { background: var(--success-light); color: #155724; border-color: #c3e6cb; }
+.mt-10 { margin-top: 10px; }
+.mt-15 { margin-top: 15px; }
+
+/* ─── Modales (base compartida) ────────────────────────────── */
+.modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  z-index: 1000;
+  display: flex; justify-content: center; align-items: center;
+  padding: 20px;
+}
+.modal-content {
+  background: white;
+  width: 100%;
+  max-width: 600px;
+  border-radius: var(--radius);
+  padding: 25px;
+  position: relative;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: var(--shadow-md);
+}
+.modal-large { max-width: 900px; }
+.close-btn {
+  position: absolute; top: 12px; right: 16px;
+  font-size: 1.6rem; line-height: 1; background: none; border: none;
+  cursor: pointer; color: var(--muted);
+}
+.close-btn:hover { color: var(--danger); }
+
+/* ─── Utilidades de carga / vacío ──────────────────────────── */
+.loading-state { text-align: center; padding: 40px; color: var(--muted); }
+.spinner {
+  width: 28px; height: 28px; margin: 0 auto 10px;
+  border: 3px solid var(--border-soft);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ─── Scrollbars discretos ─────────────────────────────────── */
+::-webkit-scrollbar { height: 8px; width: 8px; }
+::-webkit-scrollbar-thumb { background: #c7d0dc; border-radius: 4px; }
+
+@media (max-width: 640px) {
+  .container { padding: 12px; }
+  .card { padding: 16px; }
+}
+</file>
+
+<file path="ivemar-frontend/.gitignore">
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+</file>
+
+<file path="ivemar-frontend/index.html">
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="IVEMAR - Sistema de gestión de órdenes de trabajo del taller" />
+    <title>IVEMAR · Taller</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
+</file>
+
+<file path="ivemar-frontend/package.json">
+{
+  "name": "ivemar-frontend",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "chart.js": "^4.4.9",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.8",
+    "pinia": "^3.0.4",
+    "vue": "^3.5.39",
+    "vue-chartjs": "^5.3.2",
+    "vue-router": "^4.4.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.7",
+    "vite": "^8.1.1"
+  }
+}
+</file>
+
+<file path="ivemar-frontend/README.md">
+# Vue 3 + Vite
+
+This template should help get you started developing with Vue 3 in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
+
+Learn more about IDE Support for Vue in the [Vue Docs Scaling up Guide](https://vuejs.org/guide/scaling-up/tooling.html#ide-support).
 </file>
 
 <file path="ivemar-frontend/vite.config.js">
@@ -6564,6 +6975,30 @@ export default defineConfig({
     host: true // Esto expone el servidor en tu IP local automáticamente
   }
 })
+</file>
+
+<file path=".gitignore">
+# Este proyecto tiene dos sub-carpetas (ivemar-backend/ e
+# ivemar-frontend/), cada una con su propio .gitignore específico.
+# Este archivo raíz cubre lo que pueda quedar fuera de esas dos carpetas
+# si en algún momento se sube todo como un único repositorio.
+
+node_modules/
+dist/
+*.log
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+.idea
+
+# Base de datos y backups (ver también ivemar-backend/.gitignore)
+*.db
+*.db-wal
+*.db-shm
+backups/
+*.bat
+*.xml
+*.env
 </file>
 
 <file path="README.md">

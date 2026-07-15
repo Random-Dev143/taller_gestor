@@ -9,6 +9,12 @@
       <div class="header-row">
         <h2>{{ activeTab === 'jefe-ots' ? 'Gestión de OTs en Taller' : 'OTs Finalizadas' }}</h2>
         <input type="text" v-model="busqueda" placeholder="🔍 Buscar por patente, OT o cliente..." class="form-control search-input" @input="onBuscar" />
+        <button class="btn btn-outline btn-sm" @click="abrirAsignacion('0000')" title="Asignar limpieza, capacitaciones, etc.">
+        🧹 Tarea Interna
+      </button>
+      <button class="btn btn-secondary btn-sm" @click="abrirDetalle('0000')" title="Corregir tiempos de tareas internas">
+            ⏱️ Gestionar Tiempos
+      </button>
         <button class="btn btn-secondary btn-sm" @click="cargarDatos">↻ Actualizar</button>
       </div>
 

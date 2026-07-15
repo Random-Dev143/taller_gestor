@@ -1,143 +1,135 @@
 <template>
   <div class="im-group">
-    <!-- Selector de Mecánicos -->
-    <div class="header-with-actions" style="margin-bottom: 25px; border-bottom: 2px solid var(--border-soft); padding-bottom: 15px;">
-      <div>
-        <span class="im-eyebrow">Evaluación de Rendimiento Individual</span>
-        <select v-model="mecanicoSeleccionado" class="form-control select-sm mt-10" style="min-width: 250px; font-weight: bold; font-size: 1rem;">
+    <!-- CABECERA Y FILTROS -->
+    <header class="header-with-actions mb-25 pb-15 border-bottom">
+      <span class="im-eyebrow">Evaluación de Rendimiento Individual</span>
+      
+      <div class="d-flex align-items-center mt-10 gap-20">
+        <select v-model="mecanicoSeleccionado" class="form-control select-sm" style="min-width: 250px z-index= 2 position= relative;">
           <option value="todos">Ver Taller Completo (Consolidado)</option>
           <option v-for="m in tiempos" :key="m.legajo" :value="m.legajo">{{ m.nombre }} ({{ m.legajo }})</option>
         </select>
+
+        <div class="view-toggle">
+          <button class="btn btn-sm" :class="vistaOcio === 'semanal' ? 'btn-primary' : 'btn-secondary'" @click="vistaOcio = 'semanal'">Vista Semanal</button>
+          <button class="btn btn-sm" :class="vistaOcio === 'mensual' ? 'btn-primary' : 'btn-secondary'" @click="vistaOcio = 'mensual'">Vista Mensual</button>
+        </div>
       </div>
-    </div>
+    </header>
 
-    <div v-if="store.loading" class="empty-state">
-      Cargando informe de rendimiento...
-    </div>
+    <!-- ESTADOS DE CARGA / VACÍO -->
+    <div v-if="store.loading" class="empty-state">Cargando informe de rendimiento...</div>
+    <div v-else-if="!tiempos?.length" class="empty-state">No hay actividad registrada para el personal.</div>
 
-    <div v-else-if="!tiempos || tiempos.length === 0" class="empty-state">
-      No hay actividad registrada para el personal del taller en las fechas seleccionadas.
-    </div>
+    <!-- VISTA CONSOLIDADA (TALLER) -->
+    <section v-else-if="mecanicoSeleccionado === 'todos'" class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Personal</th>
+            <th>Hs Productivas</th>
+            <th>Ocio Total</th>
+            <th>Días sin login</th>
+            <th>Eficacia</th>
+            <th>Eficiencia</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="m in tiempos" :key="m.legajo">
+            <td><strong>{{ m.nombre }}</strong></td>
+            <td><span class="text-success">{{ formatHoras(m.hs_productivas) }} hs</span></td>
+            <td><strong :class="{'text-danger': m.tiempo_muerto > 10}">{{ formatHoras(m.tiempo_muerto) }} hs</strong></td>
+            <td>
+              <button v-if="m.dias_ausentes_count > 0" class="btn btn-sm" :class="sinJustificar(m) > 0 ? 'btn-danger' : 'btn-secondary'" @click="verAusencias(m)">
+                {{ m.dias_ausentes_count }} día(s)
+              </button>
+              <span v-else class="text-muted">-</span>
+            </td>
+            <td><span :class="['badge', eficaciaDe(m) >= 85 ? 'bg-success' : 'bg-warning']">{{ eficaciaDe(m) }}%</span></td>
+            <td><span :class="['badge', m.eficiencia_porcentaje >= 100 ? 'bg-success' : 'bg-danger']">{{ m.eficiencia_porcentaje }}%</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
 
-    <div v-else>
-      <!-- VISTA GENERAL: TABLA CONSOLIDADA -->
-      <div v-if="mecanicoSeleccionado === 'todos'" class="table-wrapper mb-15">
-        <table>
-          <thead>
-            <tr>
-              <th>Personal</th>
-              <th>Hs Productivas</th>
-              <th>Ocio Total</th>
-              <th>Días sin login</th>
-              <th>Eficacia (Uso del tiempo)</th>
-              <th>Eficiencia (T. Est vs Real)</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="m in tiempos" :key="m.legajo">
-              <td><strong>{{ m.nombre }}</strong></td>
-              <td><span class="text-success">{{ formatHoras(m.hs_productivas) }} hs</span></td>
-              <td :class="{'text-danger': m.tiempo_muerto > 10}">
-                <strong>{{ formatHoras(m.tiempo_muerto) }} hs</strong>
-              </td>
-              <td>
-                <button v-if="m.dias_ausentes_count > 0" class="btn btn-sm" :class="sinJustificar(m) > 0 ? 'btn-danger' : 'btn-secondary'" @click="verAusencias(m)">
-                  {{ m.dias_ausentes_count }} día(s)
-                </button>
-                <span v-else class="text-muted">-</span>
-              </td>
-              <td>
-                <span :class="['badge', eficaciaDe(m) >= 85 ? 'bg-success' : 'bg-warning']" title="(Hs Trabajadas / Hs Exigidas) * 100">
-                  {{ eficaciaDe(m) }}%
-                </span>
-              </td>
-              <td>
-                <span :class="['badge', m.eficiencia_porcentaje >= 100 ? 'bg-success' : 'bg-danger']" title="(Hs Estimadas / Hs Productivas) * 100">
-                  {{ m.eficiencia_porcentaje }}%
-                </span>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+    <!-- VISTA INDIVIDUAL -->
+    <section v-else-if="mecanicoFiltrado" class="individual-view">
+      
+      <!-- Métricas Principales -->
+      <div class="stats-grid mb-20">
+        <div class="stat-card"><strong>Días Asistidos</strong><br>{{ mecanicoFiltrado.dias_asistidos }}</div>
+        <div class="stat-card"><strong>Horas Trabajadas</strong><br>{{ formatHoras(mecanicoFiltrado.hs_empleadas) }} hs</div>
+        <div class="stat-card"><strong>OTs Finalizadas</strong><br>{{ mecanicoFiltrado.ot_trabajadas }}</div>
+        <div class="stat-card highlight-card"><strong>Tiempo Ocioso</strong><br>{{ formatHoras(mecanicoFiltrado.tiempo_muerto) }} hs</div>
       </div>
 
-      <!-- VISTA INDIVIDUAL: GRÁFICOS Y MAPA DE CALOR -->
-      <div v-if="mecanicoFiltrado && mecanicoSeleccionado !== 'todos'">
-
-        <!-- 1. Tarjetas Numéricas -->
-        <div class="stats-grid mb-15">
-          <div class="stat-card"><strong>Días Asistidos</strong><br>{{ mecanicoFiltrado.dias_asistidos }}</div>
-          <div class="stat-card"><strong>Horas Trabajadas</strong><br>{{ formatHoras(mecanicoFiltrado.hs_empleadas) }} hs</div>
-          <div class="stat-card"><strong>OTs Finalizadas</strong><br>{{ mecanicoFiltrado.ot_trabajadas }}</div>
-          <div class="stat-card highlight-card"><strong>Tiempo Ocioso</strong><br>{{ formatHoras(mecanicoFiltrado.tiempo_muerto) }} hs</div>
+      <!-- Gráficos -->
+      <div class="charts-grid mb-20">
+        <div class="card p-15">
+          <h3 class="chart-title">Distribución del Tiempo</h3>
+          <div class="chart-wrapper">
+            <Doughnut v-if="chartDistribucion" :data="chartDistribucion" :options="opcionesGraficoTorta" />
+          </div>
         </div>
-
-        <!-- 2. Gráficos Visuales (Chart.js) -->
-        <div class="charts-grid mb-15" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
-            <div class="card" style="margin-bottom: 0; padding: 15px;">
-                <h3 style="font-size: 1rem; color: var(--primary); text-align: center; margin-bottom: 10px;">Distribución del Tiempo</h3>
-                <div style="height: 220px; position: relative;">
-                    <Doughnut v-if="chartDistribucion" :data="chartDistribucion" :options="opcionesGraficoTorta" />
-                </div>
-            </div>
-            <div class="card" style="margin-bottom: 0; padding: 15px;">
-                <h3 style="font-size: 1rem; color: var(--primary); text-align: center; margin-bottom: 10px;">Eficacia vs Eficiencia</h3>
-                <div style="height: 220px; position: relative;">
-                    <Bar v-if="chartEficiencia" :data="chartEficiencia" :options="opcionesGraficoBarras" />
-                </div>
-            </div>
+        <div class="card p-15">
+          <h3 class="chart-title">Eficacia vs Eficiencia</h3>
+          <div class="chart-wrapper">
+            <Bar v-if="chartEficiencia" :data="chartEficiencia" :options="opcionesGraficoBarras" />
+          </div>
         </div>
-
-        <!-- 3. Detalle de Ausencias -->
-        <div v-if="mecanicoFiltrado.dias_ausentes_count > 0" class="alert mt-10 mb-15">
-          <strong>Días hábiles sin registro de actividad:</strong>
-          <ul style="margin: 5px 0 0 15px; font-size: 0.85rem;">
-            <li v-for="aus in mecanicoFiltrado.dias_ausentes" :key="aus.fecha">
-              {{ formatFecha(aus.fecha) }} - {{ aus.motivo || 'FALTA INJUSTIFICADA' }}
-            </li>
-          </ul>
-        </div>
-
-        <!-- 4. Mapa de Calor de Dispersión -->
-        <div v-if="mecanicoFiltrado.mapa_ocio" class="heatmap-container mt-15" style="background: white; padding: 20px; border-radius: 8px; border: 1px solid var(--border-soft);">
-           <h3 style="color: var(--primary); margin-bottom: 5px;">Mapa de Dispersión de Ocio</h3>
-           <p class="chart-hint" style="margin-bottom: 20px;">
-              Distribución de inactividad durante el rango de fechas. Los recuadros rojos indican los horarios donde el mecánico acumuló más minutos sin trabajar.
-           </p>
-
-           <div class="table-wrapper">
-              <table class="heatmap-table" style="width: 100%; border-collapse: separate; border-spacing: 2px;">
-                 <thead>
-                   <tr>
-                     <th style="background: transparent; border: none; padding: 5px;">Día \ Hora</th>
-                     <th v-for="h in horasHeatmap" :key="h" style="text-align: center; padding: 5px; background: #f8fafc; font-size: 0.8rem; border-radius: 4px;">
-                       {{ h }}:00
-                     </th>
-                   </tr>
-                 </thead>
-                 <tbody>
-                   <tr v-for="d in diasHeatmap" :key="d.id">
-                     <td style="font-weight: bold; color: var(--text-soft); border: none; padding: 8px 5px; font-size: 0.9rem;">
-                       {{ d.nombre }}
-                     </td>
-                     <td v-for="h in horasHeatmap" :key="h"
-                         :style="{ backgroundColor: getHeatColor(d.id, h), textAlign: 'center', borderRadius: '4px', transition: 'background 0.3s', padding: '6px' }">
-                       <span class="heat-text" style="font-size: 0.75rem; font-weight: bold; color: #fff; text-shadow: 1px 1px 2px rgba(0,0,0,0.5);" v-if="getOcioMins(d.id, h) > 0">
-                         {{ getOcioMins(d.id, h) }}m
-                       </span>
-                       <span v-else style="color: transparent; user-select: none;">-</span>
-                     </td>
-                   </tr>
-                 </tbody>
-              </table>
-           </div>
-        </div>
-
       </div>
-    </div>
+
+      <!-- Detalle de Ausencias -->
+      <div v-if="mecanicoFiltrado.dias_ausentes_count > 0" class="alert mb-20">
+        <strong>Días hábiles sin registro:</strong>
+        <ul>
+          <li v-for="aus in mecanicoFiltrado.dias_ausentes" :key="aus.fecha">
+            {{ formatFecha(aus.fecha) }} - {{ aus.motivo || 'FALTA INJUSTIFICADA' }}
+          </li>
+        </ul>
+      </div>
+
+      <!-- Visualización Temporal (Mapa/Serie) -->
+      <div class="visual-time-data mt-20">
+        <div v-if="vistaOcio === 'semanal'" class="card p-15">
+          <h3 class="chart-title">Mapa de Calor: Ocio Semanal</h3>
+          <div class="table-wrapper">
+            <table class="heatmap-table">
+              <thead>
+                <tr>
+                  <th>Día \ Hora</th>
+                  <th v-for="h in horasHeatmap" :key="h">{{ h }}:00</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="d in diasHeatmap" :key="d.id">
+                  <td><strong>{{ d.nombre }}</strong></td>
+                  <td v-for="h in horasHeatmap" :key="h" 
+                      :style="{ backgroundColor: getHeatColor(d.id, h) }"
+                      class="heatmap-cell"
+                      :title="`${d.nombre} a las ${h}:00 - ${getOcioMins(d.id, h)} min ocio`">
+                    <span v-if="getOcioMins(d.id, h) > 0" class="heat-text">{{ getOcioMins(d.id, h) }}m</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        
+        <div v-else class="card p-15">
+          <h3 class="chart-title">Evolución de Ocio Diario</h3>
+          <div class="chart-wrapper">
+            <Bar v-if="chartSerieMensual" :data="chartSerieMensual" :options="opcionesGraficoSerieMensual" />
+            <p v-else class="text-muted text-center mt-10">Sin datos mensuales registrados</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <ModalAusencias v-if="mecanicoModalLegajo" :mecanico="mecanicoModal" @close="mecanicoModalLegajo = null" @justificado="store.cargarInformes" />
   </div>
 </template>
+
 
 <script setup>
 import { computed, ref } from 'vue'
@@ -154,9 +146,6 @@ const tiempos = computed(() => store.operativo?.tiempos_mecanicos || [])
 const mecanicoSeleccionado = ref('todos')
 const mecanicoFiltrado = computed(() => tiempos.value.find(m => m.legajo === mecanicoSeleccionado.value) || null)
 
-// Antes esta fórmula se recalculaba en el front con .toFixed() (devolviendo un
-// string y duplicando la lógica del backend). Ahora se usa directamente el valor
-// numérico que ya trae informes.service.js: productividad_porcentaje.
 const eficaciaDe = (m) => m.productividad_porcentaje ?? 0
 
 const mecanicoModalLegajo = ref(null)
@@ -208,15 +197,68 @@ const chartEficiencia = computed(() => {
 })
 
 // --- LÓGICA DEL MAPA DE CALOR ---
+const nombresTipoDescanso = {
+  normal: 'Día normal',
+  fin_de_semana: 'Después de finde',
+  fin_de_semana_largo: 'Después de finde largo / feriado',
+  permiso_previo: 'Después de permiso'
+}
+const coloresTipoDescanso = {
+  normal: '#94a3b8',
+  fin_de_semana: '#0056a7',
+  fin_de_semana_largo: '#1d8a4f',
+  permiso_previo: '#b8860b'
+}
+
+const vistaOcio = ref('semanal') // 'semanal' | 'mensual'
+
+const patronesDescanso = computed(() => store.operativo?.patrones_descanso || [])
+
+const chartPatrones = computed(() => {
+  if (!patronesDescanso.value.length) return null
+  return {
+    labels: patronesDescanso.value.map(p => nombresTipoDescanso[p.tipo_descanso] || p.tipo_descanso),
+    datasets: [{
+      label: '% de ocio promedio',
+      data: patronesDescanso.value.map(p => p.ocio_promedio_porcentaje),
+      backgroundColor: patronesDescanso.value.map(p => coloresTipoDescanso[p.tipo_descanso] || '#94a3b8')
+    }]
+  }
+})
+
+const opcionesGraficoPatrones = {
+  responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+  scales: { x: { beginAtZero: true, max: 100, title: { display: true, text: '% de tiempo ocioso' } } },
+  plugins: { legend: { display: false } }
+}
+
+const serieDiariaMecanico = computed(() => mecanicoFiltrado.value?.serie_diaria || [])
+const formatFechaCorta = (f) => new Date(f + 'T12:00:00Z').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })
+
+const chartSerieMensual = computed(() => {
+  if (!serieDiariaMecanico.value.length) return null
+  return {
+    labels: serieDiariaMecanico.value.map(d => formatFechaCorta(d.fecha)),
+    datasets: [{
+      label: '% de ocio',
+      data: serieDiariaMecanico.value.map(d => d.ocio_porcentaje),
+      backgroundColor: serieDiariaMecanico.value.map(d => coloresTipoDescanso[d.tipo_descanso] || '#94a3b8')
+    }]
+  }
+})
+
+const opcionesGraficoSerieMensual = {
+  responsive: true, maintainAspectRatio: false,
+  scales: { y: { beginAtZero: true, max: 100 } },
+  plugins: { legend: { display: false } }
+}
+
 const horasHeatmap = [8, 9, 10, 11, 12, 14, 15, 16, 17];
 const diasHeatmap = [
   {id: 1, nombre: 'Lunes'}, {id: 2, nombre: 'Martes'}, {id: 3, nombre: 'Miércoles'},
   {id: 4, nombre: 'Jueves'}, {id: 5, nombre: 'Viernes'}, {id: 6, nombre: 'Sábado'}
 ];
 
-// Antes: cada celda del heatmap (hasta 54 por mecánico) hacía .find() sobre el
-// array de mapa_ocio, y se llamaba dos veces por celda (texto + color).
-// Ahora: se indexa una sola vez en un Map cuando cambia el mecánico seleccionado.
 const mapaOcioIndexado = computed(() => {
   const mapa = mecanicoFiltrado.value?.mapa_ocio
   if (!mapa) return new Map()
@@ -236,7 +278,15 @@ const getHeatColor = (dia, hora) => {
 
 <style scoped>
 .im-group { padding-top: 10px; }
-.header-with-actions { display: flex; justify-content: space-between; align-items: start; flex-wrap: wrap; gap: 15px; }
+.header-with-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  flex-wrap: wrap;
+  gap: 15px;
+  position: relative;
+  z-index: 2;
+}
 .im-eyebrow { font-size: 0.85rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--primary); display: block; }
 .table-wrapper { overflow-x: auto; background: white; border: 1px solid var(--border-soft); border-radius: var(--radius); box-shadow: var(--shadow-sm); }
 table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
@@ -256,5 +306,58 @@ th { background: #f8fafc; font-weight: 600; color: #1a2a3a; text-transform: uppe
 .stat-card { background: white; border: 1px solid var(--border-soft); border-radius: 8px; padding: 15px; text-align: center; box-shadow: var(--shadow-sm); font-size: 1.05rem; }
 .highlight-card { background: #b22234; color: white; border: none; font-size: 1.15rem; }
 .chart-hint { font-size: 0.85rem; color: var(--muted); }
-.card { background: white; border-radius: 8px; border: 1px solid var(--border-soft); box-shadow: var(--shadow-sm); }
+.card {
+  background: white;
+  border-radius: 8px;
+  border: 1px solid var(--border-soft);
+  box-shadow: var(--shadow-sm);
+  position: relative;
+  z-index: 0;
+  overflow: hidden;
+  min-width: 0;
+}
+.view-toggle { display: flex; gap: 8px; }
+.legend-inline { display: flex; flex-wrap: wrap; gap: 14px; font-size: 0.8rem; color: var(--text-soft); }
+.legend-item { display: flex; align-items: center; gap: 6px; }
+.legend-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+
+.chart-title { font-size: 1rem; color: var(--primary); text-align: center; margin-bottom: 10px; }
+.charts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 20px;
+  align-items: start;
+}
+.stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; }
+
+/* 
+  Contenedor envolvente fundamental para Chart.js 
+  Evita que vue-chartjs crezca de forma infinita cuando maintainAspectRatio=false
+*/
+.chart-wrapper {
+  position: relative;
+  height: 250px;
+  width: 100%;
+}
+
+/* Estilos para el Mapa de Calor */
+.heatmap-table th, .heatmap-table td { 
+  padding: 6px; 
+  text-align: center; 
+  border: 1px solid var(--border-soft); 
+  font-size: 0.8rem; 
+}
+.heatmap-cell { 
+  min-width: 45px; 
+  transition: filter 0.2s; 
+}
+.heatmap-cell:hover { 
+  filter: brightness(0.9); 
+}
+.heat-text { 
+  font-size: 0.75rem; 
+  font-weight: bold; 
+  color: #842029; 
+}
+
 </style>
