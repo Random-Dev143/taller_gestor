@@ -155,9 +155,8 @@ const ejecutarFinalizacion = async (datos) => {
 
 const cambiarLegajo = () => {
   localStorage.removeItem('legajoMecanico')
-  router.push({ name: 'mecanico-login' })
+  router.push({ name: 'mecanico-login' }) 
 }
-
 const tareasCliente = computed(() => tareas.value.filter(t => t.ot !== '0000'))
 const tareasInternas = computed(() => tareas.value.filter(t => t.ot === '0000'))
 

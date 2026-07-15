@@ -38,6 +38,19 @@ const router = createRouter({
     {
       path: '/mecanico',
       name: 'mecanico',
+      // Evalúa si hay un tablero seleccionado en memoria, si no, va al buscador
+      redirect: () => (localStorage.getItem('legajoMecanico') ? '/mecanico/tareas' : '/mecanico/login')
+    },
+    {
+      path: '/mecanico/login',
+      name: 'mecanico-login',
+      component: () => import('../views/LoginMecanico.vue'),
+      // La pantalla para tipear el legajo requiere que ya estés dentro del sistema
+      meta: { requiresAuth: true, allowedRoles: ['admin', 'jefe', 'mecanico'] }
+    },
+    {
+      path: '/mecanico/tareas',
+      name: 'mecanico-tareas',
       component: () => import('../views/MecanicoView.vue'),
       meta: { requiresAuth: true, allowedRoles: ['admin', 'jefe', 'mecanico'] }
     },
