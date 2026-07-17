@@ -15,7 +15,15 @@
         </div>
         <div class="form-group mb-15 text-left">
           <label>Contraseña</label>
-          <input type="password" v-model="formLogin.password" class="form-control" required />
+          <div class="password-field">
+            <input :type="mostrarPassword ? 'text' : 'password'" v-model="formLogin.password" class="form-control"
+                   required @keyup="chequearMayus" @blur="capsLockActivo = false" />
+            <button type="button" class="btn-toggle-password" @click="mostrarPassword = !mostrarPassword"
+                    :title="mostrarPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'">
+              {{ mostrarPassword ? '🙈' : '👁️' }}
+            </button>
+          </div>
+          <span v-if="capsLockActivo" class="alerta-mayus">⚠️ Bloq Mayús está activado</span>
         </div>
         <button type="submit" class="btn btn-primary w-100" :disabled="procesando">
           {{ procesando ? 'Verificando...' : 'Ingresar' }}
@@ -38,7 +46,15 @@
         </div>
         <div class="form-group mb-15 text-left">
           <label>Crear Contraseña</label>
-          <input type="password" v-model="formRegistro.password" class="form-control" minlength="6" required />
+          <div class="password-field">
+            <input :type="mostrarPasswordRegistro ? 'text' : 'password'" v-model="formRegistro.password" class="form-control"
+                   minlength="6" required @keyup="chequearMayusRegistro" @blur="capsLockActivoRegistro = false" />
+            <button type="button" class="btn-toggle-password" @click="mostrarPasswordRegistro = !mostrarPasswordRegistro"
+                    :title="mostrarPasswordRegistro ? 'Ocultar contraseña' : 'Mostrar contraseña'">
+              {{ mostrarPasswordRegistro ? '🙈' : '👁️' }}
+            </button>
+          </div>
+          <span v-if="capsLockActivoRegistro" class="alerta-mayus">⚠️ Bloq Mayús está activado</span>
         </div>
         <button type="submit" class="btn btn-success w-100" :disabled="procesando">
           {{ procesando ? 'Registrando...' : 'Enviar Solicitud' }}
@@ -64,6 +80,24 @@ const toast = useToast()
 
 const mostrandoRegistro = ref(false)
 const procesando = ref(false)
+
+const mostrarPassword = ref(false)
+const capsLockActivo = ref(false)
+const mostrarPasswordRegistro = ref(false)
+const capsLockActivoRegistro = ref(false)
+
+// getModifierState('CapsLock') es soportado por todos los navegadores
+// modernos; si no lo estuviera, simplemente no se muestra la alerta.
+const chequearMayus = (evento) => {
+  if (typeof evento.getModifierState === 'function') {
+    capsLockActivo.value = evento.getModifierState('CapsLock')
+  }
+}
+const chequearMayusRegistro = (evento) => {
+  if (typeof evento.getModifierState === 'function') {
+    capsLockActivoRegistro.value = evento.getModifierState('CapsLock')
+  }
+}
 
 const formLogin = ref({ email: '', password: '' })
 const formRegistro = ref({ email: '', password: '', nombre_completo: '' })
@@ -125,4 +159,12 @@ const ejecutarRegistro = async () => {
 .mb-15 { margin-bottom: 15px; }
 .toggle-link { font-size: 0.9rem; color: var(--text-soft); }
 .toggle-link a { font-weight: bold; text-decoration: none; }
+
+.password-field { position: relative; display: flex; align-items: center; }
+.password-field .form-control { padding-right: 40px; width: 100%; }
+.btn-toggle-password {
+  position: absolute; right: 6px; background: none; border: none; cursor: pointer;
+  font-size: 1.1rem; line-height: 1; padding: 4px 6px;
+}
+.alerta-mayus { display: block; margin-top: 6px; font-size: 0.8rem; color: #b8860b; font-weight: 600; }
 </style>

@@ -44,15 +44,19 @@ ivemar-backend/
   config/
     database.js
   middlewares/
+    auth.js
     upload.js
   routes/
     actividades.js
+    auth.js
     feriados.js
     informes.js
     legajos.js
     ordenes.js
+    roles.js
     sala.js
     unidades.js
+    usuarios.js
   services/
     feriados.service.js
     informes.service.js
@@ -80,6 +84,8 @@ ivemar-frontend/
     components/
       asesor/
         AdminLegajos.vue
+        AdminRoles.vue
+        AdminUsuarios.vue
         AgendaClientes.vue
         ModalDetalleOT.vue
         ModalEditarOT.vue
@@ -114,12 +120,15 @@ ivemar-frontend/
     router/
       index.js
     stores/
+      useAuthStore.js
       useInformesStore.js
     views/
+      AdminView.vue
       AsesorView.vue
       HomeView.vue
       JefeView.vue
       LoginMecanico.vue
+      LoginView.vue
       MecanicoView.vue
       SalaEsperaView.vue
     App.vue
@@ -291,7 +300,39 @@ db.serialize(async () => {
     db.run(`CREATE TABLE IF NOT EXISTS tiempos_actividad (id INTEGER PRIMARY KEY AUTOINCREMENT, actividad_id INTEGER NOT NULL, inicio DATETIME NOT NULL, fin DATETIME, FOREIGN KEY(actividad_id) REFERENCES actividades(id) ON DELETE CASCADE ON UPDATE CASCADE)`);
     db.run(`CREATE TABLE IF NOT EXISTS excepciones_mecanicos (id INTEGER PRIMARY KEY AUTOINCREMENT, legajo TEXT NOT NULL, fecha DATE NOT NULL, motivo TEXT NOT NULL, horas_descontadas REAL DEFAULT 10, FOREIGN KEY(legajo) REFERENCES legajos(legajo) ON DELETE CASCADE ON UPDATE CASCADE)`);
     db.run(`CREATE TABLE IF NOT EXISTS feriados (fecha DATE PRIMARY KEY, descripcion TEXT DEFAULT '')`);
-    setTimeout(() => { migrarEstructura(); inicializarTallerInterno(); }, 500);
+    db.run(`CREATE TABLE IF NOT EXISTS usuarios (
+        id TEXT PRIMARY KEY, 
+        email TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL, 
+        nombre_completo TEXT NOT NULL,
+        estado TEXT DEFAULT 'pendiente' CHECK(estado IN ('pendiente', 'aprobado', 'suspendido')),
+        rol TEXT CHECK(rol IN ('admin', 'asesor', 'jefe', 'mecanico')),
+        legajo TEXT,
+        fecha_registro DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(legajo) REFERENCES legajos(legajo) ON DELETE SET NULL ON UPDATE CASCADE
+    )`);
+    //  TABLAS DE PERMISOS DINÁMICOS 
+    db.run(`CREATE TABLE IF NOT EXISTS permisos (
+        clave TEXT PRIMARY KEY, 
+        modulo TEXT NOT NULL, 
+        descripcion TEXT NOT NULL
+    )`);
+    db.run(`CREATE TABLE IF NOT EXISTS roles (
+        id TEXT PRIMARY KEY, 
+        nombre TEXT UNIQUE NOT NULL, 
+        es_sistema INTEGER DEFAULT 0
+    )`);
+    db.run(`CREATE TABLE IF NOT EXISTS rol_permisos (
+        rol_id TEXT NOT NULL, 
+        permiso_clave TEXT NOT NULL, 
+        PRIMARY KEY (rol_id, permiso_clave),
+        FOREIGN KEY(rol_id) REFERENCES roles(id) ON DELETE CASCADE ON UPDATE CASCADE,
+        FOREIGN KEY(permiso_clave) REFERENCES permisos(clave) ON DELETE CASCADE ON UPDATE CASCADE
+    )`);
+    // Actualizamos la tabla usuarios para que soporte el nuevo rol_id relacional
+    // (Ejecutamos un try/catch silencioso por si la columna ya existe en reinicios futuros)
+    db.run(`ALTER TABLE usuarios ADD COLUMN rol_id TEXT REFERENCES roles(id) ON DELETE SET NULL`, (err) => { /* Ignorar si ya existe */ });
+    setTimeout(() => { migrarEstructura(); inicializarTallerInterno(); inicializarRolesYPermisos(); }, 500);
 });
 
 async function inicializarTallerInterno() {
@@ -357,10 +398,113 @@ async function sincronizarEstadoOT(ot) {
 }
 
 async function recalcularTiempoEmpleado(ot) {
-    await run(`UPDATE ordenes SET tiempo_empleado_horas = (COALESCE((SELECT SUM(tiempo_real) FROM actividades WHERE ot = ?), 0) + COALESCE((SELECT SUM(horas) FROM aportes WHERE ot = ?), 0)) WHERE ot = ?`, [ot, ot, ot]);
+    await run(`UPDATE ordenes SET tiempo_empleado_horas = ROUND(COALESCE((SELECT SUM(tiempo_real) FROM actividades WHERE ot = ?), 0) + COALESCE((SELECT SUM(horas) FROM aportes WHERE ot = ?), 0), 1) WHERE ot = ?`, [ot, ot, ot]);
+}
+
+const { v4: uuidv4 } = require('uuid');
+
+async function inicializarRolesYPermisos() {
+    const permisosBase = [
+        // Órdenes de Trabajo
+        { clave: 'ot_ver_lista', modulo: 'Órdenes de Trabajo', desc: 'Acceder a la tabla general de OTs.' },
+        { clave: 'ot_ver_detalle', modulo: 'Órdenes de Trabajo', desc: 'Ingresar a una OT específica para visualizar su interior.' },
+        { clave: 'ot_crear', modulo: 'Órdenes de Trabajo', desc: 'Dar de alta nuevas OTs en el sistema.' },
+        { clave: 'ot_editar', modulo: 'Órdenes de Trabajo', desc: 'Modificar la cabecera de la OT y montos.' },
+        { clave: 'ot_cambiar_estado', modulo: 'Órdenes de Trabajo', desc: 'Forzar manualmente el estado de la orden.' },
+        { clave: 'ot_controlar', modulo: 'Órdenes de Trabajo', desc: 'Ejecutar el Control de Calidad Final.' },
+        // Tareas y Tiempos
+        { clave: 'tarea_ver_propias', modulo: 'Tareas Operativas', desc: 'Ver exclusivamente las tareas asignadas a uno mismo.' },
+        { clave: 'tarea_operar', modulo: 'Tareas Operativas', desc: 'Iniciar, pausar y finalizar tareas.' },
+        { clave: 'tarea_gestionar_todas', modulo: 'Tareas Operativas', desc: 'Crear, asignar y eliminar cualquier tarea.' },
+        { clave: 'tiempo_editar_manual', modulo: 'Tareas Operativas', desc: 'Corregir las horas de inicio y fin de una actividad.' },
+        // Agenda
+        { clave: 'agenda_ver', modulo: 'Agenda', desc: 'Consultar listado de clientes y vehículos.' },
+        { clave: 'agenda_gestionar', modulo: 'Agenda', desc: 'Crear y editar clientes y vehículos.' },
+        // Informes
+        { clave: 'informe_financiero', modulo: 'Informes', desc: 'Acceso a métricas de dinero y facturación.' },
+        { clave: 'informe_operativo', modulo: 'Informes', desc: 'Acceso a métricas de RRHH y eficacia.' },
+        { clave: 'informe_taller', modulo: 'Informes', desc: 'Acceso a volumetría y cuellos de botella.' },
+        // Personal
+        { clave: 'legajo_ver', modulo: 'Personal', desc: 'Ver el listado del personal registrado.' },
+        { clave: 'legajo_gestionar', modulo: 'Personal', desc: 'Crear altas/bajas de mecánicos y subir firmas.' },
+        { clave: 'ausencia_justificar', modulo: 'Personal', desc: 'Cargar excepciones (Francos, Vacaciones).' },
+        // Administración
+        { clave: 'usuario_gestionar', modulo: 'Administración', desc: 'Aprobar solicitudes de cuentas y vincular legajos.' },
+        { clave: 'rol_gestionar', modulo: 'Administración', desc: 'Crear nuevos perfiles y asignar permisos.' }
+    ];
+
+    try {
+        // 1. Inyectar todos los permisos asegurando que existan
+        for (const p of permisosBase) {
+            await run(`INSERT OR IGNORE INTO permisos (clave, modulo, descripcion) VALUES (?, ?, ?)`, [p.clave, p.modulo, p.desc]);
+        }
+
+        // 2. Asegurar que exista el Rol "Administrador" (es_sistema = 1)
+        let adminRol = await get(`SELECT id FROM roles WHERE nombre = 'Administrador'`);
+        if (!adminRol) {
+            const nuevoId = uuidv4();
+            await run(`INSERT INTO roles (id, nombre, es_sistema) VALUES (?, 'Administrador', 1)`, [nuevoId]);
+            adminRol = { id: nuevoId };
+        }
+
+        // 3. Asignar TODOS los permisos al rol Administrador
+        for (const p of permisosBase) {
+            await run(`INSERT OR IGNORE INTO rol_permisos (rol_id, permiso_clave) VALUES (?, ?)`, [adminRol.id, p.clave]);
+        }
+
+        // 4. Migrar el usuario Admin por defecto para que use este nuevo rol
+        await run(`UPDATE usuarios SET rol_id = ? WHERE rol = 'admin' OR email = 'admin@ivemar.com'`, [adminRol.id]);
+
+        console.log('🛡️ Permisos y roles base inicializados correctamente.');
+    } catch (error) {
+        console.error('❌ Error inicializando permisos:', error.message);
+    }
 }
 
 module.exports = { db, run, all, get, cambiarEstado, sincronizarEstadoOT, recalcularTiempoEmpleado, DB_PATH, withTransaction };
+</file>
+
+<file path="ivemar-backend/middlewares/auth.js">
+const jwt = require('jsonwebtoken');
+const JWT_SECRET = process.env.JWT_SECRET;
+
+if (!JWT_SECRET) {
+    console.error("⚠️ CRÍTICO: No se ha definido JWT_SECRET en el archivo .env. El sistema de autenticación no puede funcionar de forma segura.");
+    process.exit(1);
+}
+
+// Ahora recibe un array de permisos requeridos (Ej: ['ot_crear', 'ot_editar'])
+const requireAuth = (permisosRequeridos = []) => {
+    return (req, res, next) => {
+        const token = req.cookies.auth_token;
+        if (!token) return res.status(401).json({ error: 'Acceso denegado. Inicie sesión.' });
+
+        try {
+            const decoded = jwt.verify(token, JWT_SECRET);
+            req.usuario = decoded;
+
+            if (decoded.estado !== 'aprobado') {
+                return res.status(403).json({ error: 'Su cuenta aún no ha sido aprobada.' });
+            }
+
+            // --- NUEVA VALIDACIÓN GRANULAR ---
+            if (permisosRequeridos.length > 0) {
+                // Verificamos si el usuario tiene al menos UNO de los permisos requeridos para esta ruta
+                const tienePermiso = permisosRequeridos.some(permiso => decoded.permisos.includes(permiso));
+                
+                if (!tienePermiso) {
+                    return res.status(403).json({ error: 'No tiene los permisos necesarios para realizar esta acción.' });
+                }
+            }
+
+            next();
+        } catch (error) {
+            res.status(401).json({ error: 'Sesión inválida o expirada.' });
+        }
+    };
+};
+
+module.exports = { requireAuth, JWT_SECRET };
 </file>
 
 <file path="ivemar-backend/middlewares/upload.js">
@@ -573,6 +717,172 @@ router.put('/tiempos/:id', async (req, res) => {
         });
         res.json({ status: 'Tiempo actualizado' });
     } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+router.put('/:id', async (req, res) => {
+    const { legajo_mecanico, descripcion, tiempo_estimado, tiempo_real, fecha_inicio, fecha_fin } = req.body;
+    try {
+        await withTransaction(async () => {
+            const actividad = await get(`SELECT ot FROM actividades WHERE id = ?`, [req.params.id]);
+            if (!actividad) throw new Error('Actividad no encontrada');
+
+            await run(
+                `UPDATE actividades 
+                 SET legajo_mecanico = ?, descripcion = ?, tiempo_estimado = ?, tiempo_real = ?,
+                     fecha_inicio = COALESCE(NULLIF(?, ''), fecha_inicio),
+                     fecha_fin = COALESCE(NULLIF(?, ''), fecha_fin)
+                 WHERE id = ?`,
+                [legajo_mecanico, descripcion, tiempo_estimado, tiempo_real, fecha_inicio, fecha_fin, req.params.id]
+            );
+            await recalcularTiempoEmpleado(actividad.ot);
+        });
+        res.json({ status: 'Actividad actualizada' });
+    } catch (error) { 
+        res.status(500).json({ error: error.message }); 
+    }
+});
+
+module.exports = router;
+</file>
+
+<file path="ivemar-backend/routes/auth.js">
+// ivemar-backend/routes/auth.js
+const express = require('express');
+const router = express.Router();
+const { run, get, all } = require('../config/database');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const { v4: uuidv4 } = require('uuid');
+const { JWT_SECRET } = require('../middlewares/auth');
+
+//CREAR ADMIN POR DEFECTO
+async function asegurarAdmin() {
+    try {
+        const adminExiste = await get(`SELECT id FROM usuarios WHERE email = 'admin@ivemar.com'`);
+        if (!adminExiste) {
+            const hash = bcrypt.hashSync('ivemar123', 10);
+            
+            // Buscamos el ID del nuevo rol Administrador maestro
+            const rol = await get(`SELECT id FROM roles WHERE nombre = 'Administrador'`);
+            const rolId = rol ? rol.id : null;
+
+            await run(
+                `INSERT INTO usuarios (id, email, password_hash, nombre_completo, estado, rol, rol_id) 
+                 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                [uuidv4(), 'admin@ivemar.com', hash, 'Administrador', 'aprobado', 'admin', rolId]
+            );
+            console.log('✅ Admin por defecto creado y vinculado a permisos granulares.');
+        }
+    } catch (error) {
+        console.error('❌ Error creando admin por defecto:', error.message);
+    }
+}
+// Llamamos a la función al cargar el módulo
+setTimeout(asegurarAdmin, 1000); 
+
+
+// --- REGISTRO (Cualquiera puede registrarse) ---
+router.post('/register', async (req, res) => {
+    const { email, password, nombre_completo } = req.body;
+    if (!email || !password || !nombre_completo) {
+        return res.status(400).json({ error: 'Faltan datos obligatorios' });
+    }
+
+    try {
+        const existente = await get(`SELECT id FROM usuarios WHERE email = ?`, [email]);
+        if (existente) return res.status(400).json({ error: 'El email ya está registrado' });
+
+        const hash = bcrypt.hashSync(password, 10);
+        const nuevoId = uuidv4();
+
+        await run(
+            `INSERT INTO usuarios (id, email, password_hash, nombre_completo) VALUES (?, ?, ?, ?)`,
+            [nuevoId, email, hash, nombre_completo]
+        );
+
+        res.json({ status: 'Registro exitoso. Espere la aprobación del administrador.' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+
+// --- LOGIN ---
+router.post('/login', async (req, res) => {
+    const { email, password } = req.body;
+
+    try {
+        // Obtenemos el usuario y el nombre de su rol relacional
+        const usuario = await get(`
+            SELECT u.*, r.nombre as rol_nombre 
+            FROM usuarios u 
+            LEFT JOIN roles r ON u.rol_id = r.id 
+            WHERE u.email = ?
+        `, [email]);
+        
+        if (!usuario) return res.status(401).json({ error: 'Credenciales inválidas' });
+
+        const passwordValido = bcrypt.compareSync(password, usuario.password_hash);
+        if (!passwordValido) return res.status(401).json({ error: 'Credenciales inválidas' });
+
+        if (usuario.estado !== 'aprobado') {
+            return res.status(403).json({ error: 'Su cuenta está pendiente de aprobación o suspendida.' });
+        }
+
+        // Buscamos el array de permisos exactos que tiene este rol
+        let permisosArreglo = [];
+        if (usuario.rol_id) {
+            const permisosRaw = await all(`SELECT permiso_clave FROM rol_permisos WHERE rol_id = ?`, [usuario.rol_id]);
+            permisosArreglo = permisosRaw.map(p => p.permiso_clave);
+        }
+
+        // Generamos el token incluyendo el nuevo array de permisos
+        const payload = {
+            id: usuario.id,
+            email: usuario.email,
+            nombre: usuario.nombre_completo,
+            rol: usuario.rol_nombre, 
+            rol_id: usuario.rol_id,
+            legajo: usuario.legajo,
+            estado: usuario.estado,
+            permisos: permisosArreglo   
+        };
+        const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '12h' });
+
+        res.cookie('auth_token', token, {
+            httpOnly: true,
+            sameSite: 'Lax',
+            secure: false,
+            maxAge: 12 * 60 * 60 * 1000 
+        });
+
+        res.json({ 
+            status: 'Login exitoso', 
+            usuario: payload 
+        });
+
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// --- VERIFICAR SESIÓN (Útil para que el frontend sepa si está logueado al recargar la página) ---
+router.get('/me', async (req, res) => {
+    const token = req.cookies.auth_token;
+    if (!token) return res.json({ loggedIn: false });
+
+    try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        res.json({ loggedIn: true, usuario: decoded });
+    } catch {
+        res.json({ loggedIn: false });
+    }
+});
+
+// --- LOGOUT ---
+router.post('/logout', (req, res) => {
+    res.clearCookie('auth_token');
+    res.json({ status: 'Sesión cerrada' });
 });
 
 module.exports = router;
@@ -795,7 +1105,14 @@ router.get('/', async (req, res) => {
         else if (req.query.estado) { where += ` AND o.estado_actual = ?`; params.push(req.query.estado); }
 
         if (req.query.garantia !== undefined) { where += ` AND o.es_garantia = ?`; params.push(req.query.garantia); }
-        
+
+        // Filtro de facturación: usa la misma expresión de montos que
+        // OTTable.vue (tieneMontos) para que el criterio sea consistente
+        // entre lo que se ve en la tabla y lo que filtra el backend.
+        const MONTOS_EXPR = `(COALESCE(o.monto_repuestos,0) + COALESCE(o.monto_mano_obra,0) + COALESCE(o.monto_repuestos_garantia,0) + COALESCE(o.monto_mano_obra_garantia,0))`;
+        if (req.query.facturacion === 'facturadas') where += ` AND ${MONTOS_EXPR} > 0`;
+        else if (req.query.facturacion === 'pendientes') where += ` AND ${MONTOS_EXPR} = 0`;
+
         if (req.query.busqueda) {
             where += ` AND (o.ot LIKE ? OR o.patente LIKE ? OR c.nombre LIKE ?)`;
             const q = `%${req.query.busqueda}%`;
@@ -804,6 +1121,28 @@ router.get('/', async (req, res) => {
 
         const totalRow = await get(`SELECT COUNT(*) AS total FROM ordenes o JOIN unidades u ON o.patente = u.patente JOIN clientes c ON u.cliente_id = c.id ${where}`, params);
         const total = totalRow.total;
+
+        // Orden dinámico con whitelist de columnas (evita inyección SQL).
+        // "mecanico" es un alias de subquery del SELECT; SQLite permite
+        // ordenar por el alias directamente.
+        const ORDENABLES = {
+            ot: 'CAST(o.ot AS INTEGER)',
+            cliente: 'c.nombre',
+            patente: 'o.patente',
+            unidad: 'u.unidad',
+            mecanico: 'mecanico',
+            estado: 'o.estado_actual',
+            garantia: 'o.es_garantia',
+            controlada: 'o.controlada',
+            facturacion: MONTOS_EXPR,
+            fecha_apertura: 'o.fecha_apertura',
+            fecha_cierre: 'o.fecha_cierre'
+        };
+        const sortCol = ORDENABLES[req.query.sortBy];
+        const sortDir = (req.query.sortDir || '').toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+        const orderBy = sortCol
+            ? `ORDER BY ${sortCol} ${sortDir}, CAST(o.ot AS INTEGER) DESC`
+            : `ORDER BY CAST(o.ot AS INTEGER) DESC, o.fecha_apertura DESC`;
 
         const sql = `
             SELECT o.*, u.unidad, c.nombre AS cliente, l.nombre AS nombre_asesor,
@@ -814,7 +1153,7 @@ router.get('/', async (req, res) => {
             JOIN unidades u ON o.patente = u.patente
             JOIN clientes c ON u.cliente_id = c.id
             LEFT JOIN legajos l ON o.asesor_legajo = l.legajo 
-            ${where} ORDER BY CAST(o.ot AS INTEGER) DESC, o.fecha_apertura DESC LIMIT ? OFFSET ?
+            ${where} ${orderBy} LIMIT ? OFFSET ?
         `;
         const rows = await all(sql, [...params, limit, offset]);
 
@@ -970,6 +1309,122 @@ router.put('/aportes/:id', async (req, res) => {
 module.exports = router;
 </file>
 
+<file path="ivemar-backend/routes/roles.js">
+const express = require('express');
+const router = express.Router();
+const { run, all, get, withTransaction } = require('../config/database');
+const { v4: uuidv4 } = require('uuid');
+
+// 1. OBTENER CATÁLOGO DE PERMISOS (Para armar la UI de checkboxes)
+router.get('/permisos', async (req, res) => {
+    try {
+        const permisos = await all(`SELECT * FROM permisos ORDER BY modulo, clave`);
+        res.json(permisos);
+    } catch (error) { 
+        res.status(500).json({ error: error.message }); 
+    }
+});
+
+// 2. LISTAR ROLES CON SUS PERMISOS ASIGNADOS
+router.get('/', async (req, res) => {
+    try {
+        const roles = await all(`SELECT * FROM roles ORDER BY nombre`);
+        
+        // Iteramos para buscar qué permisos tiene tildados cada rol
+        for (let rol of roles) {
+            const permisosRol = await all(`SELECT permiso_clave FROM rol_permisos WHERE rol_id = ?`, [rol.id]);
+            // Guardamos solo el array de claves (Ej: ['ot_crear', 'ot_editar'])
+            rol.permisos = permisosRol.map(p => p.permiso_clave);
+        }
+        
+        res.json(roles);
+    } catch (error) { 
+        res.status(500).json({ error: error.message }); 
+    }
+});
+
+// 3. CREAR UN ROL NUEVO
+router.post('/', async (req, res) => {
+    const { nombre, permisos } = req.body;
+    
+    if (!nombre) {
+        return res.status(400).json({ error: 'El nombre del rol es obligatorio' });
+    }
+
+    try {
+        await withTransaction(async () => {
+            const nuevoId = uuidv4();
+            await run(`INSERT INTO roles (id, nombre) VALUES (?, ?)`, [nuevoId, nombre]);
+            
+            if (permisos && permisos.length > 0) {
+                for (const p of permisos) {
+                    await run(`INSERT INTO rol_permisos (rol_id, permiso_clave) VALUES (?, ?)`, [nuevoId, p]);
+                }
+            }
+        });
+        res.json({ status: 'Rol creado exitosamente' });
+    } catch (error) { 
+        if (error.message.includes('UNIQUE constraint')) {
+            return res.status(400).json({ error: 'Ya existe un rol con ese nombre' });
+        }
+        res.status(500).json({ error: error.message }); 
+    }
+});
+
+// 4. MODIFICAR UN ROL Y SUS PERMISOS
+router.put('/:id', async (req, res) => {
+    const { nombre, permisos } = req.body;
+    try {
+        const rol = await get(`SELECT es_sistema FROM roles WHERE id = ?`, [req.params.id]);
+        if (!rol) return res.status(404).json({ error: 'Rol no encontrado' });
+
+        await withTransaction(async () => {
+            // Permitimos cambiar el nombre solo si NO es un rol base del sistema
+            if (nombre && rol.es_sistema === 0) {
+                await run(`UPDATE roles SET nombre = ? WHERE id = ?`, [nombre, req.params.id]);
+            }
+
+            // Para actualizar los permisos fácilmente: borramos todos los viejos e insertamos los nuevos
+            await run(`DELETE FROM rol_permisos WHERE rol_id = ?`, [req.params.id]);
+            
+            if (permisos && permisos.length > 0) {
+                for (const p of permisos) {
+                    await run(`INSERT INTO rol_permisos (rol_id, permiso_clave) VALUES (?, ?)`, [req.params.id, p]);
+                }
+            }
+        });
+        res.json({ status: 'Rol y permisos actualizados correctamente' });
+    } catch (error) { 
+        res.status(500).json({ error: error.message }); 
+    }
+});
+
+// 5. ELIMINAR ROL
+router.delete('/:id', async (req, res) => {
+    try {
+        // Bloqueo 1: Evitar que borren al Administrador (es_sistema = 1)
+        const rol = await get(`SELECT es_sistema FROM roles WHERE id = ?`, [req.params.id]);
+        if (rol && rol.es_sistema === 1) {
+            return res.status(403).json({ error: 'Operación denegada. No se puede eliminar un rol nativo del sistema.' });
+        }
+        
+        // Bloqueo 2: Evitar que dejen usuarios huérfanos sin rol
+        const enUso = await get(`SELECT id FROM usuarios WHERE rol_id = ? LIMIT 1`, [req.params.id]);
+        if (enUso) {
+            return res.status(400).json({ error: 'No se puede eliminar el rol porque actualmente hay usuarios asignados a él.' });
+        }
+
+        // Si pasó los bloqueos, borramos (SQLite borrará automáticamente los registros en rol_permisos por el CASCADE)
+        await run(`DELETE FROM roles WHERE id = ?`, [req.params.id]);
+        res.json({ status: 'Rol eliminado exitosamente' });
+    } catch (error) { 
+        res.status(500).json({ error: error.message }); 
+    }
+});
+
+module.exports = router;
+</file>
+
 <file path="ivemar-backend/routes/sala.js">
 const express = require('express');
 const router = express.Router();
@@ -1066,6 +1521,111 @@ router.delete('/:id', async (req, res) => {
             return res.status(400).json({ error: 'No se puede eliminar la unidad porque tiene OTs asociadas. Elimine primero el historial de taller.' });
         }
         res.status(500).json({ error: error.message }); 
+    }
+});
+
+module.exports = router;
+</file>
+
+<file path="ivemar-backend/routes/usuarios.js">
+// ivemar-backend/routes/usuarios.js
+const express = require('express');
+const router = express.Router();
+const { run, all, get } = require('../config/database');
+const bcrypt = require('bcryptjs');
+const { v4: uuidv4 } = require('uuid');
+
+// GET / - Listar todos los usuarios (se puede filtrar por estado ?estado=pendiente)
+router.get('/', async (req, res) => {
+    const estado = req.query.estado;
+    try {
+        let query = `
+            SELECT u.id, u.email, u.nombre_completo, u.estado, u.legajo, 
+                   l.nombre as nombre_legajo, r.nombre as rol_nombre, u.rol_id
+            FROM usuarios u
+            LEFT JOIN legajos l ON u.legajo = l.legajo
+            LEFT JOIN roles r ON u.rol_id = r.id
+        `;
+        const params = [];
+
+        if (estado) {
+            query += ` WHERE u.estado = ?`;
+            params.push(estado);
+        }
+
+        query += ` ORDER BY u.nombre_completo ASC`;
+        const usuarios = await all(query, params);
+        res.json(usuarios);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// POST / - Creación manual de un usuario por el admin (ya aprobado directamente)
+router.post('/', async (req, res) => {
+    const { email, password, nombre_completo, rol, legajo } = req.body;
+    if (!email || !password || !nombre_completo || !rol) {
+        return res.status(400).json({ error: 'Faltan datos obligatorios' });
+    }
+
+    try {
+        const existente = await get(`SELECT id FROM usuarios WHERE email = ?`, [email]);
+        if (existente) return res.status(400).json({ error: 'El email ya está registrado' });
+
+        const hash = bcrypt.hashSync(password, 10);
+        const nuevoId = uuidv4();
+
+        await run(
+            `INSERT INTO usuarios (id, email, password_hash, nombre_completo, estado, rol, legajo) 
+             VALUES (?, ?, ?, ?, 'aprobado', ?, ?)`,
+            [nuevoId, email, hash, nombre_completo, rol, legajo || null]
+        );
+
+        res.json({ status: 'Usuario creado y aprobado exitosamente' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// PUT /:id - Actualizar usuario (Aprobar, cambiar rol, asignar legajo)
+router.put('/:id', async (req, res) => {
+    const { estado, rol_id, legajo } = req.body;
+    try {
+        await run(
+            `UPDATE usuarios SET estado = ?, rol_id = ?, legajo = ? WHERE id = ?`,
+            [estado, rol_id || null, legajo || null, req.params.id]
+        );
+        res.json({ status: 'Usuario actualizado' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// PUT /:id/password - Resetear contraseña (solo admin)
+router.put('/:id/password', async (req, res) => {
+    const { nueva_password } = req.body;
+    if (!nueva_password || nueva_password.length < 6) {
+        return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
+    }
+
+    try {
+        const hash = bcrypt.hashSync(nueva_password, 10);
+        await run(`UPDATE usuarios SET password_hash = ? WHERE id = ?`, [hash, req.params.id]);
+        res.json({ status: 'Contraseña reseteada correctamente' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// DELETE /:id - Baja lógica (suspender usuario para no romper el historial)
+router.delete('/:id', async (req, res) => {
+    try {
+        // En lugar de borrar la fila (lo cual podría dejar OTs huérfanas si diseñáramos mal a futuro),
+        // simplemente le quitamos el acceso cambiando el estado.
+        await run(`UPDATE usuarios SET estado = 'suspendido' WHERE id = ?`, [req.params.id]);
+        res.json({ status: 'Usuario suspendido. Ya no podrá iniciar sesión.' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
     }
 });
 
@@ -1746,62 +2306,125 @@ npm-debug.log*
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.5.2",
+    "jsonwebtoken": "^9.0.3",
     "multer": "^2.2.0",
-    "sqlite3": "^6.0.1"
+    "sqlite3": "^6.0.1",
+    "uuid": "^14.0.1"
   }
 }
 </file>
 
 <file path="ivemar-backend/server.js">
 'use strict';
+require('dotenv').config(); // 1. Cargar variables de entorno
 
 const express = require('express');
 const cors = require('cors');
+const cookieParser = require('cookie-parser'); // 2. Manejador de cookies
+const rateLimit = require('express-rate-limit'); // 3. Límite de peticiones
 const path = require('path');
 const fs = require('fs');
+
 const iniciarCron = require('./utils/cron');
+const { requireAuth } = require('./middlewares/auth'); // 4. Middleware de seguridad
 
 const app = express();
-const PORT = 5881;
+const PORT = process.env.PORT || 5881;
 const FIRMAS_DIR = path.join(__dirname, 'firmas');
 
-// Asegurar que exista la carpeta de firmas
 if (!fs.existsSync(FIRMAS_DIR)) {
     fs.mkdirSync(FIRMAS_DIR, { recursive: true });
 }
 
-// ─── MIDDLEWARE ────────────────────────────────────────────────────
+// ─── SEGURIDAD: LIMITADORES DE PETICIONES (RATE LIMIT) ─────────────
+// Límite general: Máximo 100 peticiones por minuto por IP
+const limiterGeneral = rateLimit({
+    windowMs: 1 * 60 * 1000, 
+    max: 100,
+    message: { error: 'Demasiadas peticiones. Por favor, espere un momento.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
+// Límite estricto para Sala de Espera: Máximo 15 peticiones por minuto por IP
+// (El frontend actualiza cada 30 segundos, por lo que 2 peticiones/minuto es lo normal)
+const limiterSala = rateLimit({
+    windowMs: 1 * 60 * 1000,
+    max: 15,
+    message: { error: 'Límite de recargas excedido para la sala de espera.' }
+});
+
+// ─── MIDDLEWARES BASE ─────────────────────────────────────────────
 app.use(express.json());
-app.use(cors({
-    origin: '*',
+app.use(cookieParser());
+app.use(limiterGeneral); // Aplicamos el límite general a todo el servidor
+
+// Configuración estricta de CORS para red local
+const corsOptions = {
+    origin: function (origin, callback) {
+        // Permitir peticiones sin origen (ej. herramientas de terminal) o desde la red local
+        if (!origin) return callback(null, true);
+        
+        // Expresión regular que acepta localhost, 127.0.0.1, y cualquier IP de red local 192.168.x.x o 10.x.x.x
+        if (/^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+)(:\d+)?$/.test(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('Acceso denegado por políticas de CORS. Origen no autorizado.'));
+        }
+    },
+    credentials: true, // ¡CRÍTICO! Sin esto, el navegador rechazará la cookie HttpOnly
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
-}));
+};
+app.use(cors(corsOptions));
 
 // ─── ARCHIVOS ESTÁTICOS ───────────────────────────────────────────
 app.use('/firmas', express.static(FIRMAS_DIR));
 
-// ─── RUTAS (API REST) ─────────────────────────────────────────────
+// ─── RUTAS PÚBLICAS (No requieren token) ──────────────────────────
 app.get('/status', (req, res) => {
-    res.json({ status: 'API IVEMAR activa', version: '2.0 - Modular' });
+    res.json({ status: 'API IVEMAR activa', version: '3.0 - Segura' });
 });
 
-app.use('/api/unidades', require('./routes/unidades'));
-app.use('/api/legajos', require('./routes/legajos'));
-app.use('/api/ordenes', require('./routes/ordenes'));
-app.use('/api/actividades', require('./routes/actividades'));
-app.use('/api/informes', require('./routes/informes'));
-app.use('/api/sala', require('./routes/sala'));
-app.use('/api/feriados', require('./routes/feriados'));
+app.use('/api/auth', require('./routes/auth'));
+app.use('/api/sala', limiterSala, require('./routes/sala')); // Sala blindada con su propio limitador
+
+// ─── RUTAS PROTEGIDAS (Requieren sesión válida y permisos específicos) ───
+
+// Agenda y Contactos
+app.use('/api/unidades', requireAuth(['agenda_ver', 'agenda_gestionar']), require('./routes/unidades'));
+
+// RRHH y Legajos
+app.use('/api/legajos', requireAuth(['legajo_ver', 'legajo_gestionar']), require('./routes/legajos'));
+
+// Órdenes de Trabajo (Si tiene al menos uno de estos permisos, pasa)
+app.use('/api/ordenes', requireAuth(['ot_ver_lista', 'ot_crear', 'ot_editar']), require('./routes/ordenes'));
+
+// Tareas Operativas
+app.use('/api/actividades', requireAuth(['tarea_ver_propias', 'tarea_gestionar_todas']), require('./routes/actividades'));
+
+// Feriados y Excepciones
+app.use('/api/feriados', requireAuth(['ausencia_justificar', 'rol_gestionar']), require('./routes/feriados'));
+
+// Informes y Estadísticas
+app.use('/api/informes', requireAuth(['informe_financiero', 'informe_operativo', 'informe_taller']), require('./routes/informes'));
+
+// Configuración y Administración del Sistema
+app.use('/api/usuarios', requireAuth(['usuario_gestionar']), require('./routes/usuarios'));
+app.use('/api/roles', requireAuth(['rol_gestionar']), require('./routes/roles')); // <-- NUEVA RUTA PARA ROLES
 
 // ─── INICIAR TAREAS PROGRAMADAS ────────────────────────────────────
 iniciarCron();
 
 // ─── ARRANQUE ──────────────────────────────────────────────────────
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 API IVEMAR activa en http://0.0.0.0:${PORT}`);
+    console.log(`🚀 API IVEMAR Segura activa en http://0.0.0.0:${PORT}`);
     console.log(`📁 Firmas: ${FIRMAS_DIR}`);
 });
 </file>
@@ -1983,8 +2606,8 @@ c140 -138 239 -320 285 -526 8 -34 13 -118 13 -199 0 -113 -4 -157 -23 -229
               <span v-else class="text-muted">Sin firma</span>
             </td>
             <td>
-              <button class="btn btn-sm" @click="subirFirma(l.legajo)">Subir firma</button>
-              <button class="btn btn-danger btn-sm" @click="eliminarLegajo(l.legajo)">Eliminar</button>
+              <button class="btn btn-sm" v-can="'legajo_gestionar'" @click="subirFirma(l.legajo)">Subir firma</button>
+              <button class="btn btn-danger btn-sm" v-can="'legajo_gestionar'" @click="eliminarLegajo(l.legajo)">Eliminar</button>
             </td>
           </tr>
         </tbody>
@@ -2115,6 +2738,467 @@ onMounted(cargarLegajos)
 </style>
 </file>
 
+<file path="ivemar-frontend/src/components/asesor/AdminRoles.vue">
+<template>
+  <div class="roles-container">
+    
+    <!-- COLUMNA IZQUIERDA: Listado de Roles -->
+    <div class="card roles-list">
+      <div class="header-row mb-15">
+        <h3 style="margin: 0;">Roles del Sistema</h3>
+        <button class="btn btn-primary btn-sm" @click="limpiarFormulario">➕ Nuevo Rol</button>
+      </div>
+
+      <div v-if="loading" class="loading-state">Cargando...</div>
+      
+      <div v-else class="list-group">
+        <div 
+          v-for="rol in roles" 
+          :key="rol.id"
+          class="list-item"
+          :class="{ 'active': form.id === rol.id }"
+          @click="seleccionarRol(rol)"
+        >
+          <div class="rol-info">
+            <strong>{{ rol.nombre }}</strong>
+            <span v-if="rol.es_sistema" class="badge badge-warn ms-2" title="Rol nativo inborrable">🔒 Sistema</span>
+          </div>
+          <div class="rol-actions" v-if="!rol.es_sistema">
+            <button class="btn-icon text-danger" @click.stop="eliminarRol(rol.id)" title="Eliminar Rol">🗑️</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- COLUMNA DERECHA: Editor de Permisos -->
+    <div class="card roles-editor">
+      <h3 class="mb-15">{{ form.id ? 'Editar Rol' : 'Crear Nuevo Rol' }}</h3>
+      
+      <form @submit.prevent="guardarRol">
+        <div class="form-group mb-15">
+          <label>Nombre del Rol</label>
+          <input 
+            type="text" 
+            v-model="form.nombre" 
+            class="form-control" 
+            required 
+            :disabled="esRolSistemaActual"
+            placeholder="Ej: Cajero, Auditor..."
+          />
+          <small v-if="esRolSistemaActual" class="text-muted mt-5 block">
+            El nombre de este rol nativo no puede ser modificado, pero sus permisos sí.
+          </small>
+        </div>
+
+        <h4 class="mb-10">Asignación de Permisos</h4>
+        <div class="permisos-grid">
+          
+          <!-- Iteramos sobre los permisos agrupados por módulo -->
+          <div v-for="(listaPermisos, modulo) in permisosAgrupados" :key="modulo" class="permiso-modulo">
+            <h5 class="modulo-title">{{ modulo }}</h5>
+            
+            <label v-for="p in listaPermisos" :key="p.clave" class="checkbox-label">
+              <input 
+                type="checkbox" 
+                :value="p.clave" 
+                v-model="form.permisos"
+              />
+              <div class="checkbox-text">
+                <span class="clave">{{ p.clave }}</span>
+                <span class="desc">{{ p.descripcion }}</span>
+              </div>
+            </label>
+          </div>
+
+        </div>
+
+        <div class="form-actions mt-20 text-right">
+          <button type="button" class="btn btn-secondary me-2" v-if="form.id" @click="limpiarFormulario">Cancelar Edición</button>
+          <button type="submit" class="btn btn-success" :disabled="procesando">
+            {{ procesando ? 'Guardando...' : 'Guardar Cambios' }}
+          </button>
+        </div>
+      </form>
+    </div>
+
+  </div>
+</template>
+
+<script setup>
+import { ref, computed, onMounted } from 'vue'
+import { useApi } from '../../composables/useApi'
+import { useToast, errMsg } from '../../composables/useToast'
+
+const { fetchJSON } = useApi()
+const toast = useToast()
+
+const roles = ref([])
+const permisosList = ref([])
+const loading = ref(true)
+const procesando = ref(false)
+
+const form = ref({ id: null, nombre: '', permisos: [] })
+
+// Determina si el rol que se está editando actualmente es un rol protegido del sistema
+const esRolSistemaActual = computed(() => {
+  if (!form.value.id) return false
+  const rol = roles.value.find(r => r.id === form.value.id)
+  return rol ? rol.es_sistema === 1 : false
+})
+
+// Agrupa la lista plana de permisos por su propiedad "modulo"
+const permisosAgrupados = computed(() => {
+  const grupos = {}
+  permisosList.value.forEach(p => {
+    if (!grupos[p.modulo]) grupos[p.modulo] = []
+    grupos[p.modulo].push(p)
+  })
+  return grupos
+})
+
+const cargarDatos = async () => {
+  loading.value = true
+  try {
+    const [resRoles, resPermisos] = await Promise.all([
+      fetchJSON('/roles'),
+      fetchJSON('/roles/permisos')
+    ])
+    roles.value = resRoles
+    permisosList.value = resPermisos
+  } catch (err) {
+    toast.error('Error cargando la configuración: ' + errMsg(err))
+  } finally {
+    loading.value = false
+  }
+}
+
+const seleccionarRol = (rol) => {
+  form.value = {
+    id: rol.id,
+    nombre: rol.nombre,
+    permisos: [...(rol.permisos || [])] // Clonamos el array para no mutar directamente
+  }
+}
+
+const limpiarFormulario = () => {
+  form.value = { id: null, nombre: '', permisos: [] }
+}
+
+const guardarRol = async () => {
+  procesando.value = true
+  try {
+    if (form.value.id) {
+      // Editar
+      await fetchJSON(`/roles/${form.value.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ nombre: form.value.nombre, permisos: form.value.permisos })
+      })
+      toast.success('Rol actualizado correctamente')
+    } else {
+      // Crear
+      await fetchJSON('/roles', {
+        method: 'POST',
+        body: JSON.stringify({ nombre: form.value.nombre, permisos: form.value.permisos })
+      })
+      toast.success('Rol creado correctamente')
+    }
+    await cargarDatos()
+    if (!form.value.id) limpiarFormulario() // Solo limpiamos si era uno nuevo
+  } catch (err) {
+    toast.error(errMsg(err))
+  } finally {
+    procesando.value = false
+  }
+}
+
+const eliminarRol = async (id) => {
+  if (!confirm('¿Está seguro de eliminar este rol? Esta acción no se puede deshacer.')) return
+  try {
+    await fetchJSON(`/roles/${id}`, { method: 'DELETE' })
+    toast.success('Rol eliminado')
+    if (form.value.id === id) limpiarFormulario()
+    await cargarDatos()
+  } catch (err) {
+    toast.error(errMsg(err))
+  }
+}
+
+onMounted(cargarDatos)
+</script>
+
+<style scoped>
+.roles-container {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+/* Columna Izquierda */
+.list-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.list-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 15px;
+  background: #f8f9fa;
+  border: 1px solid #eef3f9;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.list-item:hover { background: #e9edf4; }
+.list-item.active {
+  background: #0056a7;
+  color: white;
+  border-color: #0056a7;
+}
+.list-item.active .badge-warn { background: #ffc107; color: #333; }
+.btn-icon {
+  background: none; border: none; font-size: 1.1rem; cursor: pointer; opacity: 0.7;
+}
+.btn-icon:hover { opacity: 1; transform: scale(1.1); }
+
+/* Columna Derecha */
+.permisos-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 20px;
+  background: #f8f9fa;
+  padding: 20px;
+  border-radius: 8px;
+  border: 1px solid #eef3f9;
+}
+.modulo-title {
+  margin-top: 0; margin-bottom: 12px; color: #0056a7; border-bottom: 2px solid #eef3f9; padding-bottom: 5px;
+}
+.checkbox-label {
+  display: flex; align-items: flex-start; gap: 10px; margin-bottom: 10px; cursor: pointer;
+}
+.checkbox-label input[type="checkbox"] {
+  margin-top: 4px; accent-color: #0056a7; transform: scale(1.1);
+}
+.checkbox-text { display: flex; flex-direction: column; }
+.checkbox-text .clave { font-size: 0.9rem; font-weight: bold; color: #333; }
+.checkbox-text .desc { font-size: 0.8rem; color: #666; line-height: 1.3; }
+
+.block { display: block; }
+.text-right { text-align: right; }
+.me-2 { margin-right: 10px; }
+.mt-5 { margin-top: 5px; }
+
+@media (max-width: 900px) {
+  .roles-container { grid-template-columns: 1fr; }
+}
+</style>
+</file>
+
+<file path="ivemar-frontend/src/components/asesor/AdminUsuarios.vue">
+<template>
+  <div class="card">
+    <div class="header-row">
+      <h2>Gestión de Usuarios y Accesos</h2>
+      <div style="display: flex; gap: 10px;">
+        <select v-model="filtroEstado" class="form-control" style="width: auto;" @change="cargarUsuarios">
+          <option value="">Todos los estados</option>
+          <option value="pendiente">Pendientes</option>
+          <option value="aprobado">Aprobados</option>
+          <option value="suspendido">Suspendidos</option>
+        </select>
+        <button class="btn btn-secondary btn-sm" @click="cargarDatos">↻ Actualizar</button>
+      </div>
+    </div>
+
+    <div v-if="loading" class="loading-state"><div class="spinner"></div>Cargando usuarios...</div>
+    <div v-else class="table-wrapper mt-15">
+      <table>
+        <thead>
+          <tr>
+            <th>Nombre y Correo</th>
+            <th>Estado</th>
+            <th>Rol de Sistema</th>
+            <th>Legajo Físico</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-if="usuarios.length === 0">
+            <td colspan="5" class="empty-state">No hay usuarios para mostrar.</td>
+          </tr>
+          <tr v-for="u in usuarios" :key="u.id" :class="{'fila-pendiente': u.estado === 'pendiente'}">
+            <td>
+              <strong>{{ u.nombre_completo }}</strong><br>
+              <span class="text-muted" style="font-size: 0.85rem;">{{ u.email }}</span>
+            </td>
+            <td>
+              <span :class="['badge', claseEstado(u.estado)]">{{ u.estado }}</span>
+            </td>
+            <td>
+                <select v-if="editandoId === u.id" v-model="formEdit.rol_id" class="form-control" style="padding: 4px;">
+                    <option value="" disabled>Seleccione un perfil...</option>
+                    <option v-for="r in rolesLista" :key="r.id" :value="r.id">{{ r.nombre }}</option>
+                </select>
+                <span v-else class="badge-sm" style="background: #0056a7;">{{ u.rol_nombre || 'Sin asignar' }}</span>
+            </td>
+            <td>
+              <select v-if="editandoId === u.id" v-model="formEdit.legajo" class="form-control" style="padding: 4px;">
+                <option value="">Ninguno</option>
+                <option v-for="l in legajos" :key="l.legajo" :value="l.legajo">{{ l.nombre }} ({{ l.rol }})</option>
+              </select>
+              <span v-else>{{ u.nombre_legajo ? `${u.nombre_legajo} (${u.legajo})` : '—' }}</span>
+            </td>
+            <td style="white-space: nowrap;">
+              <!-- Modo Edición -->
+              <template v-if="editandoId === u.id">
+                <button class="btn btn-success btn-sm" v-can="'usuario_gestionar'" @click="guardarCambios(u.id)">Guardar</button>
+                <button class="btn btn-secondary btn-sm" @click="cancelarEdicion">Cancelar</button>
+              </template>
+              
+              <!-- Modo Vista (Aprobar Rápido) -->
+              <template v-else-if="u.estado === 'pendiente'">
+                <button class="btn btn-success btn-sm" v-can="'usuario_gestionar'" @click="iniciarEdicion(u)">✅ Aprobar y Asignar</button>
+              </template>
+
+              <!-- Modo Vista Normal -->
+              <template v-else>
+                <button class="btn btn-sm" v-can="'usuario_gestionar'" @click="iniciarEdicion(u)">✏️ Editar</button>
+                <button v-if="u.estado !== 'suspendido'" class="btn btn-danger btn-sm" v-can="'usuario_gestionar'" @click="suspenderUsuario(u.id)">🚫 Suspender</button>
+                <button v-else class="btn btn-outline btn-sm" v-can="'usuario_gestionar'" @click="reactivarUsuario(u.id)">Reactivar</button>
+              </template>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref, onMounted } from 'vue'
+import { useApi } from '../../composables/useApi'
+import { useToast, errMsg } from '../../composables/useToast'
+
+const { fetchJSON } = useApi()
+const toast = useToast()
+
+const usuarios = ref([])
+const legajos = ref([])
+const rolesLista = ref([])
+const loading = ref(true)
+const filtroEstado = ref('')
+
+const editandoId = ref(null)
+const formEdit = ref({ rol_id: '', legajo: '', estado: '' })
+
+
+
+const claseEstado = (estado) => ({
+  'pendiente': 'badge-warn',
+  'aprobado': 'badge-success',
+  'suspendido': 'badge-danger'
+}[estado] || '')
+
+const cargarDatos = async () => {
+  loading.value = true
+  try {
+    const params = new URLSearchParams()
+    if (filtroEstado.value) params.set('estado', filtroEstado.value)
+    
+    // Traemos usuarios, legajos y ROLES en paralelo
+    const [resUsuarios, resLegajos, resRoles] = await Promise.all([
+      fetchJSON(`/usuarios?${params.toString()}`),
+      fetchJSON('/legajos'),
+      fetchJSON('/roles') // <-- NUEVA PETICIÓN
+    ])
+    
+    usuarios.value = resUsuarios
+    legajos.value = resLegajos
+    rolesLista.value = resRoles
+  } catch (err) {
+    toast.error('Error cargando datos: ' + errMsg(err))
+  } finally {
+    loading.value = false
+  }
+}
+
+const iniciarEdicion = (u) => {
+  editandoId.value = u.id
+  formEdit.value = {
+    rol_id: u.rol_id || '', 
+    legajo: u.legajo || '',
+    estado: 'aprobado' 
+  }
+}
+
+const cancelarEdicion = () => {
+  editandoId.value = null
+}
+
+const guardarCambios = async (id) => {
+  // Si busca .rol en lugar de .rol_id, siempre dará error porque no existe.
+  if (!formEdit.value.rol_id) {
+    return toast.error('Debe asignar un perfil al usuario.')
+  }
+  
+  try {
+    await fetchJSON(`/usuarios/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        estado: formEdit.value.estado,
+        rol_id: formEdit.value.rol_id, // Enviamos rol_id al backend
+        legajo: formEdit.value.legajo || null
+      })
+    })
+    toast.success('Usuario actualizado correctamente')
+    cancelarEdicion()
+    cargarDatos()
+  } catch (err) {
+    toast.error('Error al actualizar: ' + errMsg(err))
+  }
+}
+
+const suspenderUsuario = async (id) => {
+  if (!confirm('¿Seguro que desea suspender a este usuario? Perderá el acceso al sistema.')) return
+  try {
+    await fetchJSON(`/usuarios/${id}`, { method: 'DELETE' })
+    toast.success('Usuario suspendido')
+    cargarDatos()
+  } catch (err) {
+    toast.error(errMsg(err))
+  }
+}
+
+const reactivarUsuario = async (id) => {
+  try {
+    await fetchJSON(`/usuarios/${id}`, { 
+      method: 'PUT', 
+      body: JSON.stringify({ estado: 'aprobado' }) 
+    })
+    toast.success('Usuario reactivado')
+    cargarDatos()
+  } catch (err) {
+    toast.error(errMsg(err))
+  }
+}
+
+onMounted(cargarDatos)
+</script>
+
+<style scoped>
+.header-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+.header-row h2 { margin: 0; }
+.fila-pendiente td { background-color: #fffaf0; }
+.badge-warn { background: #b8860b; color: white; }
+.badge-success { background: #1d8a4f; color: white; }
+.badge-danger { background: #b22234; color: white; }
+.text-muted { color: var(--muted); }
+</style>
+</file>
+
 <file path="ivemar-frontend/src/components/asesor/AgendaClientes.vue">
 <template>
   <div class="card">
@@ -2174,12 +3258,12 @@ onMounted(cargarLegajos)
                 </td>
                 <td style="white-space: nowrap; vertical-align: top;">
                   <template v-if="editandoId === u.id">
-                    <button class="btn btn-success btn-sm mb-1 w-100" @click="guardarEdicion(u.id, u.patente)">Guardar</button>
+                    <button class="btn btn-success btn-sm mb-1 w-100" v-can="'agenda_gestionar'" @click="guardarEdicion(u.id, u.patente)">Guardar</button>
                     <button class="btn btn-secondary btn-sm w-100" @click="cancelarEdicion">Cancelar</button>
                   </template>
                   <template v-else>
-                    <button class="btn btn-sm" @click="iniciarEdicion(u)">Editar</button>
-                    <button class="btn btn-outline btn-sm" @click="verHistorial(u)">🕓 Historial</button>
+                    <button class="btn btn-sm" v-can="'agenda_gestionar'" @click="iniciarEdicion(u)">Editar</button>
+                    <button class="btn btn-outline btn-sm" v-can="'agenda_ver'" @click="verHistorial(u)">🕓 Historial</button>
                   </template>
                 </td>
               </tr>
@@ -2202,7 +3286,7 @@ onMounted(cargarLegajos)
         <div class="form-group"><label>Teléfono</label><input type="text" v-model="form.telefono" /></div>
         <div class="form-group"><label>Correo Electrónico</label><input type="email" v-model="form.correo" /></div>
       </div>
-      <button type="submit" class="btn btn-success" :disabled="enviando">Guardar en agenda</button>
+      <button type="submit" class="btn btn-success" v-can="'agenda_gestionar'" :disabled="enviando">Guardar en agenda</button>
     </form>
 
     <ModalHistorialCliente
@@ -2381,7 +3465,7 @@ onMounted(cargarAgenda)
           <p><strong>Otra Marca:</strong> {{ data.es_no_iveco ? 'Sí' : 'No' }}</p>
           <p><strong>Controlada:</strong> {{ data.controlada ? 'Sí' : 'No' }}</p>
           <p><strong>Hs Asignadas:</strong> {{ data.tiempo_asignado_horas }}</p>
-          <p><strong>Hs Empleadas:</strong> {{ data.tiempo_empleado_horas }}</p>
+          <p><strong>Hs Empleadas:</strong> {{ Number(data.tiempo_empleado_horas || 0).toFixed(1) }}</p>
           <p><strong>Hs Facturadas:</strong> {{ data.tiempo_facturado_horas }}</p>
           <p><strong>Total Repuestos:</strong> <span class="highlight">{{ formatCurrency(data.monto_repuestos) }}</span></p>
           <p><strong>Total Mano Obra:</strong> <span class="highlight">{{ formatCurrency(data.monto_mano_obra) }}</span></p>
@@ -2418,9 +3502,9 @@ onMounted(cargarAgenda)
                     <td>{{ a.tiempo_estimado }}</td>
                     <td>{{ (a.tiempo_real || 0).toFixed(2) }}</td>
                     <td v-if="esJefe" style="white-space: nowrap;">
-                      <button class="btn btn-sm" @click="$emit('editar-actividad', a)" title="Reasignar/Editar">✏️</button>
-                      <button class="btn btn-danger btn-sm" @click="$emit('eliminar-actividad', a.id)" title="Eliminar asignación">🗑️</button>
-                      <button class="btn btn-sm" @click="toggleTiempos(a.id)" title="Ver Tiempos">🕒</button>
+                      <button class="btn btn-sm" v-can="'tarea_gestionar_todas'" @click="$emit('editar-actividad', a)" title="Reasignar/Editar">✏️</button>
+                      <button class="btn btn-danger btn-sm" v-can="'tarea_gestionar_todas'" @click="$emit('eliminar-actividad', a.id)" title="Eliminar asignación">🗑️</button>
+                      <button class="btn btn-sm" v-can="'tiempo_editar_manual'" @click="toggleTiempos(a.id)" title="Ver Tiempos">🕒</button>
                     </td>
                   </tr>
                   <tr v-if="esJefe && tiemposAbiertos === a.id">
@@ -2429,18 +3513,18 @@ onMounted(cargarAgenda)
                         <div v-for="t in getTiempos(a.id)" :key="t.id" class="tiempo-row">
                           <input type="datetime-local" :value="toLocalInput(t.inicio)" @change="t.inicio = fromLocalInput($event.target.value)">
                           <input type="datetime-local" :value="toLocalInput(t.fin)" @change="t.fin = fromLocalInput($event.target.value)">
-                          <button class="btn btn-sm" @click="guardarTiempo(t, a.id)" title="Guardar">💾</button>
-                          <button class="btn btn-danger btn-sm" @click="eliminarTiempo(t.id)" title="Eliminar">🗑️</button>
+                          <button class="btn btn-sm" v-can="'tiempo_editar_manual'" @click="guardarTiempo(t, a.id)" title="Guardar">💾</button>
+                          <button class="btn btn-danger btn-sm" v-can="'tiempo_editar_manual'" @click="eliminarTiempo(t.id)" title="Eliminar">🗑️</button>
                         </div>
                         <div v-for="t in (nuevosTiempos[a.id] || [])" :key="t.tempId" class="tiempo-row">
                           <input type="datetime-local" :value="toLocalInput(t.inicio)" @change="t.inicio = fromLocalInput($event.target.value)">
                           <input type="datetime-local" :value="toLocalInput(t.fin)" @change="t.fin = fromLocalInput($event.target.value)">
-                          <button class="btn btn-sm" @click="guardarTiempo(t, a.id)" title="Guardar">💾</button>
-                          <button class="btn btn-danger btn-sm" @click="quitarNuevo(a.id, t.tempId)" title="Quitar">🗑️</button>
+                          <button class="btn btn-sm" v-can="'tiempo_editar_manual'" @click="guardarTiempo(t, a.id)" title="Guardar">💾</button>
+                          <button class="btn btn-danger btn-sm" v-can="'tiempo_editar_manual'" @click="quitarNuevo(a.id, t.tempId)" title="Quitar">🗑️</button>
                         </div>
                       </template>
                       <p v-else class="empty-state">Sin registros de tiempo.</p>
-                      <button class="btn btn-sm" @click="agregarTiempo(a.id)">➕ Agregar registro</button>
+                      <button class="btn btn-sm" v-can="'tiempo_editar_manual'" @click="agregarTiempo(a.id)">➕ Agregar registro</button>
                     </td>
                   </tr>
                 </template>
@@ -3643,9 +4727,12 @@ th { background: #f8fafc; font-weight: 600; color: #1a2a3a; }
 <file path="ivemar-frontend/src/components/common/NavBar.vue">
 <template>
   <div class="navbar" :style="customStyle">
+    <!-- Botón de Cerrar sesión, ahora donde estaba el de Inicio -->
+    <button class="logout" @click="handleLogout">{{ logoutText }}</button>
+
     <span class="brand" :style="brandStyle">{{ brand }}</span>
     
-    <!-- Pestañas dinámicas (solo se muestran si se envían) -->
+    <!-- Pestañas dinámicas -->
     <button
       v-for="tab in tabs"
       :key="tab.id"
@@ -3655,17 +4742,20 @@ th { background: #f8fafc; font-weight: 600; color: #1a2a3a; }
       {{ tab.label }}
     </button>
     
-    <!-- Espacio para inyectar elementos extra (como el Legajo del mecánico) -->
+    <!-- Espacio para inyectar elementos extra -->
     <slot name="extra"></slot>
     
-    <button class="logout" @click="handleLogout">{{ logoutText }}</button>
+    <!-- Botón de Inicio -->
+    <button class="home-btn" @click="goHome" title="Volver al menú principal">🏠</button>
   </div>
 </template>
 
 <script setup>
 import { useRouter } from 'vue-router'
+import { useAuthStore } from '../../stores/useAuthStore'
 
 const router = useRouter()
+const authStore = useAuthStore()
 
 const props = defineProps({
   brand: { type: String, required: true },
@@ -3674,16 +4764,24 @@ const props = defineProps({
   logoutText: { type: String, default: 'Cerrar sesión' },
   customStyle: { type: Object, default: () => ({}) },
   brandStyle: { type: Object, default: () => ({}) },
-  // Si es true, el botón sólo emite 'logout' y NO navega automáticamente
-  // al inicio (la vista se encarga, ej: MecanicoView limpia su sesión).
   customLogout: { type: Boolean, default: false }
 })
 
 const emit = defineEmits(['update:activeTab', 'logout'])
 
-const handleLogout = () => {
-  emit('logout')
-  if (!props.customLogout) router.push({ name: 'home' })
+// Función para volver al menú principal
+const goHome = () => {
+  router.push({ name: 'home' })
+}
+
+const handleLogout = async () => {
+  if (props.customLogout) {
+    emit('logout')
+  } else {
+    await authStore.logout()
+    emit('logout')
+    router.push({ name: 'login' })
+  }
 }
 </script>
 
@@ -3700,6 +4798,26 @@ const handleLogout = () => {
     margin-bottom: 30px;
 }
 
+/* Estilos del botón de inicio */
+.navbar .home-btn {
+    background: #f4f7fc;
+    border: 1px solid #eef3f9;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 1.2rem;
+    cursor: pointer;
+    color: #333;
+    transition: background 0.2s, transform 0.1s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.navbar .home-btn:hover {
+    background: #e9edf4;
+    transform: scale(1.05);
+}
+
 .navbar .brand {
     font-weight: 700;
     font-size: 1.3rem;
@@ -3707,7 +4825,7 @@ const handleLogout = () => {
     margin-right: auto;
 }
 
-.navbar button {
+.navbar button:not(.home-btn):not(.logout) {
     background: transparent;
     border: none;
     padding: 8px 16px;
@@ -3718,7 +4836,7 @@ const handleLogout = () => {
     transition: background 0.2s;
 }
 
-.navbar button:hover {
+.navbar button:not(.home-btn):not(.logout):hover {
     background: #e9edf4;
 }
 
@@ -3728,8 +4846,19 @@ const handleLogout = () => {
 }
 
 .navbar .logout {
+    background: transparent;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    cursor: pointer;
     color: #c00;
     font-weight: 500;
+    transition: background 0.2s;
+}
+
+.navbar .logout:hover {
+    background: #ffe5e5;
 }
 
 @media (max-width: 768px) {
@@ -3740,10 +4869,14 @@ const handleLogout = () => {
     .navbar .brand {
         margin-right: 0;
         text-align: center;
+        margin-top: 10px;
     }
     .navbar button {
         text-align: center;
         padding: 10px;
+    }
+    .navbar .home-btn {
+        align-self: center;
     }
 }
 </style>
@@ -3755,8 +4888,12 @@ const handleLogout = () => {
     <table class="ot-table">
       <thead>
         <tr>
-          <th>OT</th><th>Cliente</th><th>Patente</th><th>Unidad</th>
-          <th>Mecánico</th><th>Estado</th><th>Garantía</th><th>Controlada</th><th>Facturación</th><th>Acciones</th>
+          <th v-for="col in columnas" :key="col.key" :class="{ sortable: col.sortable }"
+              @click="col.sortable && $emit('sort-change', col.key)">
+            {{ col.label }}
+            <span v-if="col.sortable" class="sort-icon">{{ sortIcon(col.key) }}</span>
+          </th>
+          <th>Acciones</th>
         </tr>
       </thead>
       <tbody>
@@ -3775,7 +4912,7 @@ const handleLogout = () => {
           <td data-label="Unidad">{{ ot.unidad }}</td>
 
           <td data-label="Mecánico">
-                <button v-if="esJefe" 
+                <button v-if="esJefe" v-can="'tarea_gestionar_todas'"
                         :class="['btn btn-sm btn-assign', !ot.mecanico ? 'btn-urgente' : '']" 
                         @click="$emit('open-assign-modal', ot.ot)">
                     {{ ot.mecanico || '⚠️ Falta Asignar' }}
@@ -3787,7 +4924,7 @@ const handleLogout = () => {
             </td>
 
           <td data-label="Estado">
-            <select v-if="esJefe" class="estado-select" @change="$emit('update-status', {ot: ot.ot, estado: $event.target.value})">
+            <select v-if="esJefe" v-can="'ot_cambiar_estado'" class="estado-select" @change="$emit('update-status', {ot: ot.ot, estado: $event.target.value})">
               <option v-for="est in ['En Proceso', 'En Espera', 'Espera de Repuestos', 'Trabajos de Terceros', 'Finalizada']"
                       :key="est" :value="est" :selected="ot.estado_actual === est">{{ est }}</option>
             </select>
@@ -3806,10 +4943,10 @@ const handleLogout = () => {
           </td>
 
           <td class="actions-cell" data-label="Acciones">
-            <button v-if="esJefe && !ot.controlada" class="btn btn-success btn-sm" @click="$emit('control-ot', ot.ot)">Controlar</button>
-            <button class="btn btn-secondary btn-sm" @click="$emit('view-detail', ot.ot)">Detalle</button>
-            <button class="btn btn-sm" @click="$emit('edit-ot', ot.ot)">Editar</button>
-            <button class="btn btn-outline btn-sm" @click="$emit('export-pdf', ot.ot)">📄 PDF</button>
+            <button v-if="esJefe && !ot.controlada" v-can="'ot_controlar'" class="btn btn-success btn-sm" @click="$emit('control-ot', ot.ot)">Controlar</button>
+            <button class="btn btn-secondary btn-sm" v-can="'ot_ver_detalle'" @click="$emit('view-detail', ot.ot)">Detalle</button>
+            <button class="btn btn-sm" v-can="'ot_editar'" @click="$emit('edit-ot', ot.ot)">Editar</button>
+            <button class="btn btn-outline btn-sm" v-can="'ot_ver_detalle'" @click="$emit('export-pdf', ot.ot)">📄 PDF</button>
           </td>
         </tr>
       </tbody>
@@ -3818,12 +4955,34 @@ const handleLogout = () => {
 </template>
 
 <script setup>
-defineProps({
+const props = defineProps({
   data: { type: Array, required: true },
   esJefe: { type: Boolean, default: false },
-  mecanicos: { type: Array, default: () => [] }
+  mecanicos: { type: Array, default: () => [] },
+  sortBy: { type: String, default: '' },
+  sortDir: { type: String, default: 'desc' }
 })
-defineEmits(['update-status', 'view-detail', 'edit-ot', 'control-ot', 'open-assign-modal', 'export-pdf'])
+defineEmits(['update-status', 'view-detail', 'edit-ot', 'control-ot', 'open-assign-modal', 'export-pdf', 'sort-change'])
+
+// Columnas ordenables. Garantía/Controlada quedan afuera porque son
+// booleanas y ordenarlas no aporta demasiado; se pueden sumar igual
+// agregando su key acá y en el whitelist ORDENABLES del backend.
+const columnas = [
+  { key: 'ot', label: 'OT', sortable: true },
+  { key: 'cliente', label: 'Cliente', sortable: true },
+  { key: 'patente', label: 'Patente', sortable: true },
+  { key: 'unidad', label: 'Unidad', sortable: true },
+  { key: 'mecanico', label: 'Mecánico', sortable: true },
+  { key: 'estado', label: 'Estado', sortable: true },
+  { key: 'garantia', label: 'Garantía', sortable: false },
+  { key: 'controlada', label: 'Controlada', sortable: false },
+  { key: 'facturacion', label: 'Facturación', sortable: true }
+]
+
+const sortIcon = (key) => {
+  if (props.sortBy !== key) return '↕'
+  return props.sortDir === 'asc' ? '▲' : '▼'
+}
 
 const statusClass = (estado) => ({
   'En Proceso': 'status-progress',
@@ -3857,6 +5016,9 @@ const esEstancada = (ot) => ot.estado_actual !== 'Finalizada' && diasAbierta(ot)
 
 <style scoped>
 .table-wrapper { overflow-x: auto; width: 100%; }
+.ot-table thead th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+.ot-table thead th.sortable:hover { color: var(--primary, #0d6efd); }
+.sort-icon { font-size: 0.7rem; margin-left: 4px; opacity: 0.7; }
 .btn-assign { background: #f0f4f8; border: 1px solid var(--border); color: var(--text); width: 100%; text-align: left; }
 .estado-select { padding: 6px; border-radius: 6px; border: 1px solid var(--border); width: 100%; max-width: 150px; }
 .actions-cell { white-space: nowrap; }
@@ -4149,7 +5311,7 @@ const icon = (type) => ({ success: '✅', error: '⚠️', info: 'ℹ️' }[type
             <td><span class="text-success">{{ formatHoras(m.hs_productivas) }} hs</span></td>
             <td><strong :class="{'text-danger': m.tiempo_muerto > 10}">{{ formatHoras(m.tiempo_muerto) }} hs</strong></td>
             <td>
-              <button v-if="m.dias_ausentes_count > 0" class="btn btn-sm" :class="sinJustificar(m) > 0 ? 'btn-danger' : 'btn-secondary'" @click="verAusencias(m)">
+              <button v-if="m.dias_ausentes_count > 0" class="btn btn-sm" v-can="'ausencia_justificar'" :class="sinJustificar(m) > 0 ? 'btn-danger' : 'btn-secondary'" @click="verAusencias(m)">
                 {{ m.dias_ausentes_count }} día(s)
               </button>
               <span v-else class="text-muted">-</span>
@@ -4972,6 +6134,7 @@ export function useApi() {
             res = await fetch(url, {
                 headers: { 'Content-Type': 'application/json' },
                 cache: 'no-cache',
+                credentials: 'include',
                 ...options,
             })
         } catch (networkErr) {
@@ -5398,63 +6561,174 @@ export function errMsg(err) {
 
 <file path="ivemar-frontend/src/router/index.js">
 import { createRouter, createWebHistory } from 'vue-router'
-import HomeView from '../views/HomeView.vue'
+import { useAuthStore } from '../stores/useAuthStore'
+
+const routes = [
+  {
+    path: '/login',
+    name: 'login',
+    component: () => import('../views/LoginView.vue'),
+    meta: { requiresAuth: false }
+  },
+  {
+    path: '/',
+    name: 'home',
+    component: () => import('../views/HomeView.vue'),
+    // El menú principal es el concentrador. Solo exige estar logueado, sin permiso específico.
+    meta: { requiresAuth: true } 
+  },
+  {
+    path: '/admin',
+    name: 'admin',
+    component: () => import('../views/AdminView.vue'),
+    meta: { requiresAuth: true, requiredPermission: 'usuario_gestionar' } 
+  },
+  {
+    path: '/asesor',
+    name: 'asesor',
+    component: () => import('../views/AsesorView.vue'),
+    meta: { requiresAuth: true, requiredPermission: 'ot_ver_lista' }
+  },
+  {
+    path: '/jefe',
+    name: 'jefe',
+    component: () => import('../views/JefeView.vue'),
+    meta: { requiresAuth: true, requiredPermission: 'tarea_gestionar_todas' }
+  },
+  {
+    path: '/mecanico',
+    name: 'mecanico',
+    // Evalúa si hay un tablero seleccionado en memoria, si no, va al buscador
+    redirect: () => (localStorage.getItem('legajoMecanico') ? '/mecanico/tareas' : '/mecanico/login')
+  },
+  {
+    path: '/mecanico/login',
+    name: 'mecanico-login',
+    component: () => import('../views/LoginMecanico.vue'),
+    meta: { requiresAuth: true, requiredPermission: 'tarea_ver_propias' }
+  },
+  {
+    path: '/mecanico/tareas',
+    name: 'mecanico-tareas',
+    component: () => import('../views/MecanicoView.vue'),
+    meta: { requiresAuth: true, requiredPermission: 'tarea_ver_propias' }
+  },
+  {
+    path: '/sala',
+    name: 'sala',
+    component: () => import('../views/SalaEsperaView.vue'),
+    // Usualmente la sala de espera es pública para abrirla en las pantallas/TVs del taller
+    meta: { requiresAuth: false } 
+  },
+  {
+    // Ruta comodín: Si tipean cualquier URL inexistente, los mandamos al inicio
+    path: '/:pathMatch(.*)*',
+    redirect: '/'
+  }
+]
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
-  routes: [
-    {
-      path: '/',
-      name: 'home',
-      component: HomeView
-    },
-    {
-      path: '/asesor',
-      name: 'asesor',
-      component: () => import('../views/AsesorView.vue')
-    },
-    {
-      path: '/jefe',
-      name: 'jefe',
-      component: () => import('../views/JefeView.vue')
-    },
-    {
-      // Antes esta ruta llevaba directo a MecanicoView, saltándose por
-      // completo la identificación por legajo (LoginMecanico nunca se
-      // llegaba a mostrar desde el menú principal). Ahora redirige según
-      // si ya hay una sesión de mecánico guardada.
-      path: '/mecanico',
-      name: 'mecanico',
-      redirect: () => (localStorage.getItem('legajoMecanico') ? '/mecanico/tareas' : '/mecanico/login')
-    },
-    {
-      path: '/sala',
-      name: 'sala',
-      component: () => import('../views/SalaEsperaView.vue')
-    },
-    {
-      path: '/mecanico/login',
-      name: 'mecanico-login',
-      component: () => import('../views/LoginMecanico.vue')
-    },
-    {
-      path: '/mecanico/tareas',
-      name: 'mecanico-tareas',
-      component: () => import('../views/MecanicoView.vue'),
-      meta: { requiresLegajo: true }
-    }
-  ]
+  routes
 })
 
-// Protege la vista de tareas: si no hay legajo guardado, vuelve al login
-// en vez de dejar que la vista falle al pedir datos sin identificación.
-router.beforeEach((to) => {
-  if (to.meta.requiresLegajo && !localStorage.getItem('legajoMecanico')) {
-    return { name: 'mecanico-login' }
+// --- GUARDIA DE NAVEGACIÓN GLOBAL ---
+router.beforeEach(async (to, from, next) => {
+  const authStore = useAuthStore();
+  
+  // 1. Validar que el estado de sesión esté cargado en la memoria de Pinia
+  if (!authStore.isVerified) {
+      await authStore.checkSession();
   }
-})
+
+  // 2. Control principal: ¿La ruta exige estar dentro del sistema?
+  if (to.meta.requiresAuth) {
+      if (!authStore.isAuthenticated) {
+          return next({ name: 'login' });
+      }
+
+      // 3. Control granular: ¿La ruta exige una llave/permiso particular?
+      if (to.meta.requiredPermission) {
+          const permisosUsuario = authStore.usuario?.permisos || [];
+          const tienePermiso = permisosUsuario.includes(to.meta.requiredPermission);
+          
+          if (!tienePermiso) {
+              console.warn(`🔒 Acceso bloqueado. Permiso faltante: ${to.meta.requiredPermission}`);
+              return next({ name: 'home' }); // Expulsado al menú central
+          }
+      }
+  }
+
+  // Si pasa todos los filtros, o la ruta es pública, avanza
+  next();
+});
 
 export default router
+</file>
+
+<file path="ivemar-frontend/src/stores/useAuthStore.js">
+import { defineStore } from 'pinia'
+import { ref } from 'vue'
+import { useApi } from '../composables/useApi'
+
+export const useAuthStore = defineStore('auth', () => {
+  const { fetchJSON } = useApi()
+  
+  const usuario = ref(null)
+  const isAuthenticated = ref(false)
+  const isReady = ref(false) // Indica si ya verificamos la sesión al cargar la app
+
+  // Consulta al backend si la cookie actual es válida
+  const checkSession = async () => {
+    try {
+      const res = await fetchJSON('/auth/me')
+      if (res.loggedIn) {
+        usuario.value = res.usuario
+        isAuthenticated.value = true
+      } else {
+        usuario.value = null
+        isAuthenticated.value = false
+      }
+    } catch (err) {
+      usuario.value = null
+      isAuthenticated.value = false
+    } finally {
+      isReady.value = true
+    }
+  }
+
+  const login = async (email, password) => {
+    const res = await fetchJSON('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password })
+    })
+    await checkSession() // Refresca el estado tras un login exitoso
+    return res
+  }
+
+  const register = async (email, password, nombre_completo) => {
+    return await fetchJSON('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ email, password, nombre_completo })
+    })
+  }
+
+  const logout = async () => {
+    await fetchJSON('/auth/logout', { method: 'POST' })
+    usuario.value = null
+    isAuthenticated.value = false
+  }
+
+  return { 
+    usuario, 
+    isAuthenticated, 
+    isReady, 
+    checkSession, 
+    login, 
+    register, 
+    logout 
+  }
+})
 </file>
 
 <file path="ivemar-frontend/src/stores/useInformesStore.js">
@@ -5523,6 +6797,46 @@ export const useInformesStore = defineStore('informes', () => {
 })
 </file>
 
+<file path="ivemar-frontend/src/views/AdminView.vue">
+<template>
+  <div class="view-admin">
+    <NavBar brand="⚙️ Administración" :tabs="tabs" v-model:activeTab="activeTab" />
+
+    <div v-if="activeTab === 'admin-usuarios'" class="tab-content">
+      <AdminUsuarios />
+    </div>
+    <div v-if="activeTab === 'admin-roles'" class="tab-content">
+      <AdminRoles />
+    </div>
+    <!-- Aquí agregaremos futuras pestañas de configuración -->
+  </div>
+</template>
+
+<script setup>
+import { ref } from 'vue'
+import NavBar from '../components/common/NavBar.vue'
+import AdminUsuarios from '../components/asesor/AdminUsuarios.vue'
+import AdminRoles from '../components/asesor/AdminRoles.vue'
+
+const activeTab = ref('admin-usuarios')
+
+const tabs = [
+  { id: 'admin-usuarios', label: 'Usuarios y Accesos' },
+  { id: 'admin-roles', label: 'Perfiles y Permisos' }
+]
+</script>
+
+<style scoped>
+.view-admin {
+  animation: fadeIn 0.3s ease-in-out;
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+</style>
+</file>
+
 <file path="ivemar-frontend/src/views/AsesorView.vue">
 <template>
   <div class="view-asesor">
@@ -5531,6 +6845,10 @@ export const useInformesStore = defineStore('informes', () => {
     <div v-if="activeTab === 'asesor-ots-activas' || activeTab === 'asesor-ots-finalizadas'" class="card">
       <div class="header-row">
         <h2>{{ activeTab === 'asesor-ots-activas' ? 'Órdenes en Taller' : 'Histórico Finalizadas' }}</h2>
+        <label v-if="activeTab === 'asesor-ots-finalizadas'" class="check-facturacion">
+          <input type="checkbox" v-model="soloFaltaFacturar" @change="onFiltroFacturacionChange" />
+          Solo falta facturar
+        </label>
         <input type="text" v-model="busqueda" placeholder="🔍 Buscar por patente, OT o cliente..." class="form-control search-input" @input="onBuscar" />
         <button class="btn btn-secondary btn-sm" @click="cargarOTs">↻ Actualizar</button>
       </div>
@@ -5539,6 +6857,9 @@ export const useInformesStore = defineStore('informes', () => {
       <template v-else>
         <OTTable
           :data="ots"
+          :sort-by="sortBy"
+          :sort-dir="sortDir"
+          @sort-change="onSortChange"
           @update-status="handleStatusUpdate"
           @view-detail="abrirDetalle"
           @edit-ot="abrirEdicion"
@@ -5598,6 +6919,12 @@ const total = ref(0)
 const LIMIT = 25
 let debounceTimer = null
 
+// Orden de columnas (a-z / z-a) y filtro "solo falta facturar", ambos
+// resueltos en el backend para que funcionen igual en todas las páginas.
+const sortBy = ref('')
+const sortDir = ref('desc')
+const soloFaltaFacturar = ref(false)
+
 const showModalDetalle = ref(false)
 const showModalEditar = ref(false)
 const otSeleccionada = ref(null)
@@ -5619,6 +6946,8 @@ const cargarOTs = async () => {
   try {
     const params = new URLSearchParams({ estado: estadoParaBackend(), page: page.value, limit: LIMIT })
     if (busqueda.value.trim()) params.set('busqueda', busqueda.value.trim())
+    if (sortBy.value) { params.set('sortBy', sortBy.value); params.set('sortDir', sortDir.value) }
+    if (activeTab.value === 'asesor-ots-finalizadas' && soloFaltaFacturar.value) params.set('facturacion', 'pendientes')
     const res = await fetchJSON(`/ordenes?${params.toString()}`)
     ots.value = res.data
     total.value = res.total
@@ -5649,8 +6978,27 @@ const onBuscar = () => {
 watch(activeTab, () => {
   page.value = 1
   busqueda.value = ''
+  soloFaltaFacturar.value = false
   cargarOTs()
 })
+
+// Click en un header ordenable: mismo campo -> invierte dirección (a-z / z-a),
+// campo distinto -> arranca en ascendente.
+const onSortChange = (campo) => {
+  if (sortBy.value === campo) {
+    sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    sortBy.value = campo
+    sortDir.value = 'asc'
+  }
+  page.value = 1
+  cargarOTs()
+}
+
+const onFiltroFacturacionChange = () => {
+  page.value = 1
+  cargarOTs()
+}
 
 const handleStatusUpdate = async ({ ot, estado }) => {
   try {
@@ -5677,6 +7025,7 @@ onMounted(cargarOTs)
 .header-row { display: flex; align-items: center; flex-wrap: wrap; gap: 15px; margin-bottom: 15px; }
 .header-row h2 { margin: 0; margin-right: auto; }
 .search-input { max-width: 300px; }
+.check-facturacion { display: flex; align-items: center; gap: 6px; font-size: 0.9rem; white-space: nowrap; }
 </style>
 </file>
 
@@ -5687,15 +7036,19 @@ onMounted(cargarOTs)
     <p>Sistema de gestión de órdenes de trabajo</p>
 
     <div class="role-buttons">
-      <button class="role-btn" @click="goTo('asesor')">
+      <button class="role-btn" @click="$router.push('/admin')" v-can="'usuario_gestionar'">
+        <span class="role-icon">⚙️</span>
+        Administración
+      </button>
+      <button class="role-btn" @click="$router.push('/asesor')" v-can="'ot_ver_lista'">
         <span class="role-icon">👔</span>
         Asesor de Servicio
       </button>
-      <button class="role-btn" @click="goTo('jefe')">
+      <button class="role-btn" @click="$router.push('/jefe')" v-can="'tarea_gestionar_todas'">
         <span class="role-icon">🔧</span>
         Jefe de Taller
       </button>
-      <button class="role-btn" @click="goTo('mecanico')">
+      <button class="role-btn" @click="$router.push('/mecanico')" v-can="'tarea_ver_propias'">
         <span class="role-icon">🛠️</span>
         Mecánico
       </button>
@@ -5792,11 +7145,15 @@ const goTo = (routeName) => {
     <div v-if="activeTab === 'jefe-ots' || activeTab === 'jefe-ots-finalizadas'" class="card">
       <div class="header-row">
         <h2>{{ activeTab === 'jefe-ots' ? 'Gestión de OTs en Taller' : 'OTs Finalizadas' }}</h2>
+        <label v-if="activeTab === 'jefe-ots-finalizadas'" class="check-facturacion">
+          <input type="checkbox" v-model="soloFaltaFacturar" @change="onFiltroFacturacionChange" />
+          Solo falta facturar
+        </label>
         <input type="text" v-model="busqueda" placeholder="🔍 Buscar por patente, OT o cliente..." class="form-control search-input" @input="onBuscar" />
-        <button class="btn btn-outline btn-sm" @click="abrirAsignacion('0000')" title="Asignar limpieza, capacitaciones, etc.">
+        <button class="btn btn-outline btn-sm" v-can="'tarea_gestionar_todas'" @click="abrirAsignacion('0000')" title="Asignar limpieza, capacitaciones, etc.">
         🧹 Tarea Interna
       </button>
-      <button class="btn btn-secondary btn-sm" @click="abrirDetalle('0000')" title="Corregir tiempos de tareas internas">
+      <button class="btn btn-secondary btn-sm" v-can="'tiempo_editar_manual'" @click="abrirDetalle('0000')" title="Corregir tiempos de tareas internas">
             ⏱️ Gestionar Tiempos
       </button>
         <button class="btn btn-secondary btn-sm" @click="cargarDatos">↻ Actualizar</button>
@@ -5808,6 +7165,9 @@ const goTo = (routeName) => {
           :data="ots"
           :esJefe="true"
           :mecanicos="mecanicos"
+          :sort-by="sortBy"
+          :sort-dir="sortDir"
+          @sort-change="onSortChange"
           @open-assign-modal="abrirAsignacion"
           @update-status="actualizarEstado"
           @control-ot="controlarOT"
@@ -5873,6 +7233,13 @@ const total = ref(0)
 const LIMIT = 25
 let debounceTimer = null
 
+// Orden de columnas (a-z / z-a) y filtro "solo falta facturar", resueltos
+// en el backend para que se apliquen a todas las páginas, no solo a la
+// página cargada en el navegador.
+const sortBy = ref('')
+const sortDir = ref('desc')
+const soloFaltaFacturar = ref(false)
+
 const showModalDetalle = ref(false)
 const showModalEditar = ref(false)
 const showModalAsignar = ref(false)
@@ -5901,6 +7268,8 @@ const cargarDatos = async () => {
   try {
     const params = new URLSearchParams({ estado: estadoParaBackend(), page: page.value, limit: LIMIT })
     if (busqueda.value.trim()) params.set('busqueda', busqueda.value.trim())
+    if (sortBy.value) { params.set('sortBy', sortBy.value); params.set('sortDir', sortDir.value) }
+    if (activeTab.value === 'jefe-ots-finalizadas' && soloFaltaFacturar.value) params.set('facturacion', 'pendientes')
     const [resOts, legajos] = await Promise.all([
       fetchJSON(`/ordenes?${params.toString()}`),
       fetchJSON('/legajos')
@@ -5931,9 +7300,28 @@ watch(activeTab, (newTab) => {
   if (newTab === 'jefe-ots' || newTab === 'jefe-ots-finalizadas') {
     page.value = 1
     busqueda.value = ''
+    soloFaltaFacturar.value = false
     cargarDatos()
   }
 })
+
+// Click en un header ordenable: mismo campo -> invierte dirección (a-z / z-a),
+// campo distinto -> arranca en ascendente.
+const onSortChange = (campo) => {
+  if (sortBy.value === campo) {
+    sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    sortBy.value = campo
+    sortDir.value = 'asc'
+  }
+  page.value = 1
+  cargarDatos()
+}
+
+const onFiltroFacturacionChange = () => {
+  page.value = 1
+  cargarDatos()
+}
 
 const abrirAsignacion = (ot) => { otSeleccionada.value = ot; actividadAEditar.value = null; showModalAsignar.value = true; }
 const abrirDetalle = (ot) => { otSeleccionada.value = ot; showModalDetalle.value = true; }
@@ -6010,6 +7398,7 @@ onMounted(() => {
 .header-row h2 { margin: 0; margin-right: auto; }
 .search-input { max-width: 300px; }
 .jefe-pill { cursor: pointer; }
+.check-facturacion { display: flex; align-items: center; gap: 6px; font-size: 0.9rem; white-space: nowrap; }
 </style>
 </file>
 
@@ -6083,6 +7472,137 @@ const ingresar = () => {
 </style>
 </file>
 
+<file path="ivemar-frontend/src/views/LoginView.vue">
+<template>
+  <div class="login-container">
+    <div class="card login-box">
+      <div class="brand-header">
+        <h1>🚗 IVEMAR</h1>
+        <p class="subtitle">Gestión Integral de Taller</p>
+      </div>
+
+      <!-- FORMULARIO DE INGRESO -->
+      <form v-if="!mostrandoRegistro" @submit.prevent="ejecutarLogin">
+        <h2 class="mb-15">Iniciar Sesión</h2>
+        <div class="form-group mb-15 text-left">
+          <label>Correo Electrónico</label>
+          <input type="email" v-model="formLogin.email" class="form-control" required autofocus />
+        </div>
+        <div class="form-group mb-15 text-left">
+          <label>Contraseña</label>
+          <input type="password" v-model="formLogin.password" class="form-control" required />
+        </div>
+        <button type="submit" class="btn btn-primary w-100" :disabled="procesando">
+          {{ procesando ? 'Verificando...' : 'Ingresar' }}
+        </button>
+        <div class="mt-15 toggle-link">
+          ¿No tienes acceso? <a href="#" @click.prevent="mostrandoRegistro = true">Solicitar cuenta</a>
+        </div>
+      </form>
+
+      <!-- FORMULARIO DE REGISTRO -->
+      <form v-else @submit.prevent="ejecutarRegistro">
+        <h2 class="mb-15">Solicitar Cuenta</h2>
+        <div class="form-group mb-10 text-left">
+          <label>Nombre y Apellido</label>
+          <input type="text" v-model="formRegistro.nombre_completo" class="form-control" required />
+        </div>
+        <div class="form-group mb-10 text-left">
+          <label>Correo Electrónico</label>
+          <input type="email" v-model="formRegistro.email" class="form-control" required />
+        </div>
+        <div class="form-group mb-15 text-left">
+          <label>Crear Contraseña</label>
+          <input type="password" v-model="formRegistro.password" class="form-control" minlength="6" required />
+        </div>
+        <button type="submit" class="btn btn-success w-100" :disabled="procesando">
+          {{ procesando ? 'Registrando...' : 'Enviar Solicitud' }}
+        </button>
+        <div class="mt-15 toggle-link">
+          <a href="#" @click.prevent="mostrandoRegistro = false">← Volver al login</a>
+        </div>
+      </form>
+
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { useAuthStore } from '../stores/useAuthStore'
+import { useToast, errMsg } from '../composables/useToast'
+
+const router = useRouter()
+const authStore = useAuthStore()
+const toast = useToast()
+
+const mostrandoRegistro = ref(false)
+const procesando = ref(false)
+
+const formLogin = ref({ email: '', password: '' })
+const formRegistro = ref({ email: '', password: '', nombre_completo: '' })
+
+const ejecutarLogin = async () => {
+  procesando.value = true
+  try {
+    await authStore.login(formLogin.value.email, formLogin.value.password)
+    toast.success(`Bienvenido, ${authStore.usuario.nombre}`)
+    router.push({ name: 'home' })
+  } catch (err) {
+    toast.error(errMsg(err))
+  } finally {
+    procesando.value = false
+  }
+}
+
+const ejecutarRegistro = async () => {
+  procesando.value = true
+  try {
+    await authStore.register(formRegistro.value.email, formRegistro.value.password, formRegistro.value.nombre_completo)
+    toast.success('Solicitud enviada. Un administrador debe aprobar tu cuenta.')
+    mostrandoRegistro.value = false
+    formRegistro.value = { email: '', password: '', nombre_completo: '' }
+  } catch (err) {
+    toast.error(errMsg(err))
+  } finally {
+    procesando.value = false
+  }
+}
+</script>
+
+<style scoped>
+.login-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  margin: -20px;
+  background: linear-gradient(135deg, #0056a7 0%, #003f7d 100%);
+}
+.login-box {
+  width: 100%;
+  max-width: 400px;
+  text-align: center;
+  padding: 40px 30px;
+}
+.brand-header h1 {
+  color: var(--primary);
+  margin-bottom: 5px;
+}
+.subtitle {
+  color: var(--muted);
+  font-size: 0.95rem;
+  margin-bottom: 25px;
+}
+.text-left { text-align: left; }
+.mb-10 { margin-bottom: 10px; }
+.mb-15 { margin-bottom: 15px; }
+.toggle-link { font-size: 0.9rem; color: var(--text-soft); }
+.toggle-link a { font-weight: bold; text-decoration: none; }
+</style>
+</file>
+
 <file path="ivemar-frontend/src/views/MecanicoView.vue">
 <template>
   <div class="view-mecanico">
@@ -6115,8 +7635,8 @@ const ingresar = () => {
               </div>
               <p class="tarea-horas">Asignado por Jefe de Taller</p>
               <div class="acciones-tarea mt-10">
-                <button v-if="tarea.estado !== 'En Curso'" @click="toggleTareaInterna(tarea)" class="btn btn-outline btn-sm w-100">▶ Iniciar Rutina</button>
-                <button v-else @click="toggleTareaInterna(tarea)" class="btn btn-warning btn-sm w-100">⏸ Detener / Pausar</button>
+                <button v-if="tarea.estado !== 'En Curso'" v-can="'tarea_operar'" @click="toggleTareaInterna(tarea)" class="btn btn-outline btn-sm w-100">▶ Iniciar Rutina</button>
+                <button v-else v-can="'tarea_operar'" @click="toggleTareaInterna(tarea)" class="btn btn-warning btn-sm w-100">⏸ Detener / Pausar</button>
               </div>
             </div>
           </div>
@@ -6137,11 +7657,11 @@ const ingresar = () => {
               <p class="tarea-horas">Estimado: {{ tarea.tiempo_estimado }} hs</p>
 
               <div class="acciones-tarea mt-10">
-                <button v-if="['Asignada', 'Pendiente'].includes(tarea.estado)" @click="cambiarEstado(tarea, 'En Curso')" class="btn btn-primary btn-sm">▶ Iniciar</button>
-                <button v-if="tarea.estado === 'Pausada'" @click="cambiarEstado(tarea, 'En Curso')" class="btn btn-primary btn-sm">▶ Reanudar</button>
+                <button v-if="['Asignada', 'Pendiente'].includes(tarea.estado)" v-can="'tarea_operar'" @click="cambiarEstado(tarea, 'En Curso')" class="btn btn-primary btn-sm">▶ Iniciar</button>
+                <button v-if="tarea.estado === 'Pausada'" v-can="'tarea_operar'" @click="cambiarEstado(tarea, 'En Curso')" class="btn btn-primary btn-sm">▶ Reanudar</button>
                 
-                <button v-if="tarea.estado === 'En Curso'" @click="abrirPausa(tarea)" class="btn btn-warning btn-sm">⏸ Pausar</button>
-                <button v-if="tarea.estado === 'En Curso'" @click="abrirFinalizar(tarea)" class="btn btn-success btn-sm">✔ Finalizar</button>
+                <button v-if="tarea.estado === 'En Curso'" v-can="'tarea_operar'" @click="abrirPausa(tarea)" class="btn btn-warning btn-sm">⏸ Pausar</button>
+                <button v-if="tarea.estado === 'En Curso'" v-can="'tarea_operar'" @click="abrirFinalizar(tarea)" class="btn btn-success btn-sm">✔ Finalizar</button>
               </div>
             </div>
           </div>
@@ -6241,9 +7761,8 @@ const ejecutarFinalizacion = async (datos) => {
 
 const cambiarLegajo = () => {
   localStorage.removeItem('legajoMecanico')
-  router.push({ name: 'mecanico-login' })
+  router.push({ name: 'mecanico-login' }) 
 }
-
 const tareasCliente = computed(() => tareas.value.filter(t => t.ot !== '0000'))
 const tareasInternas = computed(() => tareas.value.filter(t => t.ot === '0000'))
 
@@ -6631,12 +8150,26 @@ import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import App from './App.vue'
 import router from './router'
+import { useAuthStore } from './stores/useAuthStore'
 import './style.css'
 
 const app = createApp(App)
 
 app.use(createPinia())
 app.use(router)
+
+app.directive('can', {
+    mounted(el, binding) {
+        const authStore = useAuthStore()
+        const permisosUsuario = authStore.usuario?.permisos || []
+        const permisoRequerido = binding.value
+
+        // Si el usuario no tiene la clave exacta en su array, removemos el elemento
+        if (!permisosUsuario.includes(permisoRequerido)) {
+            el.parentNode?.removeChild(el)
+        }
+    }
+})
 
 app.mount('#app')
 </file>
@@ -6999,6 +8532,7 @@ backups/
 *.bat
 *.xml
 *.env
+dotenv
 </file>
 
 <file path="README.md">

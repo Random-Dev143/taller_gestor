@@ -56,12 +56,12 @@
                 </td>
                 <td style="white-space: nowrap; vertical-align: top;">
                   <template v-if="editandoId === u.id">
-                    <button class="btn btn-success btn-sm mb-1 w-100" @click="guardarEdicion(u.id, u.patente)">Guardar</button>
+                    <button class="btn btn-success btn-sm mb-1 w-100" v-can="'agenda_gestionar'" @click="guardarEdicion(u.id, u.patente)">Guardar</button>
                     <button class="btn btn-secondary btn-sm w-100" @click="cancelarEdicion">Cancelar</button>
                   </template>
                   <template v-else>
-                    <button class="btn btn-sm" @click="iniciarEdicion(u)">Editar</button>
-                    <button class="btn btn-outline btn-sm" @click="verHistorial(u)">🕓 Historial</button>
+                    <button class="btn btn-sm" v-can="'agenda_gestionar'" @click="iniciarEdicion(u)">Editar</button>
+                    <button class="btn btn-outline btn-sm" v-can="'agenda_ver'" @click="verHistorial(u)">🕓 Historial</button>
                   </template>
                 </td>
               </tr>
@@ -84,7 +84,7 @@
         <div class="form-group"><label>Teléfono</label><input type="text" v-model="form.telefono" /></div>
         <div class="form-group"><label>Correo Electrónico</label><input type="email" v-model="form.correo" /></div>
       </div>
-      <button type="submit" class="btn btn-success" :disabled="enviando">Guardar en agenda</button>
+      <button type="submit" class="btn btn-success" v-can="'agenda_gestionar'" :disabled="enviando">Guardar en agenda</button>
     </form>
 
     <ModalHistorialCliente

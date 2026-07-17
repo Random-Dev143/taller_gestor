@@ -38,13 +38,11 @@
               <span :class="['badge', claseEstado(u.estado)]">{{ u.estado }}</span>
             </td>
             <td>
-              <select v-if="editandoId === u.id" v-model="formEdit.rol" class="form-control" style="padding: 4px;">
-                <option value="admin">Administrador</option>
-                <option value="asesor">Asesor</option>
-                <option value="jefe">Jefe de Taller</option>
-                <option value="mecanico">Mecánico</option>
-              </select>
-              <span v-else class="badge-sm" style="background: #0056a7;">{{ u.rol || 'Sin asignar' }}</span>
+                <select v-if="editandoId === u.id" v-model="formEdit.rol_id" class="form-control" style="padding: 4px;">
+                    <option value="" disabled>Seleccione un perfil...</option>
+                    <option v-for="r in rolesLista" :key="r.id" :value="r.id">{{ r.nombre }}</option>
+                </select>
+                <span v-else class="badge-sm" style="background: #0056a7;">{{ u.rol_nombre || 'Sin asignar' }}</span>
             </td>
             <td>
               <select v-if="editandoId === u.id" v-model="formEdit.legajo" class="form-control" style="padding: 4px;">
@@ -56,20 +54,20 @@
             <td style="white-space: nowrap;">
               <!-- Modo Edición -->
               <template v-if="editandoId === u.id">
-                <button class="btn btn-success btn-sm" @click="guardarCambios(u.id)">Guardar</button>
+                <button class="btn btn-success btn-sm" v-can="'usuario_gestionar'" @click="guardarCambios(u.id)">Guardar</button>
                 <button class="btn btn-secondary btn-sm" @click="cancelarEdicion">Cancelar</button>
               </template>
               
               <!-- Modo Vista (Aprobar Rápido) -->
               <template v-else-if="u.estado === 'pendiente'">
-                <button class="btn btn-success btn-sm" @click="iniciarEdicion(u)">✅ Aprobar y Asignar</button>
+                <button class="btn btn-success btn-sm" v-can="'usuario_gestionar'" @click="iniciarEdicion(u)">✅ Aprobar y Asignar</button>
               </template>
 
               <!-- Modo Vista Normal -->
               <template v-else>
-                <button class="btn btn-sm" @click="iniciarEdicion(u)">✏️ Editar</button>
-                <button v-if="u.estado !== 'suspendido'" class="btn btn-danger btn-sm" @click="suspenderUsuario(u.id)">🚫 Suspender</button>
-                <button v-else class="btn btn-outline btn-sm" @click="reactivarUsuario(u.id)">Reactivar</button>
+                <button class="btn btn-sm" v-can="'usuario_gestionar'" @click="iniciarEdicion(u)">✏️ Editar</button>
+                <button v-if="u.estado !== 'suspendido'" class="btn btn-danger btn-sm" v-can="'usuario_gestionar'" @click="suspenderUsuario(u.id)">🚫 Suspender</button>
+                <button v-else class="btn btn-outline btn-sm" v-can="'usuario_gestionar'" @click="reactivarUsuario(u.id)">Reactivar</button>
               </template>
             </td>
           </tr>
@@ -89,11 +87,14 @@ const toast = useToast()
 
 const usuarios = ref([])
 const legajos = ref([])
+const rolesLista = ref([])
 const loading = ref(true)
 const filtroEstado = ref('')
 
 const editandoId = ref(null)
-const formEdit = ref({ rol: '', legajo: '', estado: '' })
+const formEdit = ref({ rol_id: '', legajo: '', estado: '' })
+
+
 
 const claseEstado = (estado) => ({
   'pendiente': 'badge-warn',
@@ -107,14 +108,16 @@ const cargarDatos = async () => {
     const params = new URLSearchParams()
     if (filtroEstado.value) params.set('estado', filtroEstado.value)
     
-    // Traemos los usuarios y los legajos en paralelo para el selector
-    const [resUsuarios, resLegajos] = await Promise.all([
+    // Traemos usuarios, legajos y ROLES en paralelo
+    const [resUsuarios, resLegajos, resRoles] = await Promise.all([
       fetchJSON(`/usuarios?${params.toString()}`),
-      fetchJSON('/legajos')
+      fetchJSON('/legajos'),
+      fetchJSON('/roles') // <-- NUEVA PETICIÓN
     ])
     
     usuarios.value = resUsuarios
     legajos.value = resLegajos
+    rolesLista.value = resRoles
   } catch (err) {
     toast.error('Error cargando datos: ' + errMsg(err))
   } finally {
@@ -125,9 +128,9 @@ const cargarDatos = async () => {
 const iniciarEdicion = (u) => {
   editandoId.value = u.id
   formEdit.value = {
-    rol: u.rol || 'mecanico', // Por defecto sugerimos mecánico
+    rol_id: u.rol_id || '', 
     legajo: u.legajo || '',
-    estado: 'aprobado' // Si lo estamos editando, asumimos que lo vamos a aprobar
+    estado: 'aprobado' 
   }
 }
 
@@ -136,8 +139,9 @@ const cancelarEdicion = () => {
 }
 
 const guardarCambios = async (id) => {
-  if (!formEdit.value.rol) {
-    return toast.error('Debe asignar un rol al usuario.')
+  // Si busca .rol en lugar de .rol_id, siempre dará error porque no existe.
+  if (!formEdit.value.rol_id) {
+    return toast.error('Debe asignar un perfil al usuario.')
   }
   
   try {
@@ -145,7 +149,7 @@ const guardarCambios = async (id) => {
       method: 'PUT',
       body: JSON.stringify({
         estado: formEdit.value.estado,
-        rol: formEdit.value.rol,
+        rol_id: formEdit.value.rol_id, // Enviamos rol_id al backend
         legajo: formEdit.value.legajo || null
       })
     })

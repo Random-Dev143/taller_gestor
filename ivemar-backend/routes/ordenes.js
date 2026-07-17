@@ -16,7 +16,14 @@ router.get('/', async (req, res) => {
         else if (req.query.estado) { where += ` AND o.estado_actual = ?`; params.push(req.query.estado); }
 
         if (req.query.garantia !== undefined) { where += ` AND o.es_garantia = ?`; params.push(req.query.garantia); }
-        
+
+        // Filtro de facturación: usa la misma expresión de montos que
+        // OTTable.vue (tieneMontos) para que el criterio sea consistente
+        // entre lo que se ve en la tabla y lo que filtra el backend.
+        const MONTOS_EXPR = `(COALESCE(o.monto_repuestos,0) + COALESCE(o.monto_mano_obra,0) + COALESCE(o.monto_repuestos_garantia,0) + COALESCE(o.monto_mano_obra_garantia,0))`;
+        if (req.query.facturacion === 'facturadas') where += ` AND ${MONTOS_EXPR} > 0`;
+        else if (req.query.facturacion === 'pendientes') where += ` AND ${MONTOS_EXPR} = 0`;
+
         if (req.query.busqueda) {
             where += ` AND (o.ot LIKE ? OR o.patente LIKE ? OR c.nombre LIKE ?)`;
             const q = `%${req.query.busqueda}%`;
@@ -25,6 +32,28 @@ router.get('/', async (req, res) => {
 
         const totalRow = await get(`SELECT COUNT(*) AS total FROM ordenes o JOIN unidades u ON o.patente = u.patente JOIN clientes c ON u.cliente_id = c.id ${where}`, params);
         const total = totalRow.total;
+
+        // Orden dinámico con whitelist de columnas (evita inyección SQL).
+        // "mecanico" es un alias de subquery del SELECT; SQLite permite
+        // ordenar por el alias directamente.
+        const ORDENABLES = {
+            ot: 'CAST(o.ot AS INTEGER)',
+            cliente: 'c.nombre',
+            patente: 'o.patente',
+            unidad: 'u.unidad',
+            mecanico: 'mecanico',
+            estado: 'o.estado_actual',
+            garantia: 'o.es_garantia',
+            controlada: 'o.controlada',
+            facturacion: MONTOS_EXPR,
+            fecha_apertura: 'o.fecha_apertura',
+            fecha_cierre: 'o.fecha_cierre'
+        };
+        const sortCol = ORDENABLES[req.query.sortBy];
+        const sortDir = (req.query.sortDir || '').toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+        const orderBy = sortCol
+            ? `ORDER BY ${sortCol} ${sortDir}, CAST(o.ot AS INTEGER) DESC`
+            : `ORDER BY CAST(o.ot AS INTEGER) DESC, o.fecha_apertura DESC`;
 
         const sql = `
             SELECT o.*, u.unidad, c.nombre AS cliente, l.nombre AS nombre_asesor,
@@ -35,7 +64,7 @@ router.get('/', async (req, res) => {
             JOIN unidades u ON o.patente = u.patente
             JOIN clientes c ON u.cliente_id = c.id
             LEFT JOIN legajos l ON o.asesor_legajo = l.legajo 
-            ${where} ORDER BY CAST(o.ot AS INTEGER) DESC, o.fecha_apertura DESC LIMIT ? OFFSET ?
+            ${where} ${orderBy} LIMIT ? OFFSET ?
         `;
         const rows = await all(sql, [...params, limit, offset]);
 

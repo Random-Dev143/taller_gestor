@@ -10,6 +10,21 @@ router.get('/clientes/buscar', async (req, res) => {
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
+// Vehículos ya registrados para un cliente. Se usa en NuevaOT.vue para
+// sugerir la unidad al elegir el cliente del autocompletado, en vez de
+// tener que tipear la patente de nuevo si ya la conocemos.
+router.get('/cliente/:clienteId', async (req, res) => {
+    try {
+        const unidades = await all(
+            `SELECT u.patente, u.unidad,
+                    (SELECT o.kilometraje FROM ordenes o WHERE o.patente = u.patente ORDER BY CAST(o.ot AS INTEGER) DESC LIMIT 1) AS ultimo_kilometraje
+             FROM unidades u WHERE u.cliente_id = ? ORDER BY u.id DESC`,
+            [req.params.clienteId]
+        );
+        res.json(unidades);
+    } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
 router.get('/', async (req, res) => {
     try { 
         res.json(await all(`SELECT u.*, c.nombre AS cliente FROM unidades u JOIN clientes c ON u.cliente_id = c.id ORDER BY u.id DESC`)); 

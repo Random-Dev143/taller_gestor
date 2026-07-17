@@ -1,8 +1,8 @@
 <template>
   <div class="navbar" :style="customStyle">
-    <!-- NUEVO BOTÓN DE INICIO -->
-    <button class="home-btn" @click="goHome" title="Volver al menú principal">🏠</button>
-    
+    <!-- Botón de Cerrar sesión, ahora donde estaba el de Inicio -->
+    <button class="logout" @click="handleLogout">{{ logoutText }}</button>
+
     <span class="brand" :style="brandStyle">{{ brand }}</span>
     
     <!-- Pestañas dinámicas -->
@@ -18,7 +18,8 @@
     <!-- Espacio para inyectar elementos extra -->
     <slot name="extra"></slot>
     
-    <button class="logout" @click="handleLogout">{{ logoutText }}</button>
+    <!-- Botón de Inicio -->
+    <button class="home-btn" @click="goHome" title="Volver al menú principal">🏠</button>
   </div>
 </template>
 
@@ -70,7 +71,7 @@ const handleLogout = async () => {
     margin-bottom: 30px;
 }
 
-/* Estilos del nuevo botón de inicio */
+/* Estilos del botón de inicio */
 .navbar .home-btn {
     background: #f4f7fc;
     border: 1px solid #eef3f9;

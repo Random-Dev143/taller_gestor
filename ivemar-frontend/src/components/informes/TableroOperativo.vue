@@ -40,7 +40,7 @@
             <td><span class="text-success">{{ formatHoras(m.hs_productivas) }} hs</span></td>
             <td><strong :class="{'text-danger': m.tiempo_muerto > 10}">{{ formatHoras(m.tiempo_muerto) }} hs</strong></td>
             <td>
-              <button v-if="m.dias_ausentes_count > 0" class="btn btn-sm" :class="sinJustificar(m) > 0 ? 'btn-danger' : 'btn-secondary'" @click="verAusencias(m)">
+              <button v-if="m.dias_ausentes_count > 0" class="btn btn-sm" v-can="'ausencia_justificar'" :class="sinJustificar(m) > 0 ? 'btn-danger' : 'btn-secondary'" @click="verAusencias(m)">
                 {{ m.dias_ausentes_count }} día(s)
               </button>
               <span v-else class="text-muted">-</span>

@@ -178,4 +178,27 @@ router.put('/tiempos/:id', async (req, res) => {
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
+router.put('/:id', async (req, res) => {
+    const { legajo_mecanico, descripcion, tiempo_estimado, tiempo_real, fecha_inicio, fecha_fin } = req.body;
+    try {
+        await withTransaction(async () => {
+            const actividad = await get(`SELECT ot FROM actividades WHERE id = ?`, [req.params.id]);
+            if (!actividad) throw new Error('Actividad no encontrada');
+
+            await run(
+                `UPDATE actividades 
+                 SET legajo_mecanico = ?, descripcion = ?, tiempo_estimado = ?, tiempo_real = ?,
+                     fecha_inicio = COALESCE(NULLIF(?, ''), fecha_inicio),
+                     fecha_fin = COALESCE(NULLIF(?, ''), fecha_fin)
+                 WHERE id = ?`,
+                [legajo_mecanico, descripcion, tiempo_estimado, tiempo_real, fecha_inicio, fecha_fin, req.params.id]
+            );
+            await recalcularTiempoEmpleado(actividad.ot);
+        });
+        res.json({ status: 'Actividad actualizada' });
+    } catch (error) { 
+        res.status(500).json({ error: error.message }); 
+    }
+});
+
 module.exports = router;

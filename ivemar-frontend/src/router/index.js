@@ -1,96 +1,104 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '../stores/useAuthStore'
-import HomeView from '../views/HomeView.vue'
+
+const routes = [
+  {
+    path: '/login',
+    name: 'login',
+    component: () => import('../views/LoginView.vue'),
+    meta: { requiresAuth: false }
+  },
+  {
+    path: '/',
+    name: 'home',
+    component: () => import('../views/HomeView.vue'),
+    // El menú principal es el concentrador. Solo exige estar logueado, sin permiso específico.
+    meta: { requiresAuth: true } 
+  },
+  {
+    path: '/admin',
+    name: 'admin',
+    component: () => import('../views/AdminView.vue'),
+    meta: { requiresAuth: true, requiredPermission: 'usuario_gestionar' } 
+  },
+  {
+    path: '/asesor',
+    name: 'asesor',
+    component: () => import('../views/AsesorView.vue'),
+    meta: { requiresAuth: true, requiredPermission: 'ot_ver_lista' }
+  },
+  {
+    path: '/jefe',
+    name: 'jefe',
+    component: () => import('../views/JefeView.vue'),
+    meta: { requiresAuth: true, requiredPermission: 'tarea_gestionar_todas' }
+  },
+  {
+    path: '/mecanico',
+    name: 'mecanico',
+    // Evalúa si hay un tablero seleccionado en memoria, si no, va al buscador
+    redirect: () => (localStorage.getItem('legajoMecanico') ? '/mecanico/tareas' : '/mecanico/login')
+  },
+  {
+    path: '/mecanico/login',
+    name: 'mecanico-login',
+    component: () => import('../views/LoginMecanico.vue'),
+    meta: { requiresAuth: true, requiredPermission: 'tarea_ver_propias' }
+  },
+  {
+    path: '/mecanico/tareas',
+    name: 'mecanico-tareas',
+    component: () => import('../views/MecanicoView.vue'),
+    meta: { requiresAuth: true, requiredPermission: 'tarea_ver_propias' }
+  },
+  {
+    path: '/sala',
+    name: 'sala',
+    component: () => import('../views/SalaEsperaView.vue'),
+    // Usualmente la sala de espera es pública para abrirla en las pantallas/TVs del taller
+    meta: { requiresAuth: false } 
+  },
+  {
+    // Ruta comodín: Si tipean cualquier URL inexistente, los mandamos al inicio
+    path: '/:pathMatch(.*)*',
+    redirect: '/'
+  }
+]
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
-  routes: [
-    {
-      path: '/login',
-      name: 'login',
-      component: () => import('../views/LoginView.vue'),
-      meta: { requiresGuest: true } // Solo accesible si NO estás logueado
-    },
-    {
-      path: '/',
-      name: 'home',
-      component: HomeView,
-      meta: { requiresAuth: true }
-    },
-    {
-      path: '/asesor',
-      name: 'asesor',
-      component: () => import('../views/AsesorView.vue'),
-      meta: { requiresAuth: true, allowedRoles: ['admin', 'asesor'] }
-    },
-    {
-      path: '/jefe',
-      name: 'jefe',
-      component: () => import('../views/JefeView.vue'),
-      meta: { requiresAuth: true, allowedRoles: ['admin', 'jefe'] }
-    },
-    {
-      path: '/admin',
-      name: 'admin',
-      component: () => import('../views/AdminView.vue'),
-      meta: { requiresAuth: true, allowedRoles: ['admin'] } // Bloqueo estricto
-    },
-    {
-      path: '/mecanico',
-      name: 'mecanico',
-      // Evalúa si hay un tablero seleccionado en memoria, si no, va al buscador
-      redirect: () => (localStorage.getItem('legajoMecanico') ? '/mecanico/tareas' : '/mecanico/login')
-    },
-    {
-      path: '/mecanico/login',
-      name: 'mecanico-login',
-      component: () => import('../views/LoginMecanico.vue'),
-      // La pantalla para tipear el legajo requiere que ya estés dentro del sistema
-      meta: { requiresAuth: true, allowedRoles: ['admin', 'jefe', 'mecanico'] }
-    },
-    {
-      path: '/mecanico/tareas',
-      name: 'mecanico-tareas',
-      component: () => import('../views/MecanicoView.vue'),
-      meta: { requiresAuth: true, allowedRoles: ['admin', 'jefe', 'mecanico'] }
-    },
-    {
-      path: '/sala',
-      name: 'sala',
-      component: () => import('../views/SalaEsperaView.vue') // Pública
-    }
-  ]
+  routes
 })
 
-// Interceptor global de navegación
+// --- GUARDIA DE NAVEGACIÓN GLOBAL ---
 router.beforeEach(async (to, from, next) => {
-  const authStore = useAuthStore()
-
-  // Si es la primera carga de la app, verificamos la cookie silenciosamente
-  if (!authStore.isReady) {
-    await authStore.checkSession()
+  const authStore = useAuthStore();
+  
+  // 1. Validar que el estado de sesión esté cargado en la memoria de Pinia
+  if (!authStore.isVerified) {
+      await authStore.checkSession();
   }
 
-  const isAuth = authStore.isAuthenticated
-  const userRole = authStore.usuario?.rol
-
-  // 1. Ruta requiere ser invitado (ej. Pantalla de Login)
-  if (to.meta.requiresGuest && isAuth) {
-    return next({ name: 'home' })
-  }
-
-  // 2. Ruta requiere autenticación
+  // 2. Control principal: ¿La ruta exige estar dentro del sistema?
   if (to.meta.requiresAuth) {
-    if (!isAuth) return next({ name: 'login' })
-    
-    // Validar roles específicos si la ruta lo exige
-    if (to.meta.allowedRoles && !to.meta.allowedRoles.includes(userRole)) {
-      // Si el rol no coincide, lo devolvemos al menú principal
-      return next({ name: 'home' }) 
-    }
+      if (!authStore.isAuthenticated) {
+          return next({ name: 'login' });
+      }
+
+      // 3. Control granular: ¿La ruta exige una llave/permiso particular?
+      if (to.meta.requiredPermission) {
+          const permisosUsuario = authStore.usuario?.permisos || [];
+          const tienePermiso = permisosUsuario.includes(to.meta.requiredPermission);
+          
+          if (!tienePermiso) {
+              console.warn(`🔒 Acceso bloqueado. Permiso faltante: ${to.meta.requiredPermission}`);
+              return next({ name: 'home' }); // Expulsado al menú central
+          }
+      }
   }
 
-  next()
-})
+  // Si pasa todos los filtros, o la ruta es pública, avanza
+  next();
+});
 
 export default router

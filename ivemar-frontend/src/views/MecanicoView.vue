@@ -29,8 +29,8 @@
               </div>
               <p class="tarea-horas">Asignado por Jefe de Taller</p>
               <div class="acciones-tarea mt-10">
-                <button v-if="tarea.estado !== 'En Curso'" @click="toggleTareaInterna(tarea)" class="btn btn-outline btn-sm w-100">▶ Iniciar Rutina</button>
-                <button v-else @click="toggleTareaInterna(tarea)" class="btn btn-warning btn-sm w-100">⏸ Detener / Pausar</button>
+                <button v-if="tarea.estado !== 'En Curso'" v-can="'tarea_operar'" @click="toggleTareaInterna(tarea)" class="btn btn-outline btn-sm w-100">▶ Iniciar Rutina</button>
+                <button v-else v-can="'tarea_operar'" @click="toggleTareaInterna(tarea)" class="btn btn-warning btn-sm w-100">⏸ Detener / Pausar</button>
               </div>
             </div>
           </div>
@@ -51,11 +51,11 @@
               <p class="tarea-horas">Estimado: {{ tarea.tiempo_estimado }} hs</p>
 
               <div class="acciones-tarea mt-10">
-                <button v-if="['Asignada', 'Pendiente'].includes(tarea.estado)" @click="cambiarEstado(tarea, 'En Curso')" class="btn btn-primary btn-sm">▶ Iniciar</button>
-                <button v-if="tarea.estado === 'Pausada'" @click="cambiarEstado(tarea, 'En Curso')" class="btn btn-primary btn-sm">▶ Reanudar</button>
+                <button v-if="['Asignada', 'Pendiente'].includes(tarea.estado)" v-can="'tarea_operar'" @click="cambiarEstado(tarea, 'En Curso')" class="btn btn-primary btn-sm">▶ Iniciar</button>
+                <button v-if="tarea.estado === 'Pausada'" v-can="'tarea_operar'" @click="cambiarEstado(tarea, 'En Curso')" class="btn btn-primary btn-sm">▶ Reanudar</button>
                 
-                <button v-if="tarea.estado === 'En Curso'" @click="abrirPausa(tarea)" class="btn btn-warning btn-sm">⏸ Pausar</button>
-                <button v-if="tarea.estado === 'En Curso'" @click="abrirFinalizar(tarea)" class="btn btn-success btn-sm">✔ Finalizar</button>
+                <button v-if="tarea.estado === 'En Curso'" v-can="'tarea_operar'" @click="abrirPausa(tarea)" class="btn btn-warning btn-sm">⏸ Pausar</button>
+                <button v-if="tarea.estado === 'En Curso'" v-can="'tarea_operar'" @click="abrirFinalizar(tarea)" class="btn btn-success btn-sm">✔ Finalizar</button>
               </div>
             </div>
           </div>
@@ -109,15 +109,32 @@ const cargarTareas = async () => {
 }
 
 const cambiarEstado = async (tarea, estado) => {
+  // Optimista: el backend ya pausa automáticamente cualquier otra tarea
+  // "En Curso" de este mecánico al iniciar una nueva (ver actividades.js).
+  // Reflejamos ese efecto en la lista local al toque, sin esperar la
+  // respuesta ni el refetch, para que la UI no se sienta atrasada.
+  let pausadaAuto = null
+  if (estado === 'En Curso') {
+    for (const t of tareas.value) {
+      if (t.id !== tarea.id && t.estado === 'En Curso') {
+        t.estado = 'Pausada'
+        pausadaAuto = t
+      }
+    }
+  }
+  tarea.estado = estado
+
   try {
     await fetchJSON(`/actividades/${tarea.id}/estado`, {
       method: 'POST',
       body: JSON.stringify({ nuevo_estado: estado })
     })
     toast.success(`Tarea de OT ${tarea.ot} actualizada a "${estado}"`)
+    if (pausadaAuto) toast.info(`Se pausó automáticamente la tarea de OT ${pausadaAuto.ot}`)
     cargarTareas()
   } catch (err) {
     toast.error('Error al actualizar la tarea: ' + errMsg(err))
+    cargarTareas() // revertimos el optimismo trayendo el estado real
   }
 }
 
@@ -162,15 +179,29 @@ const tareasInternas = computed(() => tareas.value.filter(t => t.ot === '0000'))
 
 const toggleTareaInterna = async (tarea) => {
   const nuevo_estado = tarea.estado === 'En Curso' ? 'Pausada' : 'En Curso';
+
+  let pausadaAuto = null
+  if (nuevo_estado === 'En Curso') {
+    for (const t of tareas.value) {
+      if (t.id !== tarea.id && t.estado === 'En Curso') {
+        t.estado = 'Pausada'
+        pausadaAuto = t
+      }
+    }
+  }
+  tarea.estado = nuevo_estado
+
   try {
     await fetchJSON(`/actividades/${tarea.id}/estado`, {
       method: 'POST',
       body: JSON.stringify({ nuevo_estado, motivo: 'En Espera' })
     })
     toast.success(`Tarea interna ${nuevo_estado}`);
+    if (pausadaAuto) toast.info(`Se pausó automáticamente la tarea de OT ${pausadaAuto.ot}`)
     cargarTareas();
   } catch (err) {
     toast.error(errMsg(err));
+    cargarTareas()
   }
 }
 

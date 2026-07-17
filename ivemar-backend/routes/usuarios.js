@@ -7,21 +7,23 @@ const { v4: uuidv4 } = require('uuid');
 
 // GET / - Listar todos los usuarios (se puede filtrar por estado ?estado=pendiente)
 router.get('/', async (req, res) => {
+    const estado = req.query.estado;
     try {
         let query = `
-            SELECT u.id, u.email, u.nombre_completo, u.estado, u.rol, u.legajo, u.fecha_registro, l.nombre AS nombre_legajo 
+            SELECT u.id, u.email, u.nombre_completo, u.estado, u.legajo, 
+                   l.nombre as nombre_legajo, r.nombre as rol_nombre, u.rol_id
             FROM usuarios u
             LEFT JOIN legajos l ON u.legajo = l.legajo
+            LEFT JOIN roles r ON u.rol_id = r.id
         `;
         const params = [];
 
-        if (req.query.estado) {
+        if (estado) {
             query += ` WHERE u.estado = ?`;
-            params.push(req.query.estado);
+            params.push(estado);
         }
-        
-        query += ` ORDER BY u.fecha_registro DESC`;
 
+        query += ` ORDER BY u.nombre_completo ASC`;
         const usuarios = await all(query, params);
         res.json(usuarios);
     } catch (error) {
@@ -57,18 +59,13 @@ router.post('/', async (req, res) => {
 
 // PUT /:id - Actualizar usuario (Aprobar, cambiar rol, asignar legajo)
 router.put('/:id', async (req, res) => {
-    const { nombre_completo, estado, rol, legajo } = req.body;
+    const { estado, rol_id, legajo } = req.body;
     try {
         await run(
-            `UPDATE usuarios 
-             SET nombre_completo = COALESCE(?, nombre_completo), 
-                 estado = COALESCE(?, estado), 
-                 rol = COALESCE(?, rol), 
-                 legajo = ? 
-             WHERE id = ?`,
-            [nombre_completo, estado, rol, legajo || null, req.params.id]
+            `UPDATE usuarios SET estado = ?, rol_id = ?, legajo = ? WHERE id = ?`,
+            [estado, rol_id || null, legajo || null, req.params.id]
         );
-        res.json({ status: 'Usuario actualizado correctamente' });
+        res.json({ status: 'Usuario actualizado' });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }

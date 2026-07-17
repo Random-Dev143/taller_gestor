@@ -4,19 +4,19 @@
     <p>Sistema de gestión de órdenes de trabajo</p>
 
     <div class="role-buttons">
-      <button class="role-btn" @click="goTo('admin')">
+      <button class="role-btn" @click="$router.push('/admin')" v-can="'usuario_gestionar'">
         <span class="role-icon">⚙️</span>
         Administración
       </button>
-      <button class="role-btn" @click="goTo('asesor')">
+      <button class="role-btn" @click="$router.push('/asesor')" v-can="'ot_ver_lista'">
         <span class="role-icon">👔</span>
         Asesor de Servicio
       </button>
-      <button class="role-btn" @click="goTo('jefe')">
+      <button class="role-btn" @click="$router.push('/jefe')" v-can="'tarea_gestionar_todas'">
         <span class="role-icon">🔧</span>
         Jefe de Taller
       </button>
-      <button class="role-btn" @click="goTo('mecanico')">
+      <button class="role-btn" @click="$router.push('/mecanico')" v-can="'tarea_ver_propias'">
         <span class="role-icon">🛠️</span>
         Mecánico
       </button>

@@ -5,6 +5,10 @@
     <div v-if="activeTab === 'asesor-ots-activas' || activeTab === 'asesor-ots-finalizadas'" class="card">
       <div class="header-row">
         <h2>{{ activeTab === 'asesor-ots-activas' ? 'Órdenes en Taller' : 'Histórico Finalizadas' }}</h2>
+        <label v-if="activeTab === 'asesor-ots-finalizadas'" class="check-facturacion">
+          <input type="checkbox" v-model="soloFaltaFacturar" @change="onFiltroFacturacionChange" />
+          Solo falta facturar
+        </label>
         <input type="text" v-model="busqueda" placeholder="🔍 Buscar por patente, OT o cliente..." class="form-control search-input" @input="onBuscar" />
         <button class="btn btn-secondary btn-sm" @click="cargarOTs">↻ Actualizar</button>
       </div>
@@ -13,6 +17,9 @@
       <template v-else>
         <OTTable
           :data="ots"
+          :sort-by="sortBy"
+          :sort-dir="sortDir"
+          @sort-change="onSortChange"
           @update-status="handleStatusUpdate"
           @view-detail="abrirDetalle"
           @edit-ot="abrirEdicion"
@@ -72,6 +79,12 @@ const total = ref(0)
 const LIMIT = 25
 let debounceTimer = null
 
+// Orden de columnas (a-z / z-a) y filtro "solo falta facturar", ambos
+// resueltos en el backend para que funcionen igual en todas las páginas.
+const sortBy = ref('')
+const sortDir = ref('desc')
+const soloFaltaFacturar = ref(false)
+
 const showModalDetalle = ref(false)
 const showModalEditar = ref(false)
 const otSeleccionada = ref(null)
@@ -93,6 +106,8 @@ const cargarOTs = async () => {
   try {
     const params = new URLSearchParams({ estado: estadoParaBackend(), page: page.value, limit: LIMIT })
     if (busqueda.value.trim()) params.set('busqueda', busqueda.value.trim())
+    if (sortBy.value) { params.set('sortBy', sortBy.value); params.set('sortDir', sortDir.value) }
+    if (activeTab.value === 'asesor-ots-finalizadas' && soloFaltaFacturar.value) params.set('facturacion', 'pendientes')
     const res = await fetchJSON(`/ordenes?${params.toString()}`)
     ots.value = res.data
     total.value = res.total
@@ -123,8 +138,27 @@ const onBuscar = () => {
 watch(activeTab, () => {
   page.value = 1
   busqueda.value = ''
+  soloFaltaFacturar.value = false
   cargarOTs()
 })
+
+// Click en un header ordenable: mismo campo -> invierte dirección (a-z / z-a),
+// campo distinto -> arranca en ascendente.
+const onSortChange = (campo) => {
+  if (sortBy.value === campo) {
+    sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    sortBy.value = campo
+    sortDir.value = 'asc'
+  }
+  page.value = 1
+  cargarOTs()
+}
+
+const onFiltroFacturacionChange = () => {
+  page.value = 1
+  cargarOTs()
+}
 
 const handleStatusUpdate = async ({ ot, estado }) => {
   try {
@@ -151,4 +185,5 @@ onMounted(cargarOTs)
 .header-row { display: flex; align-items: center; flex-wrap: wrap; gap: 15px; margin-bottom: 15px; }
 .header-row h2 { margin: 0; margin-right: auto; }
 .search-input { max-width: 300px; }
+.check-facturacion { display: flex; align-items: center; gap: 6px; font-size: 0.9rem; white-space: nowrap; }
 </style>

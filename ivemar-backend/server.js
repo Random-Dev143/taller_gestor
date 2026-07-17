@@ -72,20 +72,29 @@ app.get('/status', (req, res) => {
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/sala', limiterSala, require('./routes/sala')); // Sala blindada con su propio limitador
 
-// ─── RUTAS PROTEGIDAS (Requieren sesión válida) ───────────────────
-// requireAuth() bloquea el paso si no hay cookie o si la cuenta no está aprobada.
-// Se puede pasar un array con roles permitidos: requireAuth(['admin', 'jefe'])
+// ─── RUTAS PROTEGIDAS (Requieren sesión válida y permisos específicos) ───
 
-app.use('/api/unidades', requireAuth(), require('./routes/unidades'));
-app.use('/api/legajos', requireAuth(), require('./routes/legajos'));
-app.use('/api/ordenes', requireAuth(), require('./routes/ordenes'));
-app.use('/api/actividades', requireAuth(), require('./routes/actividades'));
-app.use('/api/feriados', requireAuth(), require('./routes/feriados'));
-// Restringido solo para el admin
-app.use('/api/usuarios', requireAuth(['admin']), require('./routes/usuarios'));
+// Agenda y Contactos
+app.use('/api/unidades', requireAuth(['agenda_ver', 'agenda_gestionar']), require('./routes/unidades'));
 
-// Restringir informes solo a jefes y administradores (opcional, ajustalo a tu lógica)
-app.use('/api/informes', requireAuth(['admin', 'jefe', 'asesor']), require('./routes/informes'));
+// RRHH y Legajos
+app.use('/api/legajos', requireAuth(['legajo_ver', 'legajo_gestionar']), require('./routes/legajos'));
+
+// Órdenes de Trabajo (Si tiene al menos uno de estos permisos, pasa)
+app.use('/api/ordenes', requireAuth(['ot_ver_lista', 'ot_crear', 'ot_editar']), require('./routes/ordenes'));
+
+// Tareas Operativas
+app.use('/api/actividades', requireAuth(['tarea_ver_propias', 'tarea_gestionar_todas']), require('./routes/actividades'));
+
+// Feriados y Excepciones
+app.use('/api/feriados', requireAuth(['ausencia_justificar', 'rol_gestionar']), require('./routes/feriados'));
+
+// Informes y Estadísticas
+app.use('/api/informes', requireAuth(['informe_financiero', 'informe_operativo', 'informe_taller']), require('./routes/informes'));
+
+// Configuración y Administración del Sistema
+app.use('/api/usuarios', requireAuth(['usuario_gestionar']), require('./routes/usuarios'));
+app.use('/api/roles', requireAuth(['rol_gestionar']), require('./routes/roles')); // <-- NUEVA RUTA PARA ROLES
 
 // ─── INICIAR TAREAS PROGRAMADAS ────────────────────────────────────
 iniciarCron();

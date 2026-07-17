@@ -5,7 +5,9 @@
     <div v-if="activeTab === 'admin-usuarios'" class="tab-content">
       <AdminUsuarios />
     </div>
-    
+    <div v-if="activeTab === 'admin-roles'" class="tab-content">
+      <AdminRoles />
+    </div>
     <!-- Aquí agregaremos futuras pestañas de configuración -->
   </div>
 </template>
@@ -14,11 +16,13 @@
 import { ref } from 'vue'
 import NavBar from '../components/common/NavBar.vue'
 import AdminUsuarios from '../components/asesor/AdminUsuarios.vue'
+import AdminRoles from '../components/asesor/AdminRoles.vue'
 
 const activeTab = ref('admin-usuarios')
 
 const tabs = [
-  { id: 'admin-usuarios', label: 'Usuarios y Accesos' }
+  { id: 'admin-usuarios', label: 'Usuarios y Accesos' },
+  { id: 'admin-roles', label: 'Perfiles y Permisos' }
 ]
 </script>
 

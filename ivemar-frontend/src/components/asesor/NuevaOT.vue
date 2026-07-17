@@ -21,6 +21,17 @@
               <strong>{{ c.nombre }}</strong> <span style="font-size: 0.8rem; color: #666;">{{ c.telefono || '' }}</span>
             </li>
           </ul>
+
+          <!-- Vehículos ya registrados a nombre del cliente elegido. Elegir uno
+               autocompleta patente/unidad; si el vehículo es nuevo, se ignora
+               y se completa el formulario a mano como siempre. -->
+          <div v-if="unidadesCliente.length > 0" class="unidades-cliente">
+            <span class="unidades-cliente-label">Vehículos de este cliente:</span>
+            <button v-for="u in unidadesCliente" :key="u.patente" type="button"
+                    class="btn-unidad-sugerida" @click="seleccionarUnidad(u)">
+              {{ u.patente }} · {{ u.unidad }}
+            </button>
+          </div>
         </div>
         <div class="form-group">
           <label>Unidad *</label>
@@ -108,6 +119,7 @@ const formBase = {
 const form = ref({ ...formBase })
 const enviando = ref(false)
 const clientesSugeridos = ref([])
+const unidadesCliente = ref([])
 let searchTimeout = null
 
 const normalizarPatente = (pat) => pat.replace(/[^a-zA-Z0-9]/g, '').toUpperCase()
@@ -128,6 +140,7 @@ const buscarPatente = async () => {
 
 const buscarClientes = () => {
   form.value.cliente = form.value.cliente.toUpperCase()
+  unidadesCliente.value = []
   clearTimeout(searchTimeout)
   if (form.value.cliente.length < 2) {
     clientesSugeridos.value = []
@@ -140,9 +153,22 @@ const buscarClientes = () => {
   }, 300)
 }
 
-const seleccionarCliente = (cliente) => {
+const seleccionarCliente = async (cliente) => {
   form.value.cliente = cliente.nombre
   clientesSugeridos.value = []
+  try {
+    unidadesCliente.value = await fetchJSON(`/unidades/cliente/${cliente.id}`)
+  } catch (e) {
+    unidadesCliente.value = []
+  }
+}
+
+const seleccionarUnidad = (unidad) => {
+  form.value.patente = unidad.patente
+  form.value.unidad = unidad.unidad
+  if (unidad.ultimo_kilometraje) form.value.kilometraje = unidad.ultimo_kilometraje
+  unidadesCliente.value = []
+  toast.info(`Vehículo ${unidad.patente} cargado`, 2000)
 }
 
 const crearOT = async () => {
@@ -160,6 +186,7 @@ const crearOT = async () => {
     await fetchJSON('/ordenes', { method: 'POST', body: JSON.stringify(form.value) })
     toast.success('OT creada correctamente')
     form.value = { ...formBase }
+    unidadesCliente.value = []
     emit('ot-creada')
   } catch (err) { toast.error('Error al crear la OT: ' + errMsg(err)) } 
   finally { enviando.value = false }
@@ -175,4 +202,12 @@ const crearOT = async () => {
 }
 .autocomplete-list li { padding: 8px 12px; cursor: pointer; border-bottom: 1px solid var(--border-soft); display: flex; justify-content: space-between;}
 .autocomplete-list li:hover { background: var(--primary-light); color: var(--primary); }
+
+.unidades-cliente { margin-top: 8px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.unidades-cliente-label { font-size: 0.78rem; color: var(--muted); width: 100%; }
+.btn-unidad-sugerida {
+  border: 1px solid var(--border); background: #eef3f9; color: #0056a7;
+  padding: 4px 10px; border-radius: 14px; font-size: 0.8rem; cursor: pointer;
+}
+.btn-unidad-sugerida:hover { background: var(--primary-light); }
 </style>

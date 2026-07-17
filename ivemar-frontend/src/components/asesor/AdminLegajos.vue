@@ -30,8 +30,8 @@
               <span v-else class="text-muted">Sin firma</span>
             </td>
             <td>
-              <button class="btn btn-sm" @click="subirFirma(l.legajo)">Subir firma</button>
-              <button class="btn btn-danger btn-sm" @click="eliminarLegajo(l.legajo)">Eliminar</button>
+              <button class="btn btn-sm" v-can="'legajo_gestionar'" @click="subirFirma(l.legajo)">Subir firma</button>
+              <button class="btn btn-danger btn-sm" v-can="'legajo_gestionar'" @click="eliminarLegajo(l.legajo)">Eliminar</button>
             </td>
           </tr>
         </tbody>

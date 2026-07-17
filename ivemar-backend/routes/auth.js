@@ -1,24 +1,29 @@
 // ivemar-backend/routes/auth.js
 const express = require('express');
 const router = express.Router();
-const { run, get } = require('../config/database');
+const { run, get, all } = require('../config/database');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
 const { JWT_SECRET } = require('../middlewares/auth');
 
-// --- CREACIÓN DEL ADMIN POR DEFECTO ---
+//CREAR ADMIN POR DEFECTO
 async function asegurarAdmin() {
     try {
         const adminExiste = await get(`SELECT id FROM usuarios WHERE email = 'admin@ivemar.com'`);
         if (!adminExiste) {
             const hash = bcrypt.hashSync('ivemar123', 10);
+            
+            // Buscamos el ID del nuevo rol Administrador maestro
+            const rol = await get(`SELECT id FROM roles WHERE nombre = 'Administrador'`);
+            const rolId = rol ? rol.id : null;
+
             await run(
-                `INSERT INTO usuarios (id, email, password_hash, nombre_completo, estado, rol) 
-                 VALUES (?, ?, ?, ?, ?, ?)`,
-                [uuidv4(), 'admin@ivemar.com', hash, 'Administrador', 'aprobado', 'admin']
+                `INSERT INTO usuarios (id, email, password_hash, nombre_completo, estado, rol, rol_id) 
+                 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                [uuidv4(), 'admin@ivemar.com', hash, 'Administrador', 'aprobado', 'admin', rolId]
             );
-            console.log('✅ Admin por defecto creado: admin@ivemar.com / ivemar123');
+            console.log('✅ Admin por defecto creado y vinculado a permisos granulares.');
         }
     } catch (error) {
         console.error('❌ Error creando admin por defecto:', error.message);
@@ -59,7 +64,14 @@ router.post('/login', async (req, res) => {
     const { email, password } = req.body;
 
     try {
-        const usuario = await get(`SELECT * FROM usuarios WHERE email = ?`, [email]);
+        // Obtenemos el usuario y el nombre de su rol relacional
+        const usuario = await get(`
+            SELECT u.*, r.nombre as rol_nombre 
+            FROM usuarios u 
+            LEFT JOIN roles r ON u.rol_id = r.id 
+            WHERE u.email = ?
+        `, [email]);
+        
         if (!usuario) return res.status(401).json({ error: 'Credenciales inválidas' });
 
         const passwordValido = bcrypt.compareSync(password, usuario.password_hash);
@@ -69,29 +81,36 @@ router.post('/login', async (req, res) => {
             return res.status(403).json({ error: 'Su cuenta está pendiente de aprobación o suspendida.' });
         }
 
-        // Generamos el token (válido por 12 horas)
+        // Buscamos el array de permisos exactos que tiene este rol
+        let permisosArreglo = [];
+        if (usuario.rol_id) {
+            const permisosRaw = await all(`SELECT permiso_clave FROM rol_permisos WHERE rol_id = ?`, [usuario.rol_id]);
+            permisosArreglo = permisosRaw.map(p => p.permiso_clave);
+        }
+
+        // Generamos el token incluyendo el nuevo array de permisos
         const payload = {
             id: usuario.id,
             email: usuario.email,
             nombre: usuario.nombre_completo,
-            rol: usuario.rol,
+            rol: usuario.rol_nombre, 
+            rol_id: usuario.rol_id,
             legajo: usuario.legajo,
-            estado: usuario.estado
+            estado: usuario.estado,
+            permisos: permisosArreglo   
         };
         const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '12h' });
 
-        // Setear la cookie HttpOnly
         res.cookie('auth_token', token, {
             httpOnly: true,
-            sameSite: 'Lax', // Permite el uso en red local HTTP
-            secure: false,   // false para red local
-            maxAge: 12 * 60 * 60 * 1000 // 12 horas
+            sameSite: 'Lax',
+            secure: false,
+            maxAge: 12 * 60 * 60 * 1000 
         });
 
-        // Devolvemos datos básicos al frontend para la UI
         res.json({ 
             status: 'Login exitoso', 
-            usuario: { email: usuario.email, nombre: usuario.nombre_completo, rol: usuario.rol, legajo: usuario.legajo } 
+            usuario: payload 
         });
 
     } catch (error) {

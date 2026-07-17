@@ -3,8 +3,12 @@
     <table class="ot-table">
       <thead>
         <tr>
-          <th>OT</th><th>Cliente</th><th>Patente</th><th>Unidad</th>
-          <th>Mecánico</th><th>Estado</th><th>Garantía</th><th>Controlada</th><th>Facturación</th><th>Acciones</th>
+          <th v-for="col in columnas" :key="col.key" :class="{ sortable: col.sortable }"
+              @click="col.sortable && $emit('sort-change', col.key)">
+            {{ col.label }}
+            <span v-if="col.sortable" class="sort-icon">{{ sortIcon(col.key) }}</span>
+          </th>
+          <th>Acciones</th>
         </tr>
       </thead>
       <tbody>
@@ -23,7 +27,7 @@
           <td data-label="Unidad">{{ ot.unidad }}</td>
 
           <td data-label="Mecánico">
-                <button v-if="esJefe" 
+                <button v-if="esJefe" v-can="'tarea_gestionar_todas'"
                         :class="['btn btn-sm btn-assign', !ot.mecanico ? 'btn-urgente' : '']" 
                         @click="$emit('open-assign-modal', ot.ot)">
                     {{ ot.mecanico || '⚠️ Falta Asignar' }}
@@ -35,7 +39,7 @@
             </td>
 
           <td data-label="Estado">
-            <select v-if="esJefe" class="estado-select" @change="$emit('update-status', {ot: ot.ot, estado: $event.target.value})">
+            <select v-if="esJefe" v-can="'ot_cambiar_estado'" class="estado-select" @change="$emit('update-status', {ot: ot.ot, estado: $event.target.value})">
               <option v-for="est in ['En Proceso', 'En Espera', 'Espera de Repuestos', 'Trabajos de Terceros', 'Finalizada']"
                       :key="est" :value="est" :selected="ot.estado_actual === est">{{ est }}</option>
             </select>
@@ -54,10 +58,10 @@
           </td>
 
           <td class="actions-cell" data-label="Acciones">
-            <button v-if="esJefe && !ot.controlada" class="btn btn-success btn-sm" @click="$emit('control-ot', ot.ot)">Controlar</button>
-            <button class="btn btn-secondary btn-sm" @click="$emit('view-detail', ot.ot)">Detalle</button>
-            <button class="btn btn-sm" @click="$emit('edit-ot', ot.ot)">Editar</button>
-            <button class="btn btn-outline btn-sm" @click="$emit('export-pdf', ot.ot)">📄 PDF</button>
+            <button v-if="esJefe && !ot.controlada" v-can="'ot_controlar'" class="btn btn-success btn-sm" @click="$emit('control-ot', ot.ot)">Controlar</button>
+            <button class="btn btn-secondary btn-sm" v-can="'ot_ver_detalle'" @click="$emit('view-detail', ot.ot)">Detalle</button>
+            <button class="btn btn-sm" v-can="'ot_editar'" @click="$emit('edit-ot', ot.ot)">Editar</button>
+            <button class="btn btn-outline btn-sm" v-can="'ot_ver_detalle'" @click="$emit('export-pdf', ot.ot)">📄 PDF</button>
           </td>
         </tr>
       </tbody>
@@ -66,12 +70,34 @@
 </template>
 
 <script setup>
-defineProps({
+const props = defineProps({
   data: { type: Array, required: true },
   esJefe: { type: Boolean, default: false },
-  mecanicos: { type: Array, default: () => [] }
+  mecanicos: { type: Array, default: () => [] },
+  sortBy: { type: String, default: '' },
+  sortDir: { type: String, default: 'desc' }
 })
-defineEmits(['update-status', 'view-detail', 'edit-ot', 'control-ot', 'open-assign-modal', 'export-pdf'])
+defineEmits(['update-status', 'view-detail', 'edit-ot', 'control-ot', 'open-assign-modal', 'export-pdf', 'sort-change'])
+
+// Columnas ordenables. Garantía/Controlada quedan afuera porque son
+// booleanas y ordenarlas no aporta demasiado; se pueden sumar igual
+// agregando su key acá y en el whitelist ORDENABLES del backend.
+const columnas = [
+  { key: 'ot', label: 'OT', sortable: true },
+  { key: 'cliente', label: 'Cliente', sortable: true },
+  { key: 'patente', label: 'Patente', sortable: true },
+  { key: 'unidad', label: 'Unidad', sortable: true },
+  { key: 'mecanico', label: 'Mecánico', sortable: true },
+  { key: 'estado', label: 'Estado', sortable: true },
+  { key: 'garantia', label: 'Garantía', sortable: false },
+  { key: 'controlada', label: 'Controlada', sortable: false },
+  { key: 'facturacion', label: 'Facturación', sortable: true }
+]
+
+const sortIcon = (key) => {
+  if (props.sortBy !== key) return '↕'
+  return props.sortDir === 'asc' ? '▲' : '▼'
+}
 
 const statusClass = (estado) => ({
   'En Proceso': 'status-progress',
@@ -105,6 +131,9 @@ const esEstancada = (ot) => ot.estado_actual !== 'Finalizada' && diasAbierta(ot)
 
 <style scoped>
 .table-wrapper { overflow-x: auto; width: 100%; }
+.ot-table thead th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+.ot-table thead th.sortable:hover { color: var(--primary, #0d6efd); }
+.sort-icon { font-size: 0.7rem; margin-left: 4px; opacity: 0.7; }
 .btn-assign { background: #f0f4f8; border: 1px solid var(--border); color: var(--text); width: 100%; text-align: left; }
 .estado-select { padding: 6px; border-radius: 6px; border: 1px solid var(--border); width: 100%; max-width: 150px; }
 .actions-cell { white-space: nowrap; }

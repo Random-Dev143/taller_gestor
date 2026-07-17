@@ -19,7 +19,7 @@
           <p><strong>Otra Marca:</strong> {{ data.es_no_iveco ? 'Sí' : 'No' }}</p>
           <p><strong>Controlada:</strong> {{ data.controlada ? 'Sí' : 'No' }}</p>
           <p><strong>Hs Asignadas:</strong> {{ data.tiempo_asignado_horas }}</p>
-          <p><strong>Hs Empleadas:</strong> {{ data.tiempo_empleado_horas }}</p>
+          <p><strong>Hs Empleadas:</strong> {{ Number(data.tiempo_empleado_horas || 0).toFixed(1) }}</p>
           <p><strong>Hs Facturadas:</strong> {{ data.tiempo_facturado_horas }}</p>
           <p><strong>Total Repuestos:</strong> <span class="highlight">{{ formatCurrency(data.monto_repuestos) }}</span></p>
           <p><strong>Total Mano Obra:</strong> <span class="highlight">{{ formatCurrency(data.monto_mano_obra) }}</span></p>
@@ -56,9 +56,9 @@
                     <td>{{ a.tiempo_estimado }}</td>
                     <td>{{ (a.tiempo_real || 0).toFixed(2) }}</td>
                     <td v-if="esJefe" style="white-space: nowrap;">
-                      <button class="btn btn-sm" @click="$emit('editar-actividad', a)" title="Reasignar/Editar">✏️</button>
-                      <button class="btn btn-danger btn-sm" @click="$emit('eliminar-actividad', a.id)" title="Eliminar asignación">🗑️</button>
-                      <button class="btn btn-sm" @click="toggleTiempos(a.id)" title="Ver Tiempos">🕒</button>
+                      <button class="btn btn-sm" v-can="'tarea_gestionar_todas'" @click="$emit('editar-actividad', a)" title="Reasignar/Editar">✏️</button>
+                      <button class="btn btn-danger btn-sm" v-can="'tarea_gestionar_todas'" @click="$emit('eliminar-actividad', a.id)" title="Eliminar asignación">🗑️</button>
+                      <button class="btn btn-sm" v-can="'tiempo_editar_manual'" @click="toggleTiempos(a.id)" title="Ver Tiempos">🕒</button>
                     </td>
                   </tr>
                   <tr v-if="esJefe && tiemposAbiertos === a.id">
@@ -67,18 +67,18 @@
                         <div v-for="t in getTiempos(a.id)" :key="t.id" class="tiempo-row">
                           <input type="datetime-local" :value="toLocalInput(t.inicio)" @change="t.inicio = fromLocalInput($event.target.value)">
                           <input type="datetime-local" :value="toLocalInput(t.fin)" @change="t.fin = fromLocalInput($event.target.value)">
-                          <button class="btn btn-sm" @click="guardarTiempo(t, a.id)" title="Guardar">💾</button>
-                          <button class="btn btn-danger btn-sm" @click="eliminarTiempo(t.id)" title="Eliminar">🗑️</button>
+                          <button class="btn btn-sm" v-can="'tiempo_editar_manual'" @click="guardarTiempo(t, a.id)" title="Guardar">💾</button>
+                          <button class="btn btn-danger btn-sm" v-can="'tiempo_editar_manual'" @click="eliminarTiempo(t.id)" title="Eliminar">🗑️</button>
                         </div>
                         <div v-for="t in (nuevosTiempos[a.id] || [])" :key="t.tempId" class="tiempo-row">
                           <input type="datetime-local" :value="toLocalInput(t.inicio)" @change="t.inicio = fromLocalInput($event.target.value)">
                           <input type="datetime-local" :value="toLocalInput(t.fin)" @change="t.fin = fromLocalInput($event.target.value)">
-                          <button class="btn btn-sm" @click="guardarTiempo(t, a.id)" title="Guardar">💾</button>
-                          <button class="btn btn-danger btn-sm" @click="quitarNuevo(a.id, t.tempId)" title="Quitar">🗑️</button>
+                          <button class="btn btn-sm" v-can="'tiempo_editar_manual'" @click="guardarTiempo(t, a.id)" title="Guardar">💾</button>
+                          <button class="btn btn-danger btn-sm" v-can="'tiempo_editar_manual'" @click="quitarNuevo(a.id, t.tempId)" title="Quitar">🗑️</button>
                         </div>
                       </template>
                       <p v-else class="empty-state">Sin registros de tiempo.</p>
-                      <button class="btn btn-sm" @click="agregarTiempo(a.id)">➕ Agregar registro</button>
+                      <button class="btn btn-sm" v-can="'tiempo_editar_manual'" @click="agregarTiempo(a.id)">➕ Agregar registro</button>
                     </td>
                   </tr>
                 </template>

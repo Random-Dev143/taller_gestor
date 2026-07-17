@@ -8,11 +8,15 @@
     <div v-if="activeTab === 'jefe-ots' || activeTab === 'jefe-ots-finalizadas'" class="card">
       <div class="header-row">
         <h2>{{ activeTab === 'jefe-ots' ? 'Gestión de OTs en Taller' : 'OTs Finalizadas' }}</h2>
+        <label v-if="activeTab === 'jefe-ots-finalizadas'" class="check-facturacion">
+          <input type="checkbox" v-model="soloFaltaFacturar" @change="onFiltroFacturacionChange" />
+          Solo falta facturar
+        </label>
         <input type="text" v-model="busqueda" placeholder="🔍 Buscar por patente, OT o cliente..." class="form-control search-input" @input="onBuscar" />
-        <button class="btn btn-outline btn-sm" @click="abrirAsignacion('0000')" title="Asignar limpieza, capacitaciones, etc.">
+        <button class="btn btn-outline btn-sm" v-can="'tarea_gestionar_todas'" @click="abrirAsignacion('0000')" title="Asignar limpieza, capacitaciones, etc.">
         🧹 Tarea Interna
       </button>
-      <button class="btn btn-secondary btn-sm" @click="abrirDetalle('0000')" title="Corregir tiempos de tareas internas">
+      <button class="btn btn-secondary btn-sm" v-can="'tiempo_editar_manual'" @click="abrirDetalle('0000')" title="Corregir tiempos de tareas internas">
             ⏱️ Gestionar Tiempos
       </button>
         <button class="btn btn-secondary btn-sm" @click="cargarDatos">↻ Actualizar</button>
@@ -24,6 +28,9 @@
           :data="ots"
           :esJefe="true"
           :mecanicos="mecanicos"
+          :sort-by="sortBy"
+          :sort-dir="sortDir"
+          @sort-change="onSortChange"
           @open-assign-modal="abrirAsignacion"
           @update-status="actualizarEstado"
           @control-ot="controlarOT"
@@ -89,6 +96,13 @@ const total = ref(0)
 const LIMIT = 25
 let debounceTimer = null
 
+// Orden de columnas (a-z / z-a) y filtro "solo falta facturar", resueltos
+// en el backend para que se apliquen a todas las páginas, no solo a la
+// página cargada en el navegador.
+const sortBy = ref('')
+const sortDir = ref('desc')
+const soloFaltaFacturar = ref(false)
+
 const showModalDetalle = ref(false)
 const showModalEditar = ref(false)
 const showModalAsignar = ref(false)
@@ -117,6 +131,8 @@ const cargarDatos = async () => {
   try {
     const params = new URLSearchParams({ estado: estadoParaBackend(), page: page.value, limit: LIMIT })
     if (busqueda.value.trim()) params.set('busqueda', busqueda.value.trim())
+    if (sortBy.value) { params.set('sortBy', sortBy.value); params.set('sortDir', sortDir.value) }
+    if (activeTab.value === 'jefe-ots-finalizadas' && soloFaltaFacturar.value) params.set('facturacion', 'pendientes')
     const [resOts, legajos] = await Promise.all([
       fetchJSON(`/ordenes?${params.toString()}`),
       fetchJSON('/legajos')
@@ -147,9 +163,28 @@ watch(activeTab, (newTab) => {
   if (newTab === 'jefe-ots' || newTab === 'jefe-ots-finalizadas') {
     page.value = 1
     busqueda.value = ''
+    soloFaltaFacturar.value = false
     cargarDatos()
   }
 })
+
+// Click en un header ordenable: mismo campo -> invierte dirección (a-z / z-a),
+// campo distinto -> arranca en ascendente.
+const onSortChange = (campo) => {
+  if (sortBy.value === campo) {
+    sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    sortBy.value = campo
+    sortDir.value = 'asc'
+  }
+  page.value = 1
+  cargarDatos()
+}
+
+const onFiltroFacturacionChange = () => {
+  page.value = 1
+  cargarDatos()
+}
 
 const abrirAsignacion = (ot) => { otSeleccionada.value = ot; actividadAEditar.value = null; showModalAsignar.value = true; }
 const abrirDetalle = (ot) => { otSeleccionada.value = ot; showModalDetalle.value = true; }
@@ -226,4 +261,5 @@ onMounted(() => {
 .header-row h2 { margin: 0; margin-right: auto; }
 .search-input { max-width: 300px; }
 .jefe-pill { cursor: pointer; }
+.check-facturacion { display: flex; align-items: center; gap: 6px; font-size: 0.9rem; white-space: nowrap; }
 </style>
