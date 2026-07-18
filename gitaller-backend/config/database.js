@@ -112,6 +112,16 @@ async function migrarEstructura() {
             await run(`UPDATE ordenes SET monto_repuestos_garantia = monto_repuestos, monto_mano_obra_garantia = monto_mano_obra, monto_repuestos = 0, monto_mano_obra = 0 WHERE es_garantia = 1`);
         }
 
+        // Bonificaciones / Descuentos sobre facturación (con trazabilidad de autorización)
+        if (!ordenesColsActuales.includes('monto_descuento')) {
+            await run(`ALTER TABLE ordenes ADD COLUMN monto_descuento REAL DEFAULT 0`);
+            await run(`ALTER TABLE ordenes ADD COLUMN descuento_motivo TEXT DEFAULT ''`);
+            // 'ninguno' | 'pendiente' | 'autorizado' | 'rechazado'
+            await run(`ALTER TABLE ordenes ADD COLUMN descuento_estado TEXT DEFAULT 'ninguno'`);
+            await run(`ALTER TABLE ordenes ADD COLUMN descuento_autorizado_por TEXT`);
+            await run(`ALTER TABLE ordenes ADD COLUMN descuento_autorizado_en DATETIME`);
+        }
+
         await run(`UPDATE actividades SET estado = 'Asignada' WHERE estado = 'Pendiente'`);
         await run(`UPDATE actividades SET tiempo_real = 0 WHERE tiempo_real < 0`);
         await run(`UPDATE ordenes SET tiempo_empleado_horas = 0 WHERE tiempo_empleado_horas < 0`);
@@ -142,7 +152,7 @@ db.serialize(async () => {
     db.run(`CREATE TABLE IF NOT EXISTS legajos (legajo TEXT PRIMARY KEY, nombre TEXT NOT NULL, rol TEXT NOT NULL CHECK(rol IN ('asesor','jefe','mecanico')), firma_path TEXT)`);
     db.run(`CREATE TABLE IF NOT EXISTS clientes (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT NOT NULL UNIQUE, telefono TEXT DEFAULT '', correo TEXT DEFAULT '')`);
     db.run(`CREATE TABLE IF NOT EXISTS unidades (id INTEGER PRIMARY KEY AUTOINCREMENT, patente TEXT NOT NULL UNIQUE, cliente_id INTEGER, unidad TEXT NOT NULL, telefono TEXT DEFAULT '', correo TEXT DEFAULT '', contacto_nombre TEXT DEFAULT '', contacto_apellido TEXT DEFAULT '', FOREIGN KEY(cliente_id) REFERENCES clientes(id) ON DELETE RESTRICT ON UPDATE CASCADE)`);
-    db.run(`CREATE TABLE IF NOT EXISTS ordenes (ot TEXT PRIMARY KEY, patente TEXT NOT NULL, kilometraje TEXT DEFAULT '', asesor_legajo TEXT NOT NULL, fecha_apertura DATETIME NOT NULL, fecha_cierre DATETIME, es_garantia INTEGER NOT NULL DEFAULT 0, estado_actual TEXT NOT NULL DEFAULT 'En Espera' CHECK(estado_actual IN ('En Proceso','En Espera','Trabajos de Terceros','Espera de Repuestos','Finalizada')), tiempo_asignado_horas REAL DEFAULT 0, tiempo_empleado_horas REAL DEFAULT 0, tiempo_facturado_horas REAL DEFAULT 0, jefe_legajo TEXT, controlada INTEGER DEFAULT 0, es_no_iveco INTEGER DEFAULT 0, monto_repuestos REAL DEFAULT 0, monto_mano_obra REAL DEFAULT 0, monto_repuestos_garantia REAL DEFAULT 0, monto_mano_obra_garantia REAL DEFAULT 0, FOREIGN KEY(patente) REFERENCES unidades(patente) ON DELETE RESTRICT ON UPDATE CASCADE, FOREIGN KEY(asesor_legajo) REFERENCES legajos(legajo) ON DELETE RESTRICT ON UPDATE CASCADE, FOREIGN KEY(jefe_legajo) REFERENCES legajos(legajo) ON DELETE SET NULL ON UPDATE CASCADE)`);
+    db.run(`CREATE TABLE IF NOT EXISTS ordenes (ot TEXT PRIMARY KEY, patente TEXT NOT NULL, kilometraje TEXT DEFAULT '', asesor_legajo TEXT NOT NULL, fecha_apertura DATETIME NOT NULL, fecha_cierre DATETIME, es_garantia INTEGER NOT NULL DEFAULT 0, estado_actual TEXT NOT NULL DEFAULT 'En Espera' CHECK(estado_actual IN ('En Proceso','En Espera','Trabajos de Terceros','Espera de Repuestos','Finalizada')), tiempo_asignado_horas REAL DEFAULT 0, tiempo_empleado_horas REAL DEFAULT 0, tiempo_facturado_horas REAL DEFAULT 0, jefe_legajo TEXT, controlada INTEGER DEFAULT 0, es_no_iveco INTEGER DEFAULT 0, monto_repuestos REAL DEFAULT 0, monto_mano_obra REAL DEFAULT 0, monto_repuestos_garantia REAL DEFAULT 0, monto_mano_obra_garantia REAL DEFAULT 0, monto_descuento REAL DEFAULT 0, descuento_motivo TEXT DEFAULT '', descuento_estado TEXT DEFAULT 'ninguno' CHECK(descuento_estado IN ('ninguno','pendiente','autorizado','rechazado')), descuento_autorizado_por TEXT, descuento_autorizado_en DATETIME, FOREIGN KEY(patente) REFERENCES unidades(patente) ON DELETE RESTRICT ON UPDATE CASCADE, FOREIGN KEY(asesor_legajo) REFERENCES legajos(legajo) ON DELETE RESTRICT ON UPDATE CASCADE, FOREIGN KEY(jefe_legajo) REFERENCES legajos(legajo) ON DELETE SET NULL ON UPDATE CASCADE)`);
     db.run(`CREATE TABLE IF NOT EXISTS estados_historial (id INTEGER PRIMARY KEY AUTOINCREMENT, ot TEXT NOT NULL, estado TEXT NOT NULL, ts_desde DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, ts_hasta DATETIME, minutos REAL, FOREIGN KEY(ot) REFERENCES ordenes(ot) ON DELETE CASCADE ON UPDATE CASCADE)`);
     db.run(`CREATE TABLE IF NOT EXISTS asignaciones (id INTEGER PRIMARY KEY AUTOINCREMENT, ot TEXT NOT NULL, legajo_mecanico TEXT NOT NULL, fecha_asignacion DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(ot) REFERENCES ordenes(ot) ON DELETE CASCADE ON UPDATE CASCADE, FOREIGN KEY(legajo_mecanico) REFERENCES legajos(legajo) ON DELETE RESTRICT ON UPDATE CASCADE)`);
     db.run(`CREATE TABLE IF NOT EXISTS explicaciones (id INTEGER PRIMARY KEY AUTOINCREMENT, ot TEXT NOT NULL UNIQUE, causa TEXT, FOREIGN KEY(ot) REFERENCES ordenes(ot) ON DELETE CASCADE ON UPDATE CASCADE)`);
@@ -280,6 +290,7 @@ async function inicializarRolesYPermisos() {
         { clave: 'ot_editar', modulo: 'Órdenes de Trabajo', desc: 'Modificar la cabecera de la OT y montos.' },
         { clave: 'ot_cambiar_estado', modulo: 'Órdenes de Trabajo', desc: 'Forzar manualmente el estado de la orden.' },
         { clave: 'ot_controlar', modulo: 'Órdenes de Trabajo', desc: 'Ejecutar el Control de Calidad Final.' },
+        { clave: 'ot_autorizar_descuento', modulo: 'Órdenes de Trabajo', desc: 'Aprobar o rechazar bonificaciones/descuentos cargados sobre una OT.' },
         // Tareas y Tiempos
         { clave: 'tarea_ver_propias', modulo: 'Tareas Operativas', desc: 'Ver exclusivamente las tareas asignadas a uno mismo.' },
         { clave: 'tarea_operar', modulo: 'Tareas Operativas', desc: 'Iniciar, pausar y finalizar tareas.' },

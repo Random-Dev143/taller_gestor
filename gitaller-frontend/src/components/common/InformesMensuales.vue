@@ -44,6 +44,20 @@
           <DeltaBadge :valor="deltaOts" invertido />
         </div>
         <div class="stat-card"><strong>Ciclo Promedio</strong><br>{{ store.taller.ciclo_promedio }} días</div>
+        <div class="stat-card" style="border-left: 4px solid #b22234;">
+          <strong style="color: #b22234;">Pérdida por Bonificaciones</strong><br>
+          <span style="color: #b22234;">− {{ formatCurrency(store.financiero.resumen.total_descuentos) }}</span>
+          <div style="font-size: 0.75rem; color: #666; margin-top: 2px;">
+            {{ store.financiero.resumen.cantidad_descuentos || 0 }} OT{{ (store.financiero.resumen.cantidad_descuentos || 0) === 1 ? '' : 's' }} autorizada{{ (store.financiero.resumen.cantidad_descuentos || 0) === 1 ? '' : 's' }}
+          </div>
+        </div>
+        <div class="stat-card" v-if="store.financiero.resumen.total_descuentos_pendientes > 0" style="border-left: 4px solid #b8860b;">
+          <strong style="color: #b8860b;">Bonificaciones Pendientes de Autorizar</strong><br>
+          <span style="color: #b8860b;">{{ formatCurrency(store.financiero.resumen.total_descuentos_pendientes) }}</span>
+          <div style="font-size: 0.75rem; color: #666; margin-top: 2px;">
+            {{ store.financiero.resumen.cantidad_descuentos_pendientes }} OT{{ store.financiero.resumen.cantidad_descuentos_pendientes === 1 ? '' : 's' }} esperando aprobación del admin
+          </div>
+        </div>
       </div>
       <p class="chart-hint" v-if="store.financiero.resumen_anterior">
         Comparado contra el período equivalente inmediatamente anterior.

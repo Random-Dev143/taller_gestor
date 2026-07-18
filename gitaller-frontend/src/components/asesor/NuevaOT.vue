@@ -88,9 +88,34 @@
           </div>
         </template>
 
+        <div class="form-group" style="grid-column: span 2; background: #f5f7fa; padding: 10px; border-radius: 6px; border: 1px solid var(--border);">
+          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+            <input type="checkbox" v-model="tieneBonificacion" style="width: 18px; height: 18px;" />
+            <strong>Aplicar bonificación / descuento al cliente</strong>
+          </label>
+
+          <div v-if="tieneBonificacion" style="display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap;">
+            <div style="flex: 1; min-width: 140px;">
+              <label>Porcentaje (%)</label>
+              <input type="number" step="1" min="0" max="100" v-model.number="porcentajeDescuento" />
+            </div>
+            <div style="flex: 1; min-width: 140px;">
+              <label>Monto a descontar ($)</label>
+              <input type="text" :value="formatCurrency(montoDescuentoCalculado)" readonly style="background: #eef3f9;" />
+            </div>
+            <div style="flex: 2; min-width: 220px;">
+              <label>Motivo del descuento *</label>
+              <input type="text" v-model="descuentoMotivo" placeholder="Ej: reclamo, cliente frecuente, acuerdo comercial..." required />
+            </div>
+          </div>
+          <p v-if="tieneBonificacion" style="margin: 8px 0 0; font-size: 0.85rem; color: #666;">
+            El descuento queda <strong>pendiente de autorización</strong> del administrador y no se resta de la facturación de los informes hasta que sea aprobado.
+          </p>
+        </div>
+
         <div class="form-group" style="grid-column: span 2;">
-          <label>Total OT (Cliente + Garantía)</label>
-          <input type="text" :value="formatCurrency((form.monto_repuestos || 0) + (form.monto_mano_obra || 0) + (form.monto_repuestos_garantia || 0) + (form.monto_mano_obra_garantia || 0))" readonly style="background: #eef3f9; font-weight: bold; font-size: 1.1rem; color: #0056a7;" />
+          <label>Total OT (Cliente + Garantía{{ tieneBonificacion ? ' − Bonificación' : '' }})</label>
+          <input type="text" :value="formatCurrency((form.monto_repuestos || 0) + (form.monto_mano_obra || 0) + (form.monto_repuestos_garantia || 0) + (form.monto_mano_obra_garantia || 0) - (tieneBonificacion ? montoDescuentoCalculado : 0))" readonly style="background: #eef3f9; font-weight: bold; font-size: 1.1rem; color: #0056a7;" />
         </div>
       </div>
       <button type="submit" class="btn" :disabled="enviando">{{ enviando ? 'Creando...' : 'Crear OT' }}</button>
@@ -99,7 +124,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useApi } from '../../composables/useApi'
 import { useToast, errMsg } from '../../composables/useToast'
 
@@ -117,6 +142,13 @@ const formBase = {
 }
 
 const form = ref({ ...formBase })
+const tieneBonificacion = ref(false)
+const porcentajeDescuento = ref(0)
+const descuentoMotivo = ref('')
+const montoDescuentoCalculado = computed(() => {
+  const subtotal = (Number(form.value.monto_repuestos) || 0) + (Number(form.value.monto_mano_obra) || 0)
+  return Math.round(subtotal * ((Number(porcentajeDescuento.value) || 0) / 100) * 100) / 100
+})
 const enviando = ref(false)
 const clientesSugeridos = ref([])
 const unidadesCliente = ref([])
@@ -172,6 +204,11 @@ const seleccionarUnidad = (unidad) => {
 }
 
 const crearOT = async () => {
+  if (tieneBonificacion.value && !descuentoMotivo.value.trim()) {
+    toast.error('Indicá el motivo de la bonificación/descuento')
+    return
+  }
+
   enviando.value = true
   try {
     form.value.patente = normalizarPatente(form.value.patente)
@@ -183,9 +220,18 @@ const crearOT = async () => {
       form.value.monto_mano_obra_garantia = 0
     }
 
-    await fetchJSON('/ordenes', { method: 'POST', body: JSON.stringify(form.value) })
-    toast.success('OT creada correctamente')
+    const payload = {
+      ...form.value,
+      monto_descuento: tieneBonificacion.value ? montoDescuentoCalculado.value : 0,
+      descuento_motivo: tieneBonificacion.value ? descuentoMotivo.value.trim() : ''
+    }
+
+    await fetchJSON('/ordenes', { method: 'POST', body: JSON.stringify(payload) })
+    toast.success('OT creada correctamente' + (tieneBonificacion.value ? ' (bonificación pendiente de autorización)' : ''))
     form.value = { ...formBase }
+    tieneBonificacion.value = false
+    porcentajeDescuento.value = 0
+    descuentoMotivo.value = ''
     unidadesCliente.value = []
     emit('ot-creada')
   } catch (err) { toast.error('Error al crear la OT: ' + errMsg(err)) } 

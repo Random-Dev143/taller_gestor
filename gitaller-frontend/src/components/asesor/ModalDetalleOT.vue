@@ -23,7 +23,8 @@
           <p><strong>Hs Facturadas:</strong> {{ data.tiempo_facturado_horas }}</p>
           <p><strong>Total Repuestos:</strong> <span class="highlight">{{ formatCurrency(data.monto_repuestos) }}</span></p>
           <p><strong>Total Mano Obra:</strong> <span class="highlight">{{ formatCurrency(data.monto_mano_obra) }}</span></p>
-          <p><strong>Total General:</strong> <span class="highlight bold">{{ formatCurrency((data.monto_repuestos || 0) + (data.monto_mano_obra || 0)) }}</span></p>
+          <p v-if="data.monto_descuento > 0"><strong>Bonificación:</strong> <span class="highlight">− {{ formatCurrency(data.monto_descuento) }} ({{ data.descuento_estado }}{{ data.descuento_motivo ? ' — ' + data.descuento_motivo : '' }})</span></p>
+          <p><strong>Total General:</strong> <span class="highlight bold">{{ formatCurrency((data.monto_repuestos || 0) + (data.monto_mano_obra || 0) - (data.descuento_estado === 'autorizado' ? (data.monto_descuento || 0) : 0)) }}</span></p>
         </div>
 
         <hr v-if="data.ot !== '0000'" />

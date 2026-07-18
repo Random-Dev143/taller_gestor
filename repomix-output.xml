@@ -262,6 +262,16 @@ async function migrarEstructura() {
             await run(`UPDATE ordenes SET monto_repuestos_garantia = monto_repuestos, monto_mano_obra_garantia = monto_mano_obra, monto_repuestos = 0, monto_mano_obra = 0 WHERE es_garantia = 1`);
         }
 
+        // Bonificaciones / Descuentos sobre facturación (con trazabilidad de autorización)
+        if (!ordenesColsActuales.includes('monto_descuento')) {
+            await run(`ALTER TABLE ordenes ADD COLUMN monto_descuento REAL DEFAULT 0`);
+            await run(`ALTER TABLE ordenes ADD COLUMN descuento_motivo TEXT DEFAULT ''`);
+            // 'ninguno' | 'pendiente' | 'autorizado' | 'rechazado'
+            await run(`ALTER TABLE ordenes ADD COLUMN descuento_estado TEXT DEFAULT 'ninguno'`);
+            await run(`ALTER TABLE ordenes ADD COLUMN descuento_autorizado_por TEXT`);
+            await run(`ALTER TABLE ordenes ADD COLUMN descuento_autorizado_en DATETIME`);
+        }
+
         await run(`UPDATE actividades SET estado = 'Asignada' WHERE estado = 'Pendiente'`);
         await run(`UPDATE actividades SET tiempo_real = 0 WHERE tiempo_real < 0`);
         await run(`UPDATE ordenes SET tiempo_empleado_horas = 0 WHERE tiempo_empleado_horas < 0`);
@@ -292,7 +302,7 @@ db.serialize(async () => {
     db.run(`CREATE TABLE IF NOT EXISTS legajos (legajo TEXT PRIMARY KEY, nombre TEXT NOT NULL, rol TEXT NOT NULL CHECK(rol IN ('asesor','jefe','mecanico')), firma_path TEXT)`);
     db.run(`CREATE TABLE IF NOT EXISTS clientes (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT NOT NULL UNIQUE, telefono TEXT DEFAULT '', correo TEXT DEFAULT '')`);
     db.run(`CREATE TABLE IF NOT EXISTS unidades (id INTEGER PRIMARY KEY AUTOINCREMENT, patente TEXT NOT NULL UNIQUE, cliente_id INTEGER, unidad TEXT NOT NULL, telefono TEXT DEFAULT '', correo TEXT DEFAULT '', contacto_nombre TEXT DEFAULT '', contacto_apellido TEXT DEFAULT '', FOREIGN KEY(cliente_id) REFERENCES clientes(id) ON DELETE RESTRICT ON UPDATE CASCADE)`);
-    db.run(`CREATE TABLE IF NOT EXISTS ordenes (ot TEXT PRIMARY KEY, patente TEXT NOT NULL, kilometraje TEXT DEFAULT '', asesor_legajo TEXT NOT NULL, fecha_apertura DATETIME NOT NULL, fecha_cierre DATETIME, es_garantia INTEGER NOT NULL DEFAULT 0, estado_actual TEXT NOT NULL DEFAULT 'En Espera' CHECK(estado_actual IN ('En Proceso','En Espera','Trabajos de Terceros','Espera de Repuestos','Finalizada')), tiempo_asignado_horas REAL DEFAULT 0, tiempo_empleado_horas REAL DEFAULT 0, tiempo_facturado_horas REAL DEFAULT 0, jefe_legajo TEXT, controlada INTEGER DEFAULT 0, es_no_iveco INTEGER DEFAULT 0, monto_repuestos REAL DEFAULT 0, monto_mano_obra REAL DEFAULT 0, monto_repuestos_garantia REAL DEFAULT 0, monto_mano_obra_garantia REAL DEFAULT 0, FOREIGN KEY(patente) REFERENCES unidades(patente) ON DELETE RESTRICT ON UPDATE CASCADE, FOREIGN KEY(asesor_legajo) REFERENCES legajos(legajo) ON DELETE RESTRICT ON UPDATE CASCADE, FOREIGN KEY(jefe_legajo) REFERENCES legajos(legajo) ON DELETE SET NULL ON UPDATE CASCADE)`);
+    db.run(`CREATE TABLE IF NOT EXISTS ordenes (ot TEXT PRIMARY KEY, patente TEXT NOT NULL, kilometraje TEXT DEFAULT '', asesor_legajo TEXT NOT NULL, fecha_apertura DATETIME NOT NULL, fecha_cierre DATETIME, es_garantia INTEGER NOT NULL DEFAULT 0, estado_actual TEXT NOT NULL DEFAULT 'En Espera' CHECK(estado_actual IN ('En Proceso','En Espera','Trabajos de Terceros','Espera de Repuestos','Finalizada')), tiempo_asignado_horas REAL DEFAULT 0, tiempo_empleado_horas REAL DEFAULT 0, tiempo_facturado_horas REAL DEFAULT 0, jefe_legajo TEXT, controlada INTEGER DEFAULT 0, es_no_iveco INTEGER DEFAULT 0, monto_repuestos REAL DEFAULT 0, monto_mano_obra REAL DEFAULT 0, monto_repuestos_garantia REAL DEFAULT 0, monto_mano_obra_garantia REAL DEFAULT 0, monto_descuento REAL DEFAULT 0, descuento_motivo TEXT DEFAULT '', descuento_estado TEXT DEFAULT 'ninguno' CHECK(descuento_estado IN ('ninguno','pendiente','autorizado','rechazado')), descuento_autorizado_por TEXT, descuento_autorizado_en DATETIME, FOREIGN KEY(patente) REFERENCES unidades(patente) ON DELETE RESTRICT ON UPDATE CASCADE, FOREIGN KEY(asesor_legajo) REFERENCES legajos(legajo) ON DELETE RESTRICT ON UPDATE CASCADE, FOREIGN KEY(jefe_legajo) REFERENCES legajos(legajo) ON DELETE SET NULL ON UPDATE CASCADE)`);
     db.run(`CREATE TABLE IF NOT EXISTS estados_historial (id INTEGER PRIMARY KEY AUTOINCREMENT, ot TEXT NOT NULL, estado TEXT NOT NULL, ts_desde DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, ts_hasta DATETIME, minutos REAL, FOREIGN KEY(ot) REFERENCES ordenes(ot) ON DELETE CASCADE ON UPDATE CASCADE)`);
     db.run(`CREATE TABLE IF NOT EXISTS asignaciones (id INTEGER PRIMARY KEY AUTOINCREMENT, ot TEXT NOT NULL, legajo_mecanico TEXT NOT NULL, fecha_asignacion DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(ot) REFERENCES ordenes(ot) ON DELETE CASCADE ON UPDATE CASCADE, FOREIGN KEY(legajo_mecanico) REFERENCES legajos(legajo) ON DELETE RESTRICT ON UPDATE CASCADE)`);
     db.run(`CREATE TABLE IF NOT EXISTS explicaciones (id INTEGER PRIMARY KEY AUTOINCREMENT, ot TEXT NOT NULL UNIQUE, causa TEXT, FOREIGN KEY(ot) REFERENCES ordenes(ot) ON DELETE CASCADE ON UPDATE CASCADE)`);
@@ -430,6 +440,7 @@ async function inicializarRolesYPermisos() {
         { clave: 'ot_editar', modulo: 'Órdenes de Trabajo', desc: 'Modificar la cabecera de la OT y montos.' },
         { clave: 'ot_cambiar_estado', modulo: 'Órdenes de Trabajo', desc: 'Forzar manualmente el estado de la orden.' },
         { clave: 'ot_controlar', modulo: 'Órdenes de Trabajo', desc: 'Ejecutar el Control de Calidad Final.' },
+        { clave: 'ot_autorizar_descuento', modulo: 'Órdenes de Trabajo', desc: 'Aprobar o rechazar bonificaciones/descuentos cargados sobre una OT.' },
         // Tareas y Tiempos
         { clave: 'tarea_ver_propias', modulo: 'Tareas Operativas', desc: 'Ver exclusivamente las tareas asignadas a uno mismo.' },
         { clave: 'tarea_operar', modulo: 'Tareas Operativas', desc: 'Iniciar, pausar y finalizar tareas.' },
@@ -1127,7 +1138,9 @@ router.get('/', async (req, res) => {
         // Filtro de facturación: usa la misma expresión de montos que
         // OTTable.vue (tieneMontos) para que el criterio sea consistente
         // entre lo que se ve en la tabla y lo que filtra el backend.
-        const MONTOS_EXPR = `(COALESCE(o.monto_repuestos,0) + COALESCE(o.monto_mano_obra,0) + COALESCE(o.monto_repuestos_garantia,0) + COALESCE(o.monto_mano_obra_garantia,0))`;
+        // El descuento sólo impacta la facturación una vez AUTORIZADO por un admin;
+        // mientras esté "pendiente" no se resta, para no reducir facturación sin aprobación.
+        const MONTOS_EXPR = `(COALESCE(o.monto_repuestos,0) + COALESCE(o.monto_mano_obra,0) + COALESCE(o.monto_repuestos_garantia,0) + COALESCE(o.monto_mano_obra_garantia,0) - (CASE WHEN o.descuento_estado = 'autorizado' THEN COALESCE(o.monto_descuento,0) ELSE 0 END))`;
         if (req.query.facturacion === 'facturadas') where += ` AND ${MONTOS_EXPR} > 0`;
         else if (req.query.facturacion === 'pendientes') where += ` AND ${MONTOS_EXPR} = 0`;
 
@@ -1203,7 +1216,13 @@ router.get('/:ot', async (req, res) => {
 });
 
 router.post('/', async (req, res) => {
-    const { ot, cliente, patente, unidad, kilometraje, asesor_legajo, fecha_apertura, es_garantia, es_no_iveco, tiempo_asignado_horas, tiempo_facturado_horas, monto_repuestos, monto_mano_obra, monto_repuestos_garantia, monto_mano_obra_garantia } = req.body;
+    const { ot, cliente, patente, unidad, kilometraje, asesor_legajo, fecha_apertura, es_garantia, es_no_iveco, tiempo_asignado_horas, tiempo_facturado_horas, monto_repuestos, monto_mano_obra, monto_repuestos_garantia, monto_mano_obra_garantia, monto_descuento, descuento_motivo } = req.body;
+
+    const montoDescuentoSeguro = Number(monto_descuento) > 0 ? Number(monto_descuento) : 0;
+    if (montoDescuentoSeguro > 0 && !(descuento_motivo && descuento_motivo.trim())) {
+        return res.status(400).json({ error: 'Para cargar un descuento/bonificación es obligatorio indicar el motivo.' });
+    }
+
     try {
         await withTransaction(async () => {
             let cli = await get(`SELECT id FROM clientes WHERE nombre = ?`, [cliente.toUpperCase()]);
@@ -1220,10 +1239,11 @@ router.post('/', async (req, res) => {
             }
 
             const fechaAperturaSegura = fecha_apertura ? new Date(fecha_apertura).toISOString().replace('T', ' ').substring(0, 19) : null;
+            const descuentoEstado = montoDescuentoSeguro > 0 ? 'pendiente' : 'ninguno';
 
             await run(
-                `INSERT INTO ordenes (ot, patente, kilometraje, asesor_legajo, fecha_apertura, es_garantia, es_no_iveco, tiempo_asignado_horas, tiempo_facturado_horas, monto_repuestos, monto_mano_obra, monto_repuestos_garantia, monto_mano_obra_garantia) VALUES (?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP), ?, ?, ?, ?, ?, ?, ?, ?)`,
-                [ot, patente, kilometraje || '', asesor_legajo, fechaAperturaSegura, es_garantia ? 1 : 0, es_no_iveco ? 1 : 0, tiempo_asignado_horas || 0, tiempo_facturado_horas || 0, monto_repuestos || 0, monto_mano_obra || 0, monto_repuestos_garantia || 0, monto_mano_obra_garantia || 0]
+                `INSERT INTO ordenes (ot, patente, kilometraje, asesor_legajo, fecha_apertura, es_garantia, es_no_iveco, tiempo_asignado_horas, tiempo_facturado_horas, monto_repuestos, monto_mano_obra, monto_repuestos_garantia, monto_mano_obra_garantia, monto_descuento, descuento_motivo, descuento_estado) VALUES (?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [ot, patente, kilometraje || '', asesor_legajo, fechaAperturaSegura, es_garantia ? 1 : 0, es_no_iveco ? 1 : 0, tiempo_asignado_horas || 0, tiempo_facturado_horas || 0, monto_repuestos || 0, monto_mano_obra || 0, monto_repuestos_garantia || 0, monto_mano_obra_garantia || 0, montoDescuentoSeguro, (descuento_motivo || '').trim(), descuentoEstado]
             );
             await run(`INSERT INTO estados_historial (ot, estado, ts_desde) VALUES (?, 'En Espera', CURRENT_TIMESTAMP)`, [ot]);
         });
@@ -1232,7 +1252,14 @@ router.post('/', async (req, res) => {
 });
 
 router.put('/:ot', async (req, res) => {
-    const { cliente, patente, unidad, kilometraje, fecha_apertura, fecha_cierre, es_garantia, es_no_iveco, tiempo_asignado_horas, tiempo_facturado_horas, monto_repuestos, monto_mano_obra, monto_repuestos_garantia, monto_mano_obra_garantia } = req.body;
+    const { cliente, patente, unidad, kilometraje, fecha_apertura, fecha_cierre, es_garantia, es_no_iveco, tiempo_asignado_horas, tiempo_facturado_horas, monto_repuestos, monto_mano_obra, monto_repuestos_garantia, monto_mano_obra_garantia, monto_descuento, descuento_motivo } = req.body;
+
+    const seEnviaDescuento = monto_descuento !== undefined;
+    const montoDescuentoSeguro = seEnviaDescuento ? (Number(monto_descuento) > 0 ? Number(monto_descuento) : 0) : null;
+    if (seEnviaDescuento && montoDescuentoSeguro > 0 && !(descuento_motivo && descuento_motivo.trim())) {
+        return res.status(400).json({ error: 'Para cargar un descuento/bonificación es obligatorio indicar el motivo.' });
+    }
+
     try {
         await withTransaction(async () => {
             if (cliente && patente) {
@@ -1248,13 +1275,56 @@ router.put('/:ot', async (req, res) => {
                     await run(`INSERT INTO unidades (patente, cliente_id, unidad) VALUES (?, ?, ?)`, [patente, cli.id, unidad]);
                 }
             }
-            
+
+            // Si se está enviando un monto de descuento, comparamos contra el valor actual:
+            // si cambió (o es nuevo), el descuento vuelve a "pendiente" y se limpia la autorización
+            // previa, porque un descuento ya autorizado no puede modificarse sin volver a aprobarse.
+            let descuentoEstadoNuevo = null, limpiarAutorizacion = false;
+            if (seEnviaDescuento) {
+                const actual = await get(`SELECT monto_descuento FROM ordenes WHERE ot = ?`, [req.params.ot]);
+                const cambioMonto = !actual || Number(actual.monto_descuento || 0) !== montoDescuentoSeguro;
+                if (cambioMonto) {
+                    descuentoEstadoNuevo = montoDescuentoSeguro > 0 ? 'pendiente' : 'ninguno';
+                    limpiarAutorizacion = true;
+                }
+            }
+
             await run(
-                `UPDATE ordenes SET patente = COALESCE(?, patente), kilometraje = COALESCE(?, kilometraje), fecha_apertura = COALESCE(?, fecha_apertura), fecha_cierre = COALESCE(?, fecha_cierre), es_garantia = COALESCE(?, es_garantia), es_no_iveco = COALESCE(?, es_no_iveco), tiempo_asignado_horas = COALESCE(?, tiempo_asignado_horas), tiempo_facturado_horas = COALESCE(?, tiempo_facturado_horas), monto_repuestos = COALESCE(?, monto_repuestos), monto_mano_obra = COALESCE(?, monto_mano_obra), monto_repuestos_garantia = COALESCE(?, monto_repuestos_garantia), monto_mano_obra_garantia = COALESCE(?, monto_mano_obra_garantia) WHERE ot = ?`,
-                [patente, kilometraje, fecha_apertura, fecha_cierre, es_garantia !== undefined ? (es_garantia ? 1 : 0) : null, es_no_iveco !== undefined ? (es_no_iveco ? 1 : 0) : null, tiempo_asignado_horas, tiempo_facturado_horas, monto_repuestos, monto_mano_obra, monto_repuestos_garantia, monto_mano_obra_garantia, req.params.ot]
+                `UPDATE ordenes SET patente = COALESCE(?, patente), kilometraje = COALESCE(?, kilometraje), fecha_apertura = COALESCE(?, fecha_apertura), fecha_cierre = COALESCE(?, fecha_cierre), es_garantia = COALESCE(?, es_garantia), es_no_iveco = COALESCE(?, es_no_iveco), tiempo_asignado_horas = COALESCE(?, tiempo_asignado_horas), tiempo_facturado_horas = COALESCE(?, tiempo_facturado_horas), monto_repuestos = COALESCE(?, monto_repuestos), monto_mano_obra = COALESCE(?, monto_mano_obra), monto_repuestos_garantia = COALESCE(?, monto_repuestos_garantia), monto_mano_obra_garantia = COALESCE(?, monto_mano_obra_garantia), monto_descuento = COALESCE(?, monto_descuento), descuento_motivo = COALESCE(?, descuento_motivo), descuento_estado = COALESCE(?, descuento_estado), descuento_autorizado_por = CASE WHEN ? = 1 THEN NULL ELSE descuento_autorizado_por END, descuento_autorizado_en = CASE WHEN ? = 1 THEN NULL ELSE descuento_autorizado_en END WHERE ot = ?`,
+                [patente, kilometraje, fecha_apertura, fecha_cierre, es_garantia !== undefined ? (es_garantia ? 1 : 0) : null, es_no_iveco !== undefined ? (es_no_iveco ? 1 : 0) : null, tiempo_asignado_horas, tiempo_facturado_horas, monto_repuestos, monto_mano_obra, monto_repuestos_garantia, monto_mano_obra_garantia, seEnviaDescuento ? montoDescuentoSeguro : null, seEnviaDescuento ? (descuento_motivo || '').trim() : null, descuentoEstadoNuevo, limpiarAutorizacion ? 1 : 0, limpiarAutorizacion ? 1 : 0, req.params.ot]
             );
         });
         res.json({ status: 'OT actualizada' });
+    } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// Autorización de bonificación/descuento — solo usuarios con el permiso granular
+// 'ot_autorizar_descuento' (típicamente el administrador). El descuento sólo impacta
+// los informes de facturación una vez que queda en estado 'autorizado'.
+router.put('/:ot/descuento/autorizar', async (req, res) => {
+    const permisosUsuario = (req.usuario && req.usuario.permisos) || [];
+    if (!permisosUsuario.includes('ot_autorizar_descuento')) {
+        return res.status(403).json({ error: 'No tiene permiso para autorizar descuentos/bonificaciones.' });
+    }
+
+    const { aprobado } = req.body;
+    if (typeof aprobado !== 'boolean') {
+        return res.status(400).json({ error: 'Debe indicar si el descuento se aprueba o se rechaza.' });
+    }
+
+    try {
+        const orden = await get(`SELECT monto_descuento, descuento_estado FROM ordenes WHERE ot = ?`, [req.params.ot]);
+        if (!orden) return res.status(404).json({ error: 'OT no encontrada' });
+        if (!(Number(orden.monto_descuento) > 0)) {
+            return res.status(400).json({ error: 'Esta OT no tiene un descuento cargado para autorizar.' });
+        }
+
+        const autorizadorId = req.usuario.legajo || req.usuario.nombre || req.usuario.email;
+        await run(
+            `UPDATE ordenes SET descuento_estado = ?, descuento_autorizado_por = ?, descuento_autorizado_en = CURRENT_TIMESTAMP WHERE ot = ?`,
+            [aprobado ? 'autorizado' : 'rechazado', autorizadorId, req.params.ot]
+        );
+        res.json({ status: aprobado ? 'Descuento autorizado' : 'Descuento rechazado' });
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
@@ -1702,6 +1772,12 @@ const { calcularMinutosHabiles } = require('./tiempos.service');
 const { getFeriadosSet } = require('./feriados.service');
 
 // Informe financiero: criterio único en todo el bloque = OT Finalizada + fecha_cierre (fecha real de facturación)
+// Un descuento/bonificación sólo resta de la facturación una vez que un admin
+// lo autorizó (descuento_estado = 'autorizado'). Mientras esté pendiente o haya
+// sido rechazado, la facturación NO se ve afectada — pero sigue siendo visible
+// para la gerencia como "pendiente de autorización" en el resumen.
+const DESCUENTO_AUTORIZADO = `(CASE WHEN descuento_estado = 'autorizado' THEN COALESCE(monto_descuento,0) ELSE 0 END)`;
+
 async function getFinanciero(inicio, fin, inicioAnterior, finAnterior) {
     const queryResumen = `
         SELECT COUNT(*) AS total_ot,
@@ -1713,10 +1789,14 @@ async function getFinanciero(inicio, fin, inicioAnterior, finAnterior) {
                ROUND(SUM(tiempo_empleado_horas), 2) AS hs_empleadas,
                ROUND(SUM(monto_repuestos + monto_repuestos_garantia), 2) AS total_repuestos,
                ROUND(SUM(monto_mano_obra + monto_mano_obra_garantia), 2) AS total_mano_obra,
-               ROUND(SUM(monto_repuestos + monto_mano_obra + monto_repuestos_garantia + monto_mano_obra_garantia), 2) AS total_facturado,
-               ROUND(AVG(monto_repuestos + monto_mano_obra + monto_repuestos_garantia + monto_mano_obra_garantia), 2) AS facturacion_promedio,
+               ROUND(SUM(monto_repuestos + monto_mano_obra + monto_repuestos_garantia + monto_mano_obra_garantia - ${DESCUENTO_AUTORIZADO}), 2) AS total_facturado,
+               ROUND(AVG(monto_repuestos + monto_mano_obra + monto_repuestos_garantia + monto_mano_obra_garantia - ${DESCUENTO_AUTORIZADO}), 2) AS facturacion_promedio,
                ROUND(SUM(monto_repuestos_garantia + monto_mano_obra_garantia), 2) AS monto_garantia,
-               ROUND(SUM(monto_repuestos + monto_mano_obra), 2) AS monto_facturable
+               ROUND(SUM(monto_repuestos + monto_mano_obra), 2) AS monto_facturable,
+               ROUND(SUM(${DESCUENTO_AUTORIZADO}), 2) AS total_descuentos,
+               SUM(CASE WHEN descuento_estado = 'autorizado' THEN 1 ELSE 0 END) AS cantidad_descuentos,
+               ROUND(SUM(CASE WHEN descuento_estado = 'pendiente' THEN COALESCE(monto_descuento,0) ELSE 0 END), 2) AS total_descuentos_pendientes,
+               SUM(CASE WHEN descuento_estado = 'pendiente' THEN 1 ELSE 0 END) AS cantidad_descuentos_pendientes
         FROM ordenes WHERE estado_actual = 'Finalizada' AND fecha_cierre IS NOT NULL AND fecha_cierre >= ? AND fecha_cierre < ?
     `;
     const resumen = await get(queryResumen, [inicio, fin]);
@@ -1729,20 +1809,20 @@ async function getFinanciero(inicio, fin, inicioAnterior, finAnterior) {
     `, [inicio, fin]);
 
     const facturacion_por_marca = await all(`
-        SELECT marca, COUNT(*) AS cantidad_ot, ROUND(SUM(monto_repuestos + monto_mano_obra + monto_repuestos_garantia + monto_mano_obra_garantia), 2) AS facturacion_total
+        SELECT marca, COUNT(*) AS cantidad_ot, ROUND(SUM(monto_repuestos + monto_mano_obra + monto_repuestos_garantia + monto_mano_obra_garantia - ${DESCUENTO_AUTORIZADO}), 2) AS facturacion_total
         FROM ordenes WHERE estado_actual = 'Finalizada' AND fecha_cierre IS NOT NULL AND fecha_cierre >= ? AND fecha_cierre < ?
         GROUP BY marca ORDER BY facturacion_total DESC
     `, [inicio, fin]).catch(() => []);
 
     const rentabilidad_unidad = await all(`
-        SELECT u.unidad, COUNT(*) as cantidad, ROUND(SUM(o.monto_repuestos + o.monto_mano_obra + o.monto_repuestos_garantia + o.monto_mano_obra_garantia), 2) AS facturacion_total
+        SELECT u.unidad, COUNT(*) as cantidad, ROUND(SUM(o.monto_repuestos + o.monto_mano_obra + o.monto_repuestos_garantia + o.monto_mano_obra_garantia - ${DESCUENTO_AUTORIZADO}), 2) AS facturacion_total
         FROM ordenes o JOIN unidades u ON o.patente = u.patente
         WHERE o.estado_actual = 'Finalizada' AND o.fecha_cierre IS NOT NULL AND o.fecha_cierre >= ? AND o.fecha_cierre < ?
         GROUP BY u.unidad ORDER BY facturacion_total DESC LIMIT 10
     `, [inicio, fin]);
 
     const top_clientes = await all(`
-        SELECT c.nombre AS cliente, COUNT(*) AS cantidad_ot, ROUND(SUM(o.monto_repuestos + o.monto_mano_obra + o.monto_repuestos_garantia + o.monto_mano_obra_garantia), 2) AS facturacion_total
+        SELECT c.nombre AS cliente, COUNT(*) AS cantidad_ot, ROUND(SUM(o.monto_repuestos + o.monto_mano_obra + o.monto_repuestos_garantia + o.monto_mano_obra_garantia - ${DESCUENTO_AUTORIZADO}), 2) AS facturacion_total
         FROM ordenes o JOIN unidades u ON o.patente = u.patente JOIN clientes c ON u.cliente_id = c.id
         WHERE o.estado_actual = 'Finalizada' AND o.fecha_cierre IS NOT NULL AND o.fecha_cierre >= ? AND o.fecha_cierre < ?
         GROUP BY c.id ORDER BY cantidad_ot DESC, facturacion_total DESC LIMIT 10
@@ -3521,7 +3601,8 @@ onMounted(cargarAgenda)
           <p><strong>Hs Facturadas:</strong> {{ data.tiempo_facturado_horas }}</p>
           <p><strong>Total Repuestos:</strong> <span class="highlight">{{ formatCurrency(data.monto_repuestos) }}</span></p>
           <p><strong>Total Mano Obra:</strong> <span class="highlight">{{ formatCurrency(data.monto_mano_obra) }}</span></p>
-          <p><strong>Total General:</strong> <span class="highlight bold">{{ formatCurrency((data.monto_repuestos || 0) + (data.monto_mano_obra || 0)) }}</span></p>
+          <p v-if="data.monto_descuento > 0"><strong>Bonificación:</strong> <span class="highlight">− {{ formatCurrency(data.monto_descuento) }} ({{ data.descuento_estado }}{{ data.descuento_motivo ? ' — ' + data.descuento_motivo : '' }})</span></p>
+          <p><strong>Total General:</strong> <span class="highlight bold">{{ formatCurrency((data.monto_repuestos || 0) + (data.monto_mano_obra || 0) - (data.descuento_estado === 'autorizado' ? (data.monto_descuento || 0) : 0)) }}</span></p>
         </div>
 
         <hr v-if="data.ot !== '0000'" />
@@ -3801,9 +3882,44 @@ th { background: #f8fafc; }
             </div>
           </template>
 
+          <div class="form-group" style="grid-column: span 2; background: #f5f7fa; padding: 10px; border-radius: 6px; border: 1px solid var(--border);">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+              <input type="checkbox" v-model="tieneBonificacion" style="width: 18px; height: 18px;" />
+              <strong>Aplicar bonificación / descuento al cliente</strong>
+            </label>
+
+            <div v-if="tieneBonificacion" style="display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap;">
+              <div style="flex: 1; min-width: 140px;">
+                <label>Porcentaje (%)</label>
+                <input type="number" step="1" min="0" max="100" v-model.number="porcentajeDescuento" />
+              </div>
+              <div style="flex: 1; min-width: 140px;">
+                <label>Monto a descontar ($)</label>
+                <input type="text" :value="formatCurrency(montoDescuentoCalculado)" readonly style="background: #eef3f9;" />
+              </div>
+              <div style="flex: 2; min-width: 220px;">
+                <label>Motivo del descuento *</label>
+                <input type="text" v-model="descuentoMotivo" placeholder="Ej: reclamo, cliente frecuente, acuerdo comercial..." required />
+              </div>
+            </div>
+
+            <div v-if="tieneBonificacion" style="margin-top: 10px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+              <span class="badge-descuento" :class="'estado-' + descuentoEstadoOriginal">{{ etiquetaEstadoDescuento }}</span>
+              <span v-if="descuentoAutorizadoPor" style="font-size: 0.85rem; color: #666;">por {{ descuentoAutorizadoPor }}</span>
+
+              <template v-if="puedeAutorizarDescuento && descuentoEstadoOriginal === 'pendiente'">
+                <button type="button" class="btn btn-success" style="padding: 4px 10px; font-size: 0.85rem;" :disabled="autorizando" @click="autorizarDescuento(true)">Aprobar</button>
+                <button type="button" class="btn btn-danger" style="padding: 4px 10px; font-size: 0.85rem;" :disabled="autorizando" @click="autorizarDescuento(false)">Rechazar</button>
+              </template>
+            </div>
+            <p v-if="tieneBonificacion && descuentoEstadoOriginal !== 'autorizado'" style="margin: 8px 0 0; font-size: 0.85rem; color: #666;">
+              Este descuento no se resta de la facturación de los informes hasta que un administrador lo autorice.
+            </p>
+          </div>
+
           <div class="form-group" style="grid-column: span 2;">
-            <label>Total OT (Cliente + Garantía)</label>
-            <input type="text" :value="formatCurrency((form.monto_repuestos || 0) + (form.monto_mano_obra || 0) + (form.monto_repuestos_garantia || 0) + (form.monto_mano_obra_garantia || 0))" readonly style="background: #eef3f9; font-weight: bold; font-size: 1.1rem; color: #0056a7;" />
+            <label>Total OT (Cliente + Garantía{{ tieneBonificacion ? ' − Bonificación' : '' }})</label>
+            <input type="text" :value="formatCurrency((form.monto_repuestos || 0) + (form.monto_mano_obra || 0) + (form.monto_repuestos_garantia || 0) + (form.monto_mano_obra_garantia || 0) - (tieneBonificacion ? montoDescuentoCalculado : 0))" readonly style="background: #eef3f9; font-weight: bold; font-size: 1.1rem; color: #0056a7;" />
           </div>
         </div>
         <button type="submit" class="btn btn-success mt-15 w-100" :disabled="guardando">
@@ -3815,17 +3931,20 @@ th { background: #f8fafc; }
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useApi } from '../../composables/useApi'
 import { useToast, errMsg } from '../../composables/useToast'
+import { useAuthStore } from '../../stores/useAuthStore'
 
 const props = defineProps({ otId: { type: String, required: true } })
 const emit = defineEmits(['close', 'updated'])
 const { fetchJSON } = useApi()
 const toast = useToast()
+const authStore = useAuthStore()
 
 const loading = ref(true)
 const guardando = ref(false)
+const autorizando = ref(false)
 const esFinalizada = ref(false)
 const form = ref({ 
   cliente: '', patente: '', unidad: '', kilometraje: '', 
@@ -3833,6 +3952,27 @@ const form = ref({
   tiempo_asignado_horas: 0, tiempo_empleado_horas: 0, tiempo_facturado_horas: 0, es_garantia: 0, es_no_iveco: 0,
   monto_repuestos: 0, monto_mano_obra: 0, monto_repuestos_garantia: 0, monto_mano_obra_garantia: 0
 })
+
+const tieneBonificacion = ref(false)
+const porcentajeDescuento = ref(0)
+const descuentoMotivo = ref('')
+const descuentoEstadoOriginal = ref('ninguno') // ninguno | pendiente | autorizado | rechazado
+const descuentoAutorizadoPor = ref('')
+const montoDescuentoOriginal = ref(0)
+
+const puedeAutorizarDescuento = computed(() => (authStore.usuario?.permisos || []).includes('ot_autorizar_descuento'))
+
+const montoDescuentoCalculado = computed(() => {
+  const subtotal = (Number(form.value.monto_repuestos) || 0) + (Number(form.value.monto_mano_obra) || 0)
+  return Math.round(subtotal * ((Number(porcentajeDescuento.value) || 0) / 100) * 100) / 100
+})
+
+const etiquetaEstadoDescuento = computed(() => ({
+  ninguno: 'Sin autorizar',
+  pendiente: 'Pendiente de autorización',
+  autorizado: 'Autorizado',
+  rechazado: 'Rechazado'
+}[descuentoEstadoOriginal.value] || descuentoEstadoOriginal.value))
 
 const normalizarPatente = (pat) => pat.replace(/[^a-zA-Z0-9]/g, '').toUpperCase()
 const formatCurrency = (val) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(val || 0)
@@ -3865,11 +4005,26 @@ onMounted(async () => {
       monto_repuestos_garantia: parseNum(data.monto_repuestos_garantia),
       monto_mano_obra_garantia: parseNum(data.monto_mano_obra_garantia)
     }
+
+    const montoDescuento = parseNum(data.monto_descuento)
+    tieneBonificacion.value = montoDescuento > 0
+    montoDescuentoOriginal.value = montoDescuento
+    descuentoMotivo.value = data.descuento_motivo || ''
+    descuentoEstadoOriginal.value = data.descuento_estado || 'ninguno'
+    descuentoAutorizadoPor.value = data.descuento_autorizado_por || ''
+    // Reconstruimos el % aproximado a partir del monto guardado, solo para mostrarlo editable
+    const subtotalActual = form.value.monto_repuestos + form.value.monto_mano_obra
+    porcentajeDescuento.value = subtotalActual > 0 ? Math.round((montoDescuento / subtotalActual) * 10000) / 100 : 0
   } catch (err) { toast.error('Error cargando OT: ' + errMsg(err)) } 
   finally { loading.value = false }
 })
 
 const guardarCambios = async () => {
+  if (tieneBonificacion.value && !descuentoMotivo.value.trim()) {
+    toast.error('Indicá el motivo de la bonificación/descuento')
+    return
+  }
+
   guardando.value = true
   try {
     const payload = { 
@@ -3883,7 +4038,9 @@ const guardarCambios = async () => {
       monto_repuestos: parseNum(form.value.monto_repuestos),
       monto_mano_obra: parseNum(form.value.monto_mano_obra),
       monto_repuestos_garantia: form.value.es_garantia === 1 ? parseNum(form.value.monto_repuestos_garantia) : 0,
-      monto_mano_obra_garantia: form.value.es_garantia === 1 ? parseNum(form.value.monto_mano_obra_garantia) : 0
+      monto_mano_obra_garantia: form.value.es_garantia === 1 ? parseNum(form.value.monto_mano_obra_garantia) : 0,
+      monto_descuento: tieneBonificacion.value ? montoDescuentoCalculado.value : 0,
+      descuento_motivo: tieneBonificacion.value ? descuentoMotivo.value.trim() : ''
     }
     await fetchJSON(`/ordenes/${props.otId}`, { method: 'PUT', body: JSON.stringify(payload) })
     toast.success('OT actualizada correctamente')
@@ -3891,7 +4048,30 @@ const guardarCambios = async () => {
   } catch (err) { toast.error('Error al guardar: ' + errMsg(err)) } 
   finally { guardando.value = false }
 }
+
+const autorizarDescuento = async (aprobado) => {
+  autorizando.value = true
+  try {
+    await fetchJSON(`/ordenes/${props.otId}/descuento/autorizar`, { method: 'PUT', body: JSON.stringify({ aprobado }) })
+    descuentoEstadoOriginal.value = aprobado ? 'autorizado' : 'rechazado'
+    descuentoAutorizadoPor.value = authStore.usuario?.legajo || authStore.usuario?.nombre || ''
+    toast.success(aprobado ? 'Descuento autorizado' : 'Descuento rechazado')
+    emit('updated')
+  } catch (err) { toast.error('Error al autorizar el descuento: ' + errMsg(err)) }
+  finally { autorizando.value = false }
+}
 </script>
+
+<style scoped>
+.badge-descuento {
+  display: inline-block; padding: 2px 10px; border-radius: 12px;
+  font-size: 0.8rem; font-weight: 600;
+}
+.badge-descuento.estado-pendiente { background: #fff3cd; color: #856404; }
+.badge-descuento.estado-autorizado { background: #d4edda; color: #155724; }
+.badge-descuento.estado-rechazado { background: #f8d7da; color: #721c24; }
+.badge-descuento.estado-ninguno { background: #e2e3e5; color: #383d41; }
+</style>
 </file>
 
 <file path="gitaller-frontend/src/components/asesor/ModalHistorialCliente.vue">
@@ -4068,9 +4248,34 @@ onMounted(async () => {
           </div>
         </template>
 
+        <div class="form-group" style="grid-column: span 2; background: #f5f7fa; padding: 10px; border-radius: 6px; border: 1px solid var(--border);">
+          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+            <input type="checkbox" v-model="tieneBonificacion" style="width: 18px; height: 18px;" />
+            <strong>Aplicar bonificación / descuento al cliente</strong>
+          </label>
+
+          <div v-if="tieneBonificacion" style="display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap;">
+            <div style="flex: 1; min-width: 140px;">
+              <label>Porcentaje (%)</label>
+              <input type="number" step="1" min="0" max="100" v-model.number="porcentajeDescuento" />
+            </div>
+            <div style="flex: 1; min-width: 140px;">
+              <label>Monto a descontar ($)</label>
+              <input type="text" :value="formatCurrency(montoDescuentoCalculado)" readonly style="background: #eef3f9;" />
+            </div>
+            <div style="flex: 2; min-width: 220px;">
+              <label>Motivo del descuento *</label>
+              <input type="text" v-model="descuentoMotivo" placeholder="Ej: reclamo, cliente frecuente, acuerdo comercial..." required />
+            </div>
+          </div>
+          <p v-if="tieneBonificacion" style="margin: 8px 0 0; font-size: 0.85rem; color: #666;">
+            El descuento queda <strong>pendiente de autorización</strong> del administrador y no se resta de la facturación de los informes hasta que sea aprobado.
+          </p>
+        </div>
+
         <div class="form-group" style="grid-column: span 2;">
-          <label>Total OT (Cliente + Garantía)</label>
-          <input type="text" :value="formatCurrency((form.monto_repuestos || 0) + (form.monto_mano_obra || 0) + (form.monto_repuestos_garantia || 0) + (form.monto_mano_obra_garantia || 0))" readonly style="background: #eef3f9; font-weight: bold; font-size: 1.1rem; color: #0056a7;" />
+          <label>Total OT (Cliente + Garantía{{ tieneBonificacion ? ' − Bonificación' : '' }})</label>
+          <input type="text" :value="formatCurrency((form.monto_repuestos || 0) + (form.monto_mano_obra || 0) + (form.monto_repuestos_garantia || 0) + (form.monto_mano_obra_garantia || 0) - (tieneBonificacion ? montoDescuentoCalculado : 0))" readonly style="background: #eef3f9; font-weight: bold; font-size: 1.1rem; color: #0056a7;" />
         </div>
       </div>
       <button type="submit" class="btn" :disabled="enviando">{{ enviando ? 'Creando...' : 'Crear OT' }}</button>
@@ -4079,7 +4284,7 @@ onMounted(async () => {
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useApi } from '../../composables/useApi'
 import { useToast, errMsg } from '../../composables/useToast'
 
@@ -4097,6 +4302,13 @@ const formBase = {
 }
 
 const form = ref({ ...formBase })
+const tieneBonificacion = ref(false)
+const porcentajeDescuento = ref(0)
+const descuentoMotivo = ref('')
+const montoDescuentoCalculado = computed(() => {
+  const subtotal = (Number(form.value.monto_repuestos) || 0) + (Number(form.value.monto_mano_obra) || 0)
+  return Math.round(subtotal * ((Number(porcentajeDescuento.value) || 0) / 100) * 100) / 100
+})
 const enviando = ref(false)
 const clientesSugeridos = ref([])
 const unidadesCliente = ref([])
@@ -4152,6 +4364,11 @@ const seleccionarUnidad = (unidad) => {
 }
 
 const crearOT = async () => {
+  if (tieneBonificacion.value && !descuentoMotivo.value.trim()) {
+    toast.error('Indicá el motivo de la bonificación/descuento')
+    return
+  }
+
   enviando.value = true
   try {
     form.value.patente = normalizarPatente(form.value.patente)
@@ -4163,9 +4380,18 @@ const crearOT = async () => {
       form.value.monto_mano_obra_garantia = 0
     }
 
-    await fetchJSON('/ordenes', { method: 'POST', body: JSON.stringify(form.value) })
-    toast.success('OT creada correctamente')
+    const payload = {
+      ...form.value,
+      monto_descuento: tieneBonificacion.value ? montoDescuentoCalculado.value : 0,
+      descuento_motivo: tieneBonificacion.value ? descuentoMotivo.value.trim() : ''
+    }
+
+    await fetchJSON('/ordenes', { method: 'POST', body: JSON.stringify(payload) })
+    toast.success('OT creada correctamente' + (tieneBonificacion.value ? ' (bonificación pendiente de autorización)' : ''))
     form.value = { ...formBase }
+    tieneBonificacion.value = false
+    porcentajeDescuento.value = 0
+    descuentoMotivo.value = ''
     unidadesCliente.value = []
     emit('ot-creada')
   } catch (err) { toast.error('Error al crear la OT: ' + errMsg(err)) } 
@@ -4285,6 +4511,20 @@ const claseColor = computed(() => {
           <DeltaBadge :valor="deltaOts" invertido />
         </div>
         <div class="stat-card"><strong>Ciclo Promedio</strong><br>{{ store.taller.ciclo_promedio }} días</div>
+        <div class="stat-card" style="border-left: 4px solid #b22234;">
+          <strong style="color: #b22234;">Pérdida por Bonificaciones</strong><br>
+          <span style="color: #b22234;">− {{ formatCurrency(store.financiero.resumen.total_descuentos) }}</span>
+          <div style="font-size: 0.75rem; color: #666; margin-top: 2px;">
+            {{ store.financiero.resumen.cantidad_descuentos || 0 }} OT{{ (store.financiero.resumen.cantidad_descuentos || 0) === 1 ? '' : 's' }} autorizada{{ (store.financiero.resumen.cantidad_descuentos || 0) === 1 ? '' : 's' }}
+          </div>
+        </div>
+        <div class="stat-card" v-if="store.financiero.resumen.total_descuentos_pendientes > 0" style="border-left: 4px solid #b8860b;">
+          <strong style="color: #b8860b;">Bonificaciones Pendientes de Autorizar</strong><br>
+          <span style="color: #b8860b;">{{ formatCurrency(store.financiero.resumen.total_descuentos_pendientes) }}</span>
+          <div style="font-size: 0.75rem; color: #666; margin-top: 2px;">
+            {{ store.financiero.resumen.cantidad_descuentos_pendientes }} OT{{ store.financiero.resumen.cantidad_descuentos_pendientes === 1 ? '' : 's' }} esperando aprobación del admin
+          </div>
+        </div>
       </div>
       <p class="chart-hint" v-if="store.financiero.resumen_anterior">
         Comparado contra el período equivalente inmediatamente anterior.

@@ -20,7 +20,9 @@ router.get('/', async (req, res) => {
         // Filtro de facturación: usa la misma expresión de montos que
         // OTTable.vue (tieneMontos) para que el criterio sea consistente
         // entre lo que se ve en la tabla y lo que filtra el backend.
-        const MONTOS_EXPR = `(COALESCE(o.monto_repuestos,0) + COALESCE(o.monto_mano_obra,0) + COALESCE(o.monto_repuestos_garantia,0) + COALESCE(o.monto_mano_obra_garantia,0))`;
+        // El descuento sólo impacta la facturación una vez AUTORIZADO por un admin;
+        // mientras esté "pendiente" no se resta, para no reducir facturación sin aprobación.
+        const MONTOS_EXPR = `(COALESCE(o.monto_repuestos,0) + COALESCE(o.monto_mano_obra,0) + COALESCE(o.monto_repuestos_garantia,0) + COALESCE(o.monto_mano_obra_garantia,0) - (CASE WHEN o.descuento_estado = 'autorizado' THEN COALESCE(o.monto_descuento,0) ELSE 0 END))`;
         if (req.query.facturacion === 'facturadas') where += ` AND ${MONTOS_EXPR} > 0`;
         else if (req.query.facturacion === 'pendientes') where += ` AND ${MONTOS_EXPR} = 0`;
 
@@ -96,7 +98,13 @@ router.get('/:ot', async (req, res) => {
 });
 
 router.post('/', async (req, res) => {
-    const { ot, cliente, patente, unidad, kilometraje, asesor_legajo, fecha_apertura, es_garantia, es_no_iveco, tiempo_asignado_horas, tiempo_facturado_horas, monto_repuestos, monto_mano_obra, monto_repuestos_garantia, monto_mano_obra_garantia } = req.body;
+    const { ot, cliente, patente, unidad, kilometraje, asesor_legajo, fecha_apertura, es_garantia, es_no_iveco, tiempo_asignado_horas, tiempo_facturado_horas, monto_repuestos, monto_mano_obra, monto_repuestos_garantia, monto_mano_obra_garantia, monto_descuento, descuento_motivo } = req.body;
+
+    const montoDescuentoSeguro = Number(monto_descuento) > 0 ? Number(monto_descuento) : 0;
+    if (montoDescuentoSeguro > 0 && !(descuento_motivo && descuento_motivo.trim())) {
+        return res.status(400).json({ error: 'Para cargar un descuento/bonificación es obligatorio indicar el motivo.' });
+    }
+
     try {
         await withTransaction(async () => {
             let cli = await get(`SELECT id FROM clientes WHERE nombre = ?`, [cliente.toUpperCase()]);
@@ -113,10 +121,11 @@ router.post('/', async (req, res) => {
             }
 
             const fechaAperturaSegura = fecha_apertura ? new Date(fecha_apertura).toISOString().replace('T', ' ').substring(0, 19) : null;
+            const descuentoEstado = montoDescuentoSeguro > 0 ? 'pendiente' : 'ninguno';
 
             await run(
-                `INSERT INTO ordenes (ot, patente, kilometraje, asesor_legajo, fecha_apertura, es_garantia, es_no_iveco, tiempo_asignado_horas, tiempo_facturado_horas, monto_repuestos, monto_mano_obra, monto_repuestos_garantia, monto_mano_obra_garantia) VALUES (?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP), ?, ?, ?, ?, ?, ?, ?, ?)`,
-                [ot, patente, kilometraje || '', asesor_legajo, fechaAperturaSegura, es_garantia ? 1 : 0, es_no_iveco ? 1 : 0, tiempo_asignado_horas || 0, tiempo_facturado_horas || 0, monto_repuestos || 0, monto_mano_obra || 0, monto_repuestos_garantia || 0, monto_mano_obra_garantia || 0]
+                `INSERT INTO ordenes (ot, patente, kilometraje, asesor_legajo, fecha_apertura, es_garantia, es_no_iveco, tiempo_asignado_horas, tiempo_facturado_horas, monto_repuestos, monto_mano_obra, monto_repuestos_garantia, monto_mano_obra_garantia, monto_descuento, descuento_motivo, descuento_estado) VALUES (?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [ot, patente, kilometraje || '', asesor_legajo, fechaAperturaSegura, es_garantia ? 1 : 0, es_no_iveco ? 1 : 0, tiempo_asignado_horas || 0, tiempo_facturado_horas || 0, monto_repuestos || 0, monto_mano_obra || 0, monto_repuestos_garantia || 0, monto_mano_obra_garantia || 0, montoDescuentoSeguro, (descuento_motivo || '').trim(), descuentoEstado]
             );
             await run(`INSERT INTO estados_historial (ot, estado, ts_desde) VALUES (?, 'En Espera', CURRENT_TIMESTAMP)`, [ot]);
         });
@@ -125,7 +134,14 @@ router.post('/', async (req, res) => {
 });
 
 router.put('/:ot', async (req, res) => {
-    const { cliente, patente, unidad, kilometraje, fecha_apertura, fecha_cierre, es_garantia, es_no_iveco, tiempo_asignado_horas, tiempo_facturado_horas, monto_repuestos, monto_mano_obra, monto_repuestos_garantia, monto_mano_obra_garantia } = req.body;
+    const { cliente, patente, unidad, kilometraje, fecha_apertura, fecha_cierre, es_garantia, es_no_iveco, tiempo_asignado_horas, tiempo_facturado_horas, monto_repuestos, monto_mano_obra, monto_repuestos_garantia, monto_mano_obra_garantia, monto_descuento, descuento_motivo } = req.body;
+
+    const seEnviaDescuento = monto_descuento !== undefined;
+    const montoDescuentoSeguro = seEnviaDescuento ? (Number(monto_descuento) > 0 ? Number(monto_descuento) : 0) : null;
+    if (seEnviaDescuento && montoDescuentoSeguro > 0 && !(descuento_motivo && descuento_motivo.trim())) {
+        return res.status(400).json({ error: 'Para cargar un descuento/bonificación es obligatorio indicar el motivo.' });
+    }
+
     try {
         await withTransaction(async () => {
             if (cliente && patente) {
@@ -141,13 +157,56 @@ router.put('/:ot', async (req, res) => {
                     await run(`INSERT INTO unidades (patente, cliente_id, unidad) VALUES (?, ?, ?)`, [patente, cli.id, unidad]);
                 }
             }
-            
+
+            // Si se está enviando un monto de descuento, comparamos contra el valor actual:
+            // si cambió (o es nuevo), el descuento vuelve a "pendiente" y se limpia la autorización
+            // previa, porque un descuento ya autorizado no puede modificarse sin volver a aprobarse.
+            let descuentoEstadoNuevo = null, limpiarAutorizacion = false;
+            if (seEnviaDescuento) {
+                const actual = await get(`SELECT monto_descuento FROM ordenes WHERE ot = ?`, [req.params.ot]);
+                const cambioMonto = !actual || Number(actual.monto_descuento || 0) !== montoDescuentoSeguro;
+                if (cambioMonto) {
+                    descuentoEstadoNuevo = montoDescuentoSeguro > 0 ? 'pendiente' : 'ninguno';
+                    limpiarAutorizacion = true;
+                }
+            }
+
             await run(
-                `UPDATE ordenes SET patente = COALESCE(?, patente), kilometraje = COALESCE(?, kilometraje), fecha_apertura = COALESCE(?, fecha_apertura), fecha_cierre = COALESCE(?, fecha_cierre), es_garantia = COALESCE(?, es_garantia), es_no_iveco = COALESCE(?, es_no_iveco), tiempo_asignado_horas = COALESCE(?, tiempo_asignado_horas), tiempo_facturado_horas = COALESCE(?, tiempo_facturado_horas), monto_repuestos = COALESCE(?, monto_repuestos), monto_mano_obra = COALESCE(?, monto_mano_obra), monto_repuestos_garantia = COALESCE(?, monto_repuestos_garantia), monto_mano_obra_garantia = COALESCE(?, monto_mano_obra_garantia) WHERE ot = ?`,
-                [patente, kilometraje, fecha_apertura, fecha_cierre, es_garantia !== undefined ? (es_garantia ? 1 : 0) : null, es_no_iveco !== undefined ? (es_no_iveco ? 1 : 0) : null, tiempo_asignado_horas, tiempo_facturado_horas, monto_repuestos, monto_mano_obra, monto_repuestos_garantia, monto_mano_obra_garantia, req.params.ot]
+                `UPDATE ordenes SET patente = COALESCE(?, patente), kilometraje = COALESCE(?, kilometraje), fecha_apertura = COALESCE(?, fecha_apertura), fecha_cierre = COALESCE(?, fecha_cierre), es_garantia = COALESCE(?, es_garantia), es_no_iveco = COALESCE(?, es_no_iveco), tiempo_asignado_horas = COALESCE(?, tiempo_asignado_horas), tiempo_facturado_horas = COALESCE(?, tiempo_facturado_horas), monto_repuestos = COALESCE(?, monto_repuestos), monto_mano_obra = COALESCE(?, monto_mano_obra), monto_repuestos_garantia = COALESCE(?, monto_repuestos_garantia), monto_mano_obra_garantia = COALESCE(?, monto_mano_obra_garantia), monto_descuento = COALESCE(?, monto_descuento), descuento_motivo = COALESCE(?, descuento_motivo), descuento_estado = COALESCE(?, descuento_estado), descuento_autorizado_por = CASE WHEN ? = 1 THEN NULL ELSE descuento_autorizado_por END, descuento_autorizado_en = CASE WHEN ? = 1 THEN NULL ELSE descuento_autorizado_en END WHERE ot = ?`,
+                [patente, kilometraje, fecha_apertura, fecha_cierre, es_garantia !== undefined ? (es_garantia ? 1 : 0) : null, es_no_iveco !== undefined ? (es_no_iveco ? 1 : 0) : null, tiempo_asignado_horas, tiempo_facturado_horas, monto_repuestos, monto_mano_obra, monto_repuestos_garantia, monto_mano_obra_garantia, seEnviaDescuento ? montoDescuentoSeguro : null, seEnviaDescuento ? (descuento_motivo || '').trim() : null, descuentoEstadoNuevo, limpiarAutorizacion ? 1 : 0, limpiarAutorizacion ? 1 : 0, req.params.ot]
             );
         });
         res.json({ status: 'OT actualizada' });
+    } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// Autorización de bonificación/descuento — solo usuarios con el permiso granular
+// 'ot_autorizar_descuento' (típicamente el administrador). El descuento sólo impacta
+// los informes de facturación una vez que queda en estado 'autorizado'.
+router.put('/:ot/descuento/autorizar', async (req, res) => {
+    const permisosUsuario = (req.usuario && req.usuario.permisos) || [];
+    if (!permisosUsuario.includes('ot_autorizar_descuento')) {
+        return res.status(403).json({ error: 'No tiene permiso para autorizar descuentos/bonificaciones.' });
+    }
+
+    const { aprobado } = req.body;
+    if (typeof aprobado !== 'boolean') {
+        return res.status(400).json({ error: 'Debe indicar si el descuento se aprueba o se rechaza.' });
+    }
+
+    try {
+        const orden = await get(`SELECT monto_descuento, descuento_estado FROM ordenes WHERE ot = ?`, [req.params.ot]);
+        if (!orden) return res.status(404).json({ error: 'OT no encontrada' });
+        if (!(Number(orden.monto_descuento) > 0)) {
+            return res.status(400).json({ error: 'Esta OT no tiene un descuento cargado para autorizar.' });
+        }
+
+        const autorizadorId = req.usuario.legajo || req.usuario.nombre || req.usuario.email;
+        await run(
+            `UPDATE ordenes SET descuento_estado = ?, descuento_autorizado_por = ?, descuento_autorizado_en = CURRENT_TIMESTAMP WHERE ot = ?`,
+            [aprobado ? 'autorizado' : 'rechazado', autorizadorId, req.params.ot]
+        );
+        res.json({ status: aprobado ? 'Descuento autorizado' : 'Descuento rechazado' });
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
