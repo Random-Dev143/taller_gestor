@@ -1,0 +1,20 @@
+MIGRACIÓN REQUERIDA — Nuevo estado 'Cerrada por Jefe'
+=======================================================
+
+Antes de desplegar estos archivos, hay que migrar la tabla `actividades`
+para que su columna `estado` acepte el nuevo valor 'Cerrada por Jefe'
+(SQLite no permite ALTER de una restricción CHECK existente).
+
+1. Hacé un backup de tu taller.db por las dudas.
+2. Parate en gitaller-backend/ y ejecutá esto en una sola línea:
+
+node sql.js "PRAGMA foreign_keys=OFF; CREATE TABLE actividades_nueva (id INTEGER PRIMARY KEY AUTOINCREMENT, ot TEXT NOT NULL, descripcion TEXT NOT NULL, tiempo_estimado REAL NOT NULL, tiempo_real REAL DEFAULT 0, estado TEXT DEFAULT 'Asignada' CHECK(estado IN ('Pendiente', 'Asignada', 'En Curso', 'Pausada', 'Finalizada', 'Cerrada por Jefe')), legajo_mecanico TEXT NOT NULL, auto_pausa INTEGER DEFAULT 0, fecha_inicio DATETIME, fecha_fin DATETIME, FOREIGN KEY(ot) REFERENCES ordenes(ot) ON DELETE CASCADE ON UPDATE CASCADE, FOREIGN KEY(legajo_mecanico) REFERENCES legajos(legajo) ON DELETE RESTRICT ON UPDATE CASCADE); INSERT INTO actividades_nueva SELECT * FROM actividades; DROP TABLE actividades; ALTER TABLE actividades_nueva RENAME TO actividades; CREATE INDEX idx_actividades_ot ON actividades(ot); CREATE INDEX idx_actividades_legajo ON actividades(legajo_mecanico); CREATE INDEX idx_actividades_estado ON actividades(estado); PRAGMA foreign_keys=ON;"
+
+3. Recién después de correr esto, copiá/sobrescribí los archivos del zip
+   sobre el repo y reiniciá el backend.
+
+Archivos incluidos en este parche:
+- gitaller-backend/config/database.js       (CHECK actualizado + sincronizarEstadoOT)
+- gitaller-backend/routes/ordenes.js         (PUT /:ot/explicacion + cierre forzado en /controlar)
+- gitaller-frontend/src/components/mecanico/ModalFinalizarTarea.vue
+- gitaller-frontend/src/views/MecanicoView.vue

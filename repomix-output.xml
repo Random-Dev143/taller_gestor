@@ -40,7 +40,7 @@ The content is organized as follows:
 </file_summary>
 
 <directory_structure>
-ivemar-backend/
+gitaller-backend/
   config/
     database.js
   middlewares/
@@ -67,7 +67,7 @@ ivemar-backend/
   package.json
   server.js
   sql.js
-ivemar-frontend/
+gitaller-frontend/
   .vscode/
     extensions.json
   public/
@@ -140,13 +140,14 @@ ivemar-frontend/
   README.md
   vite.config.js
 .gitignore
+MIGRACION_LEEME.txt
 README.md
 </directory_structure>
 
 <files>
 This section contains the contents of the repository's files.
 
-<file path="ivemar-backend/config/database.js">
+<file path="gitaller-backend/config/database.js">
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 
@@ -296,7 +297,7 @@ db.serialize(async () => {
     db.run(`CREATE TABLE IF NOT EXISTS asignaciones (id INTEGER PRIMARY KEY AUTOINCREMENT, ot TEXT NOT NULL, legajo_mecanico TEXT NOT NULL, fecha_asignacion DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(ot) REFERENCES ordenes(ot) ON DELETE CASCADE ON UPDATE CASCADE, FOREIGN KEY(legajo_mecanico) REFERENCES legajos(legajo) ON DELETE RESTRICT ON UPDATE CASCADE)`);
     db.run(`CREATE TABLE IF NOT EXISTS explicaciones (id INTEGER PRIMARY KEY AUTOINCREMENT, ot TEXT NOT NULL UNIQUE, causa TEXT, FOREIGN KEY(ot) REFERENCES ordenes(ot) ON DELETE CASCADE ON UPDATE CASCADE)`);
     db.run(`CREATE TABLE IF NOT EXISTS aportes (id INTEGER PRIMARY KEY AUTOINCREMENT, ot TEXT NOT NULL, legajo TEXT NOT NULL, actividades TEXT NOT NULL, horas REAL DEFAULT 0, fecha_aporte DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(ot) REFERENCES ordenes(ot) ON DELETE CASCADE ON UPDATE CASCADE, FOREIGN KEY(legajo) REFERENCES legajos(legajo) ON DELETE RESTRICT ON UPDATE CASCADE)`);
-    db.run(`CREATE TABLE IF NOT EXISTS actividades (id INTEGER PRIMARY KEY AUTOINCREMENT, ot TEXT NOT NULL, descripcion TEXT NOT NULL, tiempo_estimado REAL NOT NULL, tiempo_real REAL DEFAULT 0, estado TEXT DEFAULT 'Asignada' CHECK(estado IN ('Pendiente', 'Asignada', 'En Curso', 'Pausada', 'Finalizada')), legajo_mecanico TEXT NOT NULL, auto_pausa INTEGER DEFAULT 0, fecha_inicio DATETIME, fecha_fin DATETIME, FOREIGN KEY(ot) REFERENCES ordenes(ot) ON DELETE CASCADE ON UPDATE CASCADE, FOREIGN KEY(legajo_mecanico) REFERENCES legajos(legajo) ON DELETE RESTRICT ON UPDATE CASCADE)`);
+    db.run(`CREATE TABLE IF NOT EXISTS actividades (id INTEGER PRIMARY KEY AUTOINCREMENT, ot TEXT NOT NULL, descripcion TEXT NOT NULL, tiempo_estimado REAL NOT NULL, tiempo_real REAL DEFAULT 0, estado TEXT DEFAULT 'Asignada' CHECK(estado IN ('Pendiente', 'Asignada', 'En Curso', 'Pausada', 'Finalizada', 'Cerrada por Jefe')), legajo_mecanico TEXT NOT NULL, auto_pausa INTEGER DEFAULT 0, fecha_inicio DATETIME, fecha_fin DATETIME, FOREIGN KEY(ot) REFERENCES ordenes(ot) ON DELETE CASCADE ON UPDATE CASCADE, FOREIGN KEY(legajo_mecanico) REFERENCES legajos(legajo) ON DELETE RESTRICT ON UPDATE CASCADE)`);
     db.run(`CREATE TABLE IF NOT EXISTS tiempos_actividad (id INTEGER PRIMARY KEY AUTOINCREMENT, actividad_id INTEGER NOT NULL, inicio DATETIME NOT NULL, fin DATETIME, FOREIGN KEY(actividad_id) REFERENCES actividades(id) ON DELETE CASCADE ON UPDATE CASCADE)`);
     db.run(`CREATE TABLE IF NOT EXISTS excepciones_mecanicos (id INTEGER PRIMARY KEY AUTOINCREMENT, legajo TEXT NOT NULL, fecha DATE NOT NULL, motivo TEXT NOT NULL, horas_descontadas REAL DEFAULT 10, FOREIGN KEY(legajo) REFERENCES legajos(legajo) ON DELETE CASCADE ON UPDATE CASCADE)`);
     db.run(`CREATE TABLE IF NOT EXISTS feriados (fecha DATE PRIMARY KEY, descripcion TEXT DEFAULT '')`);
@@ -329,15 +330,32 @@ db.serialize(async () => {
         FOREIGN KEY(rol_id) REFERENCES roles(id) ON DELETE CASCADE ON UPDATE CASCADE,
         FOREIGN KEY(permiso_clave) REFERENCES permisos(clave) ON DELETE CASCADE ON UPDATE CASCADE
     )`);
-    // Actualizamos la tabla usuarios para que soporte el nuevo rol_id relacional
-    // (Ejecutamos un try/catch silencioso por si la columna ya existe en reinicios futuros)
+
+    db.run(`CREATE TABLE IF NOT EXISTS configuracion (
+        id INTEGER PRIMARY KEY CHECK (id = 1), 
+        nombre_taller TEXT DEFAULT 'GITaller', 
+        logo_path TEXT, 
+        hora_apertura INTEGER DEFAULT 8, 
+        hora_cierre INTEGER DEFAULT 18, 
+        hora_almuerzo_inicio INTEGER DEFAULT 13, 
+        hora_almuerzo_fin INTEGER DEFAULT 14, 
+        trabaja_corrido INTEGER DEFAULT 0
+    )`);
+    
     db.run(`ALTER TABLE usuarios ADD COLUMN rol_id TEXT REFERENCES roles(id) ON DELETE SET NULL`, (err) => { /* Ignorar si ya existe */ });
-    setTimeout(() => { migrarEstructura(); inicializarTallerInterno(); inicializarRolesYPermisos(); }, 500);
+    setTimeout(async () => { 
+        migrarEstructura(); 
+        inicializarTallerInterno(); 
+        inicializarRolesYPermisos(); 
+        // Inyectar configuración por defecto
+        const conf = await get(`SELECT id FROM configuracion WHERE id = 1`);
+        if (!conf) await run(`INSERT INTO configuracion (id) VALUES (1)`);
+    }, 500);
 });
 
 async function inicializarTallerInterno() {
     try {
-        // 1. Asegurar Cliente IVEMAR
+        // 1. Asegurar Cliente gitaller
         let cli = await get(`SELECT id FROM clientes WHERE nombre = 'IVEMAR'`);
         if (!cli) {
             await run(`INSERT INTO clientes (nombre) VALUES ('IVEMAR')`);
@@ -384,7 +402,7 @@ async function sincronizarEstadoOT(ot) {
 
     let estadoCalculado = orden.estado_actual;
     const enCurso = acts.filter(a => a.estado === 'En Curso').length;
-    const finalizadas = acts.filter(a => a.estado === 'Finalizada').length;
+    const finalizadas = acts.filter(a => a.estado === 'Finalizada' || a.estado === 'Cerrada por Jefe').length;
 
     if (enCurso > 0) {
         estadoCalculado = 'En Proceso';
@@ -464,7 +482,7 @@ async function inicializarRolesYPermisos() {
 module.exports = { db, run, all, get, cambiarEstado, sincronizarEstadoOT, recalcularTiempoEmpleado, DB_PATH, withTransaction };
 </file>
 
-<file path="ivemar-backend/middlewares/auth.js">
+<file path="gitaller-backend/middlewares/auth.js">
 const jwt = require('jsonwebtoken');
 const JWT_SECRET = process.env.JWT_SECRET;
 
@@ -507,7 +525,7 @@ const requireAuth = (permisosRequeridos = []) => {
 module.exports = { requireAuth, JWT_SECRET };
 </file>
 
-<file path="ivemar-backend/middlewares/upload.js">
+<file path="gitaller-backend/middlewares/upload.js">
 const multer = require('multer');
 const path = require('path');
 
@@ -538,7 +556,7 @@ const upload = multer({
 module.exports = upload;
 </file>
 
-<file path="ivemar-backend/routes/actividades.js">
+<file path="gitaller-backend/routes/actividades.js">
 const express = require('express');
 const router = express.Router();
 const { run, all, get, cambiarEstado, recalcularTiempoEmpleado, withTransaction, sincronizarEstadoOT } = require('../config/database');
@@ -745,7 +763,7 @@ router.put('/:id', async (req, res) => {
 module.exports = router;
 </file>
 
-<file path="ivemar-backend/routes/auth.js">
+<file path="gitaller-backend/routes/auth.js">
 // ivemar-backend/routes/auth.js
 const express = require('express');
 const router = express.Router();
@@ -888,7 +906,7 @@ router.post('/logout', (req, res) => {
 module.exports = router;
 </file>
 
-<file path="ivemar-backend/routes/feriados.js">
+<file path="gitaller-backend/routes/feriados.js">
 const express = require('express');
 const router = express.Router();
 const { all, run } = require('../config/database');
@@ -917,7 +935,7 @@ router.delete('/:fecha', async (req, res) => {
 module.exports = router;
 </file>
 
-<file path="ivemar-backend/routes/informes.js">
+<file path="gitaller-backend/routes/informes.js">
 const express = require('express');
 const router = express.Router();
 const { getFinanciero, getOperativo, getTaller } = require('../services/informes.service');
@@ -993,7 +1011,7 @@ router.get('/mensual', async (req, res) => {
 module.exports = router;
 </file>
 
-<file path="ivemar-backend/routes/legajos.js">
+<file path="gitaller-backend/routes/legajos.js">
 const express = require('express');
 const router = express.Router();
 const { run, all, get } = require('../config/database');
@@ -1086,7 +1104,7 @@ router.delete('/excepciones/:id', async (req, res) => {
 module.exports = router;
 </file>
 
-<file path="ivemar-backend/routes/ordenes.js">
+<file path="gitaller-backend/routes/ordenes.js">
 const express = require('express');
 const router = express.Router();
 const { run, all, get, cambiarEstado, recalcularTiempoEmpleado, withTransaction, sincronizarEstadoOT } = require('../config/database');
@@ -1255,12 +1273,31 @@ const cambiarEstadoHandler = async (req, res) => {
 router.put('/:ot/estado', cambiarEstadoHandler);
 router.post('/:ot/estado', cambiarEstadoHandler);
 
+// NUEVO: Endpoint colaborativo para la causa de la OT
+router.put('/:ot/explicacion', async (req, res) => {
+    const { causa } = req.body;
+    try {
+        await withTransaction(async () => {
+            const existe = await get(`SELECT id FROM explicaciones WHERE ot = ?`, [req.params.ot]);
+            if (existe) {
+                await run(`UPDATE explicaciones SET causa = ? WHERE ot = ?`, [causa, req.params.ot]);
+            } else {
+                await run(`INSERT INTO explicaciones (ot, causa) VALUES (?, ?)`, [req.params.ot, causa]);
+            }
+        });
+        res.json({ status: 'Explicación actualizada' });
+    } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
 router.post('/:ot/controlar', async (req, res) => {
     const { jefe_legajo } = req.body;
     try {
         await withTransaction(async () => {
             await run(`UPDATE ordenes SET controlada = 1, jefe_legajo = ?, fecha_cierre = CURRENT_TIMESTAMP WHERE ot = ?`, [jefe_legajo, req.params.ot]);
             await cambiarEstado(req.params.ot, 'Finalizada');
+
+            // NUEVO: Cerrar forzosamente actividades colgadas del mecánico
+            await run(`UPDATE actividades SET estado = 'Cerrada por Jefe' WHERE ot = ? AND estado NOT IN ('Finalizada', 'Cerrada por Jefe')`, [req.params.ot]);
         });
         res.json({ status: 'OT controlada y finalizada' });
     } catch (error) { res.status(500).json({ error: error.message }); }
@@ -1309,7 +1346,7 @@ router.put('/aportes/:id', async (req, res) => {
 module.exports = router;
 </file>
 
-<file path="ivemar-backend/routes/roles.js">
+<file path="gitaller-backend/routes/roles.js">
 const express = require('express');
 const router = express.Router();
 const { run, all, get, withTransaction } = require('../config/database');
@@ -1425,7 +1462,7 @@ router.delete('/:id', async (req, res) => {
 module.exports = router;
 </file>
 
-<file path="ivemar-backend/routes/sala.js">
+<file path="gitaller-backend/routes/sala.js">
 const express = require('express');
 const router = express.Router();
 const { all } = require('../config/database');
@@ -1451,7 +1488,7 @@ router.get('/', async (req, res) => {
 module.exports = router;
 </file>
 
-<file path="ivemar-backend/routes/unidades.js">
+<file path="gitaller-backend/routes/unidades.js">
 const express = require('express');
 const router = express.Router();
 const { run, all, get, withTransaction } = require('../config/database');
@@ -1461,6 +1498,21 @@ router.get('/clientes/buscar', async (req, res) => {
         const q = `%${(req.query.q || '').toUpperCase()}%`;
         const clientes = await all(`SELECT id, nombre, telefono, correo FROM clientes WHERE nombre LIKE ? LIMIT 8`, [q]);
         res.json(clientes);
+    } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// Vehículos ya registrados para un cliente. Se usa en NuevaOT.vue para
+// sugerir la unidad al elegir el cliente del autocompletado, en vez de
+// tener que tipear la patente de nuevo si ya la conocemos.
+router.get('/cliente/:clienteId', async (req, res) => {
+    try {
+        const unidades = await all(
+            `SELECT u.patente, u.unidad,
+                    (SELECT o.kilometraje FROM ordenes o WHERE o.patente = u.patente ORDER BY CAST(o.ot AS INTEGER) DESC LIMIT 1) AS ultimo_kilometraje
+             FROM unidades u WHERE u.cliente_id = ? ORDER BY u.id DESC`,
+            [req.params.clienteId]
+        );
+        res.json(unidades);
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
@@ -1527,7 +1579,7 @@ router.delete('/:id', async (req, res) => {
 module.exports = router;
 </file>
 
-<file path="ivemar-backend/routes/usuarios.js">
+<file path="gitaller-backend/routes/usuarios.js">
 // ivemar-backend/routes/usuarios.js
 const express = require('express');
 const router = express.Router();
@@ -1632,7 +1684,7 @@ router.delete('/:id', async (req, res) => {
 module.exports = router;
 </file>
 
-<file path="ivemar-backend/services/feriados.service.js">
+<file path="gitaller-backend/services/feriados.service.js">
 // ivemar-backend/services/feriados.service.js
 const { all } = require('../config/database');
 
@@ -1644,7 +1696,7 @@ async function getFeriadosSet() {
 module.exports = { getFeriadosSet };
 </file>
 
-<file path="ivemar-backend/services/informes.service.js">
+<file path="gitaller-backend/services/informes.service.js">
 const { all, get } = require('../config/database');
 const { calcularMinutosHabiles } = require('./tiempos.service');
 const { getFeriadosSet } = require('./feriados.service');
@@ -2075,7 +2127,7 @@ async function getTaller(inicio, fin, filtroCuellosStr) {
 module.exports = { getFinanciero, getOperativo, getTaller };
 </file>
 
-<file path="ivemar-backend/services/tiempos.service.js">
+<file path="gitaller-backend/services/tiempos.service.js">
 // ivemar-backend/services/tiempos.service.js
 
 // 1. Motor matemático base (Extraído de las rutas)
@@ -2138,7 +2190,7 @@ function calcularMinutosHabiles(startStr, endStr, estado, feriadosSet = new Set(
 module.exports = { calcularMinutosHabiles };
 </file>
 
-<file path="ivemar-backend/utils/cron.js">
+<file path="gitaller-backend/utils/cron.js">
 const fs = require('fs');
 const path = require('path');
 const { all, get, run, recalcularTiempoEmpleado, sincronizarEstadoOT, DB_PATH } = require('../config/database');
@@ -2258,7 +2310,7 @@ function iniciarCron() {
 module.exports = iniciarCron;
 </file>
 
-<file path="ivemar-backend/.gitignore">
+<file path="gitaller-backend/.gitignore">
 # Dependencias
 node_modules/
 
@@ -2292,7 +2344,7 @@ npm-debug.log*
 .DS_Store
 </file>
 
-<file path="ivemar-backend/package.json">
+<file path="gitaller-backend/package.json">
 {
   "name": "ivemar-backend",
   "version": "1.0.0",
@@ -2320,7 +2372,7 @@ npm-debug.log*
 }
 </file>
 
-<file path="ivemar-backend/server.js">
+<file path="gitaller-backend/server.js">
 'use strict';
 require('dotenv').config(); // 1. Cargar variables de entorno
 
@@ -2429,7 +2481,7 @@ app.listen(PORT, '0.0.0.0', () => {
 });
 </file>
 
-<file path="ivemar-backend/sql.js">
+<file path="gitaller-backend/sql.js">
 const sqlite3 = require('sqlite3').verbose();
 
 const db = new sqlite3.Database('./taller.db');
@@ -2450,13 +2502,13 @@ db.all(sql, [], (err, rows) => {
 });
 </file>
 
-<file path="ivemar-frontend/.vscode/extensions.json">
+<file path="gitaller-frontend/.vscode/extensions.json">
 {
   "recommendations": ["Vue.volar"]
 }
 </file>
 
-<file path="ivemar-frontend/public/favicon.svg">
+<file path="gitaller-frontend/public/favicon.svg">
 <?xml version="1.0" standalone="no"?>
 <!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 20010904//EN"
  "http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd">
@@ -2538,7 +2590,7 @@ c140 -138 239 -320 285 -526 8 -34 13 -118 13 -199 0 -113 -4 -157 -23 -229
 </svg>
 </file>
 
-<file path="ivemar-frontend/public/icons.svg">
+<file path="gitaller-frontend/public/icons.svg">
 <svg xmlns="http://www.w3.org/2000/svg">
   <symbol id="bluesky-icon" viewBox="0 0 16 17">
     <g clip-path="url(#bluesky-clip)"><path fill="#08060d" d="M7.75 7.735c-.693-1.348-2.58-3.86-4.334-5.097-1.68-1.187-2.32-.981-2.74-.79C.188 2.065.1 2.812.1 3.251s.241 3.602.398 4.13c.52 1.744 2.367 2.333 4.07 2.145-2.495.37-4.71 1.278-1.805 4.512 3.196 3.309 4.38-.71 4.987-2.746.608 2.036 1.307 5.91 4.93 2.746 2.72-2.746.747-4.143-1.747-4.512 1.702.189 3.55-.4 4.07-2.145.156-.528.397-3.691.397-4.13s-.088-1.186-.575-1.406c-.42-.19-1.06-.395-2.741.79-1.755 1.24-3.64 3.752-4.334 5.099"/></g>
@@ -2565,15 +2617,15 @@ c140 -138 239 -320 285 -526 8 -34 13 -118 13 -199 0 -113 -4 -157 -23 -229
 </svg>
 </file>
 
-<file path="ivemar-frontend/src/assets/vite.svg">
+<file path="gitaller-frontend/src/assets/vite.svg">
 <svg xmlns="http://www.w3.org/2000/svg" width="77" height="47" fill="none" aria-labelledby="vite-logo-title" viewBox="0 0 77 47"><title id="vite-logo-title">Vite</title><style>.parenthesis{fill:#000}@media (prefers-color-scheme:dark){.parenthesis{fill:#fff}}</style><path fill="#9135ff" d="M40.151 45.71c-.663.844-2.02.374-2.02-.699V34.708a2.26 2.26 0 0 0-2.262-2.262H24.493c-.92 0-1.457-1.04-.92-1.788l7.479-10.471c1.07-1.498 0-3.578-1.842-3.578H15.443c-.92 0-1.456-1.04-.92-1.788l9.696-13.576c.213-.297.556-.474.92-.474h28.894c.92 0 1.456 1.04.92 1.788l-7.48 10.472c-1.07 1.497 0 3.578 1.842 3.578h11.376c.944 0 1.474 1.087.89 1.83L40.153 45.712z"/><mask id="a" width="48" height="47" x="14" y="0" maskUnits="userSpaceOnUse" style="mask-type:alpha"><path fill="#000" d="M40.047 45.71c-.663.843-2.02.374-2.02-.699V34.708a2.26 2.26 0 0 0-2.262-2.262H24.389c-.92 0-1.457-1.04-.92-1.788l7.479-10.472c1.07-1.497 0-3.578-1.842-3.578H15.34c-.92 0-1.456-1.04-.92-1.788l9.696-13.575c.213-.297.556-.474.92-.474H53.93c.92 0 1.456 1.04.92 1.788L47.37 13.03c-1.07 1.498 0 3.578 1.842 3.578h11.376c.944 0 1.474 1.088.89 1.831L40.049 45.712z"/></mask><g mask="url(#a)"><g filter="url(#b)"><ellipse cx="5.508" cy="14.704" fill="#eee6ff" rx="5.508" ry="14.704" transform="rotate(269.814 20.96 11.29)scale(-1 1)"/></g><g filter="url(#c)"><ellipse cx="10.399" cy="29.851" fill="#eee6ff" rx="10.399" ry="29.851" transform="rotate(89.814 -16.902 -8.275)scale(1 -1)"/></g><g filter="url(#d)"><ellipse cx="5.508" cy="30.487" fill="#8900ff" rx="5.508" ry="30.487" transform="rotate(89.814 -19.197 -7.127)scale(1 -1)"/></g><g filter="url(#e)"><ellipse cx="5.508" cy="30.599" fill="#8900ff" rx="5.508" ry="30.599" transform="rotate(89.814 -25.928 4.177)scale(1 -1)"/></g><g filter="url(#f)"><ellipse cx="5.508" cy="30.599" fill="#8900ff" rx="5.508" ry="30.599" transform="rotate(89.814 -25.738 5.52)scale(1 -1)"/></g><g filter="url(#g)"><ellipse cx="14.072" cy="22.078" fill="#eee6ff" rx="14.072" ry="22.078" transform="rotate(93.35 31.245 55.578)scale(-1 1)"/></g><g filter="url(#h)"><ellipse cx="3.47" cy="21.501" fill="#8900ff" rx="3.47" ry="21.501" transform="rotate(89.009 35.419 55.202)scale(-1 1)"/></g><g filter="url(#i)"><ellipse cx="3.47" cy="21.501" fill="#8900ff" rx="3.47" ry="21.501" transform="rotate(89.009 35.419 55.202)scale(-1 1)"/></g><g filter="url(#j)"><ellipse cx="14.592" cy="9.743" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(39.51 14.592 9.743)"/></g><g filter="url(#k)"><ellipse cx="61.728" cy="-5.321" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 61.728 -5.32)"/></g><g filter="url(#l)"><ellipse cx="55.618" cy="7.104" fill="#00c2ff" rx="5.971" ry="9.665" transform="rotate(37.892 55.618 7.104)"/></g><g filter="url(#m)"><ellipse cx="12.326" cy="39.103" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 12.326 39.103)"/></g><g filter="url(#n)"><ellipse cx="12.326" cy="39.103" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 12.326 39.103)"/></g><g filter="url(#o)"><ellipse cx="49.857" cy="30.678" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 49.857 30.678)"/></g><g filter="url(#p)"><ellipse cx="52.623" cy="33.171" fill="#00c2ff" rx="5.971" ry="15.297" transform="rotate(37.892 52.623 33.17)"/></g></g><path d="M6.919 0c-9.198 13.166-9.252 33.575 0 46.789h6.215c-9.25-13.214-9.196-33.623 0-46.789zm62.424 0h-6.215c9.198 13.166 9.252 33.575 0 46.789h6.215c9.25-13.214 9.196-33.623 0-46.789" class="parenthesis"/><defs><filter id="b" width="60.045" height="41.654" x="-5.564" y="16.92" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="7.659"/></filter><filter id="c" width="90.34" height="51.437" x="-40.407" y="-6.762" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="7.659"/></filter><filter id="d" width="79.355" height="29.4" x="-35.435" y="2.801" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="e" width="79.579" height="29.4" x="-30.84" y="20.8" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="f" width="79.579" height="29.4" x="-29.307" y="21.949" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="g" width="74.749" height="58.852" x="29.961" y="-17.13" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="7.659"/></filter><filter id="h" width="61.377" height="25.362" x="37.754" y="3.055" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="i" width="61.377" height="25.362" x="37.754" y="3.055" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="j" width="56.045" height="63.649" x="-13.43" y="-22.082" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="k" width="54.814" height="64.646" x="34.321" y="-37.644" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="l" width="33.541" height="35.313" x="38.847" y="-10.552" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="m" width="54.814" height="64.646" x="-15.081" y="6.78" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="n" width="54.814" height="64.646" x="-15.081" y="6.78" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="o" width="54.814" height="64.646" x="22.45" y="-1.645" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="p" width="39.409" height="43.623" x="32.919" y="11.36" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter></defs></svg>
 </file>
 
-<file path="ivemar-frontend/src/assets/vue.svg">
+<file path="gitaller-frontend/src/assets/vue.svg">
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" aria-hidden="true" role="img" class="iconify iconify--logos" width="37.07" height="36" preserveAspectRatio="xMidYMid meet" viewBox="0 0 256 198"><path fill="#41B883" d="M204.8 0H256L128 220.8L0 0h97.92L128 51.2L157.44 0h47.36Z"></path><path fill="#41B883" d="m0 0l128 220.8L256 0h-51.2L128 132.48L50.56 0H0Z"></path><path fill="#35495E" d="M50.56 0L128 133.12L204.8 0h-47.36L128 51.2L97.92 0H50.56Z"></path></svg>
 </file>
 
-<file path="ivemar-frontend/src/components/asesor/AdminLegajos.vue">
+<file path="gitaller-frontend/src/components/asesor/AdminLegajos.vue">
 <template>
   <div class="card">
     <div class="header-row">
@@ -2738,7 +2790,7 @@ onMounted(cargarLegajos)
 </style>
 </file>
 
-<file path="ivemar-frontend/src/components/asesor/AdminRoles.vue">
+<file path="gitaller-frontend/src/components/asesor/AdminRoles.vue">
 <template>
   <div class="roles-container">
     
@@ -2997,7 +3049,7 @@ onMounted(cargarDatos)
 </style>
 </file>
 
-<file path="ivemar-frontend/src/components/asesor/AdminUsuarios.vue">
+<file path="gitaller-frontend/src/components/asesor/AdminUsuarios.vue">
 <template>
   <div class="card">
     <div class="header-row">
@@ -3199,7 +3251,7 @@ onMounted(cargarDatos)
 </style>
 </file>
 
-<file path="ivemar-frontend/src/components/asesor/AgendaClientes.vue">
+<file path="gitaller-frontend/src/components/asesor/AgendaClientes.vue">
 <template>
   <div class="card">
     <div class="header-row">
@@ -3443,7 +3495,7 @@ onMounted(cargarAgenda)
 </style>
 </file>
 
-<file path="ivemar-frontend/src/components/asesor/ModalDetalleOT.vue">
+<file path="gitaller-frontend/src/components/asesor/ModalDetalleOT.vue">
 <template>
   <div class="modal-overlay" @click.self="$emit('close')">
     <div class="modal-content modal-large">
@@ -3678,7 +3730,7 @@ th { background: #f8fafc; }
 </style>
 </file>
 
-<file path="ivemar-frontend/src/components/asesor/ModalEditarOT.vue">
+<file path="gitaller-frontend/src/components/asesor/ModalEditarOT.vue">
 <template>
   <div class="modal-overlay" @click.self="$emit('close')">
     <div class="modal-content">
@@ -3842,7 +3894,7 @@ const guardarCambios = async () => {
 </script>
 </file>
 
-<file path="ivemar-frontend/src/components/asesor/ModalHistorialCliente.vue">
+<file path="gitaller-frontend/src/components/asesor/ModalHistorialCliente.vue">
 <template>
   <div class="modal-overlay" @click.self="$emit('close')">
     <div class="modal-content modal-large">
@@ -3925,7 +3977,7 @@ onMounted(async () => {
 </style>
 </file>
 
-<file path="ivemar-frontend/src/components/asesor/NuevaOT.vue">
+<file path="gitaller-frontend/src/components/asesor/NuevaOT.vue">
 <template>
   <div class="card">
     <h2>Crear Nueva OT</h2>
@@ -3949,6 +4001,17 @@ onMounted(async () => {
               <strong>{{ c.nombre }}</strong> <span style="font-size: 0.8rem; color: #666;">{{ c.telefono || '' }}</span>
             </li>
           </ul>
+
+          <!-- Vehículos ya registrados a nombre del cliente elegido. Elegir uno
+               autocompleta patente/unidad; si el vehículo es nuevo, se ignora
+               y se completa el formulario a mano como siempre. -->
+          <div v-if="unidadesCliente.length > 0" class="unidades-cliente">
+            <span class="unidades-cliente-label">Vehículos de este cliente:</span>
+            <button v-for="u in unidadesCliente" :key="u.patente" type="button"
+                    class="btn-unidad-sugerida" @click="seleccionarUnidad(u)">
+              {{ u.patente }} · {{ u.unidad }}
+            </button>
+          </div>
         </div>
         <div class="form-group">
           <label>Unidad *</label>
@@ -4036,6 +4099,7 @@ const formBase = {
 const form = ref({ ...formBase })
 const enviando = ref(false)
 const clientesSugeridos = ref([])
+const unidadesCliente = ref([])
 let searchTimeout = null
 
 const normalizarPatente = (pat) => pat.replace(/[^a-zA-Z0-9]/g, '').toUpperCase()
@@ -4056,6 +4120,7 @@ const buscarPatente = async () => {
 
 const buscarClientes = () => {
   form.value.cliente = form.value.cliente.toUpperCase()
+  unidadesCliente.value = []
   clearTimeout(searchTimeout)
   if (form.value.cliente.length < 2) {
     clientesSugeridos.value = []
@@ -4068,9 +4133,22 @@ const buscarClientes = () => {
   }, 300)
 }
 
-const seleccionarCliente = (cliente) => {
+const seleccionarCliente = async (cliente) => {
   form.value.cliente = cliente.nombre
   clientesSugeridos.value = []
+  try {
+    unidadesCliente.value = await fetchJSON(`/unidades/cliente/${cliente.id}`)
+  } catch (e) {
+    unidadesCliente.value = []
+  }
+}
+
+const seleccionarUnidad = (unidad) => {
+  form.value.patente = unidad.patente
+  form.value.unidad = unidad.unidad
+  if (unidad.ultimo_kilometraje) form.value.kilometraje = unidad.ultimo_kilometraje
+  unidadesCliente.value = []
+  toast.info(`Vehículo ${unidad.patente} cargado`, 2000)
 }
 
 const crearOT = async () => {
@@ -4088,6 +4166,7 @@ const crearOT = async () => {
     await fetchJSON('/ordenes', { method: 'POST', body: JSON.stringify(form.value) })
     toast.success('OT creada correctamente')
     form.value = { ...formBase }
+    unidadesCliente.value = []
     emit('ot-creada')
   } catch (err) { toast.error('Error al crear la OT: ' + errMsg(err)) } 
   finally { enviando.value = false }
@@ -4103,10 +4182,18 @@ const crearOT = async () => {
 }
 .autocomplete-list li { padding: 8px 12px; cursor: pointer; border-bottom: 1px solid var(--border-soft); display: flex; justify-content: space-between;}
 .autocomplete-list li:hover { background: var(--primary-light); color: var(--primary); }
+
+.unidades-cliente { margin-top: 8px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.unidades-cliente-label { font-size: 0.78rem; color: var(--muted); width: 100%; }
+.btn-unidad-sugerida {
+  border: 1px solid var(--border); background: #eef3f9; color: #0056a7;
+  padding: 4px 10px; border-radius: 14px; font-size: 0.8rem; cursor: pointer;
+}
+.btn-unidad-sugerida:hover { background: var(--primary-light); }
 </style>
 </file>
 
-<file path="ivemar-frontend/src/components/common/DeltaBadge.vue">
+<file path="gitaller-frontend/src/components/common/DeltaBadge.vue">
 <template>
   <span v-if="valor !== null" :class="['delta-badge', claseColor]">
     {{ valor >= 0 ? '▲' : '▼' }} {{ Math.abs(valor).toFixed(1) }}%
@@ -4151,7 +4238,7 @@ const claseColor = computed(() => {
 </style>
 </file>
 
-<file path="ivemar-frontend/src/components/common/InformesMensuales.vue">
+<file path="gitaller-frontend/src/components/common/InformesMensuales.vue">
 <template>
   <div class="card" ref="rootRef">
     <div class="header-row">
@@ -4724,7 +4811,7 @@ th { background: #f8fafc; font-weight: 600; color: #1a2a3a; }
 </style>
 </file>
 
-<file path="ivemar-frontend/src/components/common/NavBar.vue">
+<file path="gitaller-frontend/src/components/common/NavBar.vue">
 <template>
   <div class="navbar" :style="customStyle">
     <!-- Botón de Cerrar sesión, ahora donde estaba el de Inicio -->
@@ -4882,7 +4969,7 @@ const handleLogout = async () => {
 </style>
 </file>
 
-<file path="ivemar-frontend/src/components/common/OTTable.vue">
+<file path="gitaller-frontend/src/components/common/OTTable.vue">
 <template>
   <div class="table-wrapper">
     <table class="ot-table">
@@ -5071,7 +5158,7 @@ const esEstancada = (ot) => ot.estado_actual !== 'Finalizada' && diasAbierta(ot)
 </style>
 </file>
 
-<file path="ivemar-frontend/src/components/common/PaginationBar.vue">
+<file path="gitaller-frontend/src/components/common/PaginationBar.vue">
 <template>
   <div class="pagination-bar" v-if="totalPages > 1 || total > 0">
     <span class="pagination-info">
@@ -5109,7 +5196,7 @@ defineEmits(['cambiar-pagina'])
 </style>
 </file>
 
-<file path="ivemar-frontend/src/components/common/SvgBarChart.vue">
+<file path="gitaller-frontend/src/components/common/SvgBarChart.vue">
 <template>
   <div class="svg-bar-chart">
     <svg viewBox="0 0 500 250" preserveAspectRatio="xMidYMid meet">
@@ -5140,7 +5227,7 @@ const truncate = (str) => str.length > 10 ? str.substring(0, 8) + '..' : str
 </style>
 </file>
 
-<file path="ivemar-frontend/src/components/common/SvgPieChart.vue">
+<file path="gitaller-frontend/src/components/common/SvgPieChart.vue">
 <template>
   <div class="svg-pie-chart">
     <svg viewBox="0 0 380 200" preserveAspectRatio="xMidYMid meet">
@@ -5206,7 +5293,7 @@ const truncate = (str) => str.length > 26 ? str.substring(0, 24) + '..' : str
 </style>
 </file>
 
-<file path="ivemar-frontend/src/components/common/ToastContainer.vue">
+<file path="gitaller-frontend/src/components/common/ToastContainer.vue">
 <template>
   <teleport to="body">
     <div class="toast-stack">
@@ -5268,7 +5355,7 @@ const icon = (type) => ({ success: '✅', error: '⚠️', info: 'ℹ️' }[type
 </style>
 </file>
 
-<file path="ivemar-frontend/src/components/informes/TableroOperativo.vue">
+<file path="gitaller-frontend/src/components/informes/TableroOperativo.vue">
 <template>
   <div class="im-group">
     <!-- CABECERA Y FILTROS -->
@@ -5634,7 +5721,7 @@ th { background: #f8fafc; font-weight: 600; color: #1a2a3a; text-transform: uppe
 </style>
 </file>
 
-<file path="ivemar-frontend/src/components/jefe/ControlFinalOT.vue">
+<file path="gitaller-frontend/src/components/jefe/ControlFinalOT.vue">
 <template>
   <div class="card">
     <h2>Control de Calidad Final</h2>
@@ -5671,7 +5758,7 @@ const finalizar = async () => {
 </script>
 </file>
 
-<file path="ivemar-frontend/src/components/jefe/ModalAsignar.vue">
+<file path="gitaller-frontend/src/components/jefe/ModalAsignar.vue">
 <template>
   <div class="modal-overlay" @click.self="$emit('close')">
     <div class="modal-content" style="max-width: 420px;">
@@ -5776,7 +5863,7 @@ const submitAsignacion = () => {
 </style>
 </file>
 
-<file path="ivemar-frontend/src/components/jefe/ModalAusencias.vue">
+<file path="gitaller-frontend/src/components/jefe/ModalAusencias.vue">
 <template>
   <div class="modal-overlay" @click.self="$emit('close')">
     <div class="modal-content" style="max-width: 500px;">
@@ -5894,7 +5981,7 @@ const guardar = async (d) => {
 </style>
 </file>
 
-<file path="ivemar-frontend/src/components/jefe/TableroRendimiento.vue">
+<file path="gitaller-frontend/src/components/jefe/TableroRendimiento.vue">
 <template>
   <div class="card">
     <div class="header-row">
@@ -5947,37 +6034,61 @@ onMounted(() => {
 </style>
 </file>
 
-<file path="ivemar-frontend/src/components/mecanico/ModalFinalizarTarea.vue">
+<file path="gitaller-frontend/src/components/mecanico/ModalFinalizarTarea.vue">
 <template>
   <div class="modal-overlay" @click.self="$emit('close')">
     <div class="modal-content">
       <button class="close-btn" @click="$emit('close')">&times;</button>
-      <h2>Finalizar Tarea</h2>
+      <h2>{{ modoInformar ? 'Informar Tarea' : 'Finalizar Tarea' }}</h2>
       
-      <form @submit.prevent="$emit('confirm', form)">
+      <div v-if="loading" class="loading-state"><div class="spinner"></div>Cargando datos...</div>
+      <form v-else @submit.prevent="$emit('confirm', form)">
         <div class="form-group mb-15">
-          <label>Causa del desperfecto *</label>
+          <label>Causa del desperfecto * <span style="color:var(--primary); font-weight:normal;">(Compartida en toda la OT)</span></label>
           <textarea v-model="form.causa" rows="3" class="form-control" required placeholder="Describa el origen del problema..."></textarea>
         </div>
         <div class="form-group mb-15">
-          <label>Reparación realizada *</label>
-          <textarea v-model="form.reparacion" rows="3" class="form-control" required placeholder="Describa el trabajo ejecutado..."></textarea>
+          <label>Reparación realizada * <span style="color:var(--primary); font-weight:normal;">(Tu aporte individual)</span></label>
+          <textarea v-model="form.reparacion" rows="3" class="form-control" required placeholder="Describa el trabajo que ejecutaste..."></textarea>
         </div>
-        <button type="submit" class="btn btn-success w-100 mt-10">Guardar y Finalizar</button>
+        <button type="submit" class="btn btn-success w-100 mt-10">Guardar y {{ modoInformar ? 'Enviar Informe' : 'Finalizar' }}</button>
       </form>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
+import { useApi } from '../../composables/useApi'
+
+const props = defineProps({ 
+  otId: { type: String, required: true }, 
+  modoInformar: { type: Boolean, default: false } 
+})
 const emit = defineEmits(['close', 'confirm'])
+const { fetchJSON } = useApi()
+
 const form = ref({ causa: '', reparacion: '' })
+const loading = ref(true)
+
+onMounted(async () => {
+  try {
+    const data = await fetchJSON(`/ordenes/${props.otId}/explicacion`)
+    if (data && data.explicacion && data.explicacion.causa) {
+      form.value.causa = data.explicacion.causa
+    }
+  } catch (e) {
+    console.error('Error cargando causa previa', e)
+  } finally {
+    loading.value = false
+  }
+})
 </script>
+
 <style scoped> .mb-15 { margin-bottom: 15px; } </style>
 </file>
 
-<file path="ivemar-frontend/src/components/mecanico/ModalPausarTarea.vue">
+<file path="gitaller-frontend/src/components/mecanico/ModalPausarTarea.vue">
 <template>
   <div class="modal-overlay" @click.self="$emit('close')">
     <div class="modal-content" style="max-width: 400px;">
@@ -6003,7 +6114,7 @@ const motivo = ref('En Espera')
 </script>
 </file>
 
-<file path="ivemar-frontend/src/components/HelloWorld.vue">
+<file path="gitaller-frontend/src/components/HelloWorld.vue">
 <script setup>
 import { ref } from 'vue'
 import viteLogo from '../assets/vite.svg'
@@ -6101,7 +6212,7 @@ const count = ref(0)
 </template>
 </file>
 
-<file path="ivemar-frontend/src/composables/useApi.js">
+<file path="gitaller-frontend/src/composables/useApi.js">
 export function useApi() {
     // El backend escucha en 0.0.0.0:5881, pensado para accederse desde
     // otros equipos en la red (mecánicos con tablet, TV de sala de espera).
@@ -6158,7 +6269,7 @@ export function useApi() {
 }
 </file>
 
-<file path="ivemar-frontend/src/composables/useChartConfig.js">
+<file path="gitaller-frontend/src/composables/useChartConfig.js">
 export function useChartConfig() {
   const formatCurrency = (val) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(val || 0)
 
@@ -6222,7 +6333,7 @@ export function useChartConfig() {
 }
 </file>
 
-<file path="ivemar-frontend/src/composables/useDashboardExporter.js">
+<file path="gitaller-frontend/src/composables/useDashboardExporter.js">
 import { useToast } from './useToast'
 
 /**
@@ -6348,7 +6459,7 @@ export function useDashboardExporter() {
 }
 </file>
 
-<file path="ivemar-frontend/src/composables/usePdfGenerator.js">
+<file path="gitaller-frontend/src/composables/usePdfGenerator.js">
 import { useApi } from './useApi'
 import { useToast, errMsg } from './useToast'
 
@@ -6520,7 +6631,7 @@ export function usePdfGenerator() {
 }
 </file>
 
-<file path="ivemar-frontend/src/composables/useToast.js">
+<file path="gitaller-frontend/src/composables/useToast.js">
 import { reactive } from 'vue'
 
 // Estado compartido a nivel de módulo: todos los componentes que llamen
@@ -6559,7 +6670,7 @@ export function errMsg(err) {
 }
 </file>
 
-<file path="ivemar-frontend/src/router/index.js">
+<file path="gitaller-frontend/src/router/index.js">
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '../stores/useAuthStore'
 
@@ -6666,7 +6777,7 @@ router.beforeEach(async (to, from, next) => {
 export default router
 </file>
 
-<file path="ivemar-frontend/src/stores/useAuthStore.js">
+<file path="gitaller-frontend/src/stores/useAuthStore.js">
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { useApi } from '../composables/useApi'
@@ -6731,7 +6842,7 @@ export const useAuthStore = defineStore('auth', () => {
 })
 </file>
 
-<file path="ivemar-frontend/src/stores/useInformesStore.js">
+<file path="gitaller-frontend/src/stores/useInformesStore.js">
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { useApi } from '../composables/useApi'
@@ -6797,7 +6908,7 @@ export const useInformesStore = defineStore('informes', () => {
 })
 </file>
 
-<file path="ivemar-frontend/src/views/AdminView.vue">
+<file path="gitaller-frontend/src/views/AdminView.vue">
 <template>
   <div class="view-admin">
     <NavBar brand="⚙️ Administración" :tabs="tabs" v-model:activeTab="activeTab" />
@@ -6837,7 +6948,7 @@ const tabs = [
 </style>
 </file>
 
-<file path="ivemar-frontend/src/views/AsesorView.vue">
+<file path="gitaller-frontend/src/views/AsesorView.vue">
 <template>
   <div class="view-asesor">
     <NavBar brand="👔 Asesor" :tabs="tabs" v-model:activeTab="activeTab" />
@@ -7029,7 +7140,7 @@ onMounted(cargarOTs)
 </style>
 </file>
 
-<file path="ivemar-frontend/src/views/HomeView.vue">
+<file path="gitaller-frontend/src/views/HomeView.vue">
 <template>
   <div class="main-menu">
     <h1>🚗 IVEMAR - Taller</h1>
@@ -7134,7 +7245,7 @@ const goTo = (routeName) => {
 </style>
 </file>
 
-<file path="ivemar-frontend/src/views/JefeView.vue">
+<file path="gitaller-frontend/src/views/JefeView.vue">
 <template>
   <div class="view-jefe">
     <NavBar brand="🔧 Jefe de Taller" :tabs="tabs" v-model:activeTab="activeTab">
@@ -7402,7 +7513,7 @@ onMounted(() => {
 </style>
 </file>
 
-<file path="ivemar-frontend/src/views/LoginMecanico.vue">
+<file path="gitaller-frontend/src/views/LoginMecanico.vue">
 <template>
   <div class="login-container">
     <div class="card login-box">
@@ -7472,7 +7583,7 @@ const ingresar = () => {
 </style>
 </file>
 
-<file path="ivemar-frontend/src/views/LoginView.vue">
+<file path="gitaller-frontend/src/views/LoginView.vue">
 <template>
   <div class="login-container">
     <div class="card login-box">
@@ -7490,7 +7601,15 @@ const ingresar = () => {
         </div>
         <div class="form-group mb-15 text-left">
           <label>Contraseña</label>
-          <input type="password" v-model="formLogin.password" class="form-control" required />
+          <div class="password-field">
+            <input :type="mostrarPassword ? 'text' : 'password'" v-model="formLogin.password" class="form-control"
+                   required @keyup="chequearMayus" @blur="capsLockActivo = false" />
+            <button type="button" class="btn-toggle-password" @click="mostrarPassword = !mostrarPassword"
+                    :title="mostrarPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'">
+              {{ mostrarPassword ? '🙈' : '👁️' }}
+            </button>
+          </div>
+          <span v-if="capsLockActivo" class="alerta-mayus">⚠️ Bloq Mayús está activado</span>
         </div>
         <button type="submit" class="btn btn-primary w-100" :disabled="procesando">
           {{ procesando ? 'Verificando...' : 'Ingresar' }}
@@ -7513,7 +7632,15 @@ const ingresar = () => {
         </div>
         <div class="form-group mb-15 text-left">
           <label>Crear Contraseña</label>
-          <input type="password" v-model="formRegistro.password" class="form-control" minlength="6" required />
+          <div class="password-field">
+            <input :type="mostrarPasswordRegistro ? 'text' : 'password'" v-model="formRegistro.password" class="form-control"
+                   minlength="6" required @keyup="chequearMayusRegistro" @blur="capsLockActivoRegistro = false" />
+            <button type="button" class="btn-toggle-password" @click="mostrarPasswordRegistro = !mostrarPasswordRegistro"
+                    :title="mostrarPasswordRegistro ? 'Ocultar contraseña' : 'Mostrar contraseña'">
+              {{ mostrarPasswordRegistro ? '🙈' : '👁️' }}
+            </button>
+          </div>
+          <span v-if="capsLockActivoRegistro" class="alerta-mayus">⚠️ Bloq Mayús está activado</span>
         </div>
         <button type="submit" class="btn btn-success w-100" :disabled="procesando">
           {{ procesando ? 'Registrando...' : 'Enviar Solicitud' }}
@@ -7539,6 +7666,24 @@ const toast = useToast()
 
 const mostrandoRegistro = ref(false)
 const procesando = ref(false)
+
+const mostrarPassword = ref(false)
+const capsLockActivo = ref(false)
+const mostrarPasswordRegistro = ref(false)
+const capsLockActivoRegistro = ref(false)
+
+// getModifierState('CapsLock') es soportado por todos los navegadores
+// modernos; si no lo estuviera, simplemente no se muestra la alerta.
+const chequearMayus = (evento) => {
+  if (typeof evento.getModifierState === 'function') {
+    capsLockActivo.value = evento.getModifierState('CapsLock')
+  }
+}
+const chequearMayusRegistro = (evento) => {
+  if (typeof evento.getModifierState === 'function') {
+    capsLockActivoRegistro.value = evento.getModifierState('CapsLock')
+  }
+}
 
 const formLogin = ref({ email: '', password: '' })
 const formRegistro = ref({ email: '', password: '', nombre_completo: '' })
@@ -7600,10 +7745,18 @@ const ejecutarRegistro = async () => {
 .mb-15 { margin-bottom: 15px; }
 .toggle-link { font-size: 0.9rem; color: var(--text-soft); }
 .toggle-link a { font-weight: bold; text-decoration: none; }
+
+.password-field { position: relative; display: flex; align-items: center; }
+.password-field .form-control { padding-right: 40px; width: 100%; }
+.btn-toggle-password {
+  position: absolute; right: 6px; background: none; border: none; cursor: pointer;
+  font-size: 1.1rem; line-height: 1; padding: 4px 6px;
+}
+.alerta-mayus { display: block; margin-top: 6px; font-size: 0.8rem; color: #b8860b; font-weight: 600; }
 </style>
 </file>
 
-<file path="ivemar-frontend/src/views/MecanicoView.vue">
+<file path="gitaller-frontend/src/views/MecanicoView.vue">
 <template>
   <div class="view-mecanico">
     <NavBar brand="🛠️ Mi Panel - Taller" :tabs="[]" logoutText="Cambiar legajo" customLogout @logout="cambiarLegajo" />
@@ -7646,30 +7799,48 @@ const ejecutarRegistro = async () => {
         <div v-if="tareasCliente.length > 0">
           <h3 style="color: var(--primary-dark); border-bottom: 1px solid var(--border-soft); padding-bottom: 8px;">Órdenes de Trabajo</h3>
           <div class="grid-tareas">
-            <div v-for="tarea in tareasCliente" :key="tarea.id" class="card-tarea">
-              <div class="tarea-header">
-                <h3>OT {{ tarea.ot }}</h3>
-                <span :class="['badge-sm', estadoClass(tarea.estado)]">{{ tarea.estado }}</span>
+            
+            <!-- TARJETA MADRE POR OT -->
+            <div v-for="orden in ordenesAgrupadas" :key="orden.ot" class="card-tarea" style="grid-column: 1 / -1; padding: 20px;">
+              
+              <!-- Cabecera de la OT agrupada -->
+              <div class="tarea-header" style="border-bottom: 2px solid #eef3f9; padding-bottom: 15px; margin-bottom: 15px;">
+                <h3 style="font-size: 1.3rem;">OT {{ orden.ot }}</h3>
+                <div style="text-align: right;">
+                    <span class="patente-badge" style="background: #111; color: white; padding: 4px 10px; border-radius: 6px; font-family: monospace; font-size: 1.1rem;">{{ orden.patente }}</span>
+                    <div class="tarea-vehiculo mt-10" style="font-weight: 600;">{{ orden.unidad }}</div>
+                    <div class="tarea-cliente">{{ orden.cliente }}</div>
+                </div>
               </div>
-              <p class="tarea-vehiculo">{{ tarea.unidad }} · <strong>{{ tarea.patente }}</strong></p>
-              <p class="tarea-cliente">{{ tarea.cliente }}</p>
-              <p class="tarea-desc"><strong>Tarea:</strong> {{ tarea.descripcion }}</p>
-              <p class="tarea-horas">Estimado: {{ tarea.tiempo_estimado }} hs</p>
+              
+              <!-- Lista de subtareas internas -->
+              <div v-for="tarea in orden.tareas" :key="tarea.id" style="padding: 15px; border: 1px solid #d0d7e2; border-radius: 8px; margin-bottom: 10px; background: #fafcfe;">
+                <div style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <p class="tarea-desc" style="margin:0; font-size: 1rem;"><strong>Tarea:</strong> {{ tarea.descripcion }}</p>
+                    <span :class="['badge-sm', estadoClass(tarea.estado)]" style="font-size: 0.85rem;">{{ tarea.estado }}</span>
+                </div>
+                <p class="tarea-horas" style="margin: 0 0 15px;">Estimado: {{ tarea.tiempo_estimado }} hs</p>
 
-              <div class="acciones-tarea mt-10">
-                <button v-if="['Asignada', 'Pendiente'].includes(tarea.estado)" v-can="'tarea_operar'" @click="cambiarEstado(tarea, 'En Curso')" class="btn btn-primary btn-sm">▶ Iniciar</button>
-                <button v-if="tarea.estado === 'Pausada'" v-can="'tarea_operar'" @click="cambiarEstado(tarea, 'En Curso')" class="btn btn-primary btn-sm">▶ Reanudar</button>
-                
-                <button v-if="tarea.estado === 'En Curso'" v-can="'tarea_operar'" @click="abrirPausa(tarea)" class="btn btn-warning btn-sm">⏸ Pausar</button>
-                <button v-if="tarea.estado === 'En Curso'" v-can="'tarea_operar'" @click="abrirFinalizar(tarea)" class="btn btn-success btn-sm">✔ Finalizar</button>
+                <!-- Botones de acción originales -->
+                <div class="acciones-tarea">
+                  <button v-if="['Asignada', 'Pendiente'].includes(tarea.estado)" v-can="'tarea_operar'" @click="cambiarEstado(tarea, 'En Curso')" class="btn btn-primary btn-sm">▶ Iniciar</button>
+                  <button v-if="tarea.estado === 'Pausada'" v-can="'tarea_operar'" @click="cambiarEstado(tarea, 'En Curso')" class="btn btn-primary btn-sm">▶ Reanudar</button>
+                  
+                  <button v-if="tarea.estado === 'En Curso'" v-can="'tarea_operar'" @click="abrirPausa(tarea)" class="btn btn-warning btn-sm">⏸ Pausar</button>
+                  <button v-if="tarea.estado === 'En Curso'" v-can="'tarea_operar'" @click="abrirFinalizar(tarea)" class="btn btn-success btn-sm">✔ Finalizar</button>
+
+                  <!-- NUEVO BOTÓN INFORMAR -->
+                  <button v-if="tarea.estado === 'Cerrada por Jefe'" v-can="'tarea_operar'" @click="abrirInformar(tarea)" class="btn btn-primary btn-sm">📝 Informar</button>
+                </div>
               </div>
+
             </div>
           </div>
         </div>
       </div>
 
     <ModalPausarTarea v-if="showModalPausa" @close="showModalPausa = false" @confirm="ejecutarPausa" />
-    <ModalFinalizarTarea v-if="showModalFinalizar" @close="showModalFinalizar = false" @confirm="ejecutarFinalizacion" />
+    <ModalFinalizarTarea v-if="showModalFinalizar" :otId="tareaActiva.ot" :modoInformar="esModoInformar" @close="showModalFinalizar = false" @confirm="ejecutarFinalizacion" />
   </div>
   </div>
 </template>
@@ -7715,20 +7886,40 @@ const cargarTareas = async () => {
 }
 
 const cambiarEstado = async (tarea, estado) => {
+  // Optimista: el backend ya pausa automáticamente cualquier otra tarea
+  // "En Curso" de este mecánico al iniciar una nueva (ver actividades.js).
+  // Reflejamos ese efecto en la lista local al toque, sin esperar la
+  // respuesta ni el refetch, para que la UI no se sienta atrasada.
+  let pausadaAuto = null
+  if (estado === 'En Curso') {
+    for (const t of tareas.value) {
+      if (t.id !== tarea.id && t.estado === 'En Curso') {
+        t.estado = 'Pausada'
+        pausadaAuto = t
+      }
+    }
+  }
+  tarea.estado = estado
+
   try {
     await fetchJSON(`/actividades/${tarea.id}/estado`, {
       method: 'POST',
       body: JSON.stringify({ nuevo_estado: estado })
     })
     toast.success(`Tarea de OT ${tarea.ot} actualizada a "${estado}"`)
+    if (pausadaAuto) toast.info(`Se pausó automáticamente la tarea de OT ${pausadaAuto.ot}`)
     cargarTareas()
   } catch (err) {
     toast.error('Error al actualizar la tarea: ' + errMsg(err))
+    cargarTareas() // revertimos el optimismo trayendo el estado real
   }
 }
 
 const abrirPausa = (tarea) => { tareaActiva.value = tarea; showModalPausa.value = true; }
-const abrirFinalizar = (tarea) => { tareaActiva.value = tarea; showModalFinalizar.value = true; }
+const esModoInformar = ref(false)
+
+const abrirFinalizar = (tarea) => { tareaActiva.value = tarea; esModoInformar.value = false; showModalFinalizar.value = true; }
+const abrirInformar = (tarea) => { tareaActiva.value = tarea; esModoInformar.value = true; showModalFinalizar.value = true; }
 
 const ejecutarPausa = async (motivo) => {
   try {
@@ -7743,17 +7934,27 @@ const ejecutarPausa = async (motivo) => {
 }
 
 const ejecutarFinalizacion = async (datos) => {
-  const textoEstructurado = `CAUSA DEL DESPERFECTO:\n${datos.causa}\n\nREPARACIÓN REALIZADA:\n${datos.reparacion}`
   try {
+    // 1. Guardar/Actualizar la causa colaborativa de la OT (Método PUT)
+    await fetchJSON(`/ordenes/${tareaActiva.value.ot}/explicacion`, {
+      method: 'PUT',
+      body: JSON.stringify({ causa: datos.causa })
+    })
+
+    // 2. Guardar el aporte de reparación individual (Método POST)
+    await fetchJSON(`/ordenes/${tareaActiva.value.ot}/aportes`, {
+      method: 'POST',
+      body: JSON.stringify({ legajo: legajo.value, actividades: datos.reparacion, horas: 0 })
+    })
+
+    // 3. Cambiar el estado de la tarea a Finalizada (tanto si era propia
+    // como si estaba cerrada por el jefe, para limpiarla de la lista)
     await fetchJSON(`/actividades/${tareaActiva.value.id}/estado`, {
       method: 'POST',
       body: JSON.stringify({ nuevo_estado: 'Finalizada' })
     })
-    await fetchJSON(`/ordenes/${tareaActiva.value.ot}/aportes`, {
-      method: 'POST',
-      body: JSON.stringify({ legajo: legajo.value, actividades: textoEstructurado, horas: 0 })
-    })
-    toast.success('Tarea finalizada y registrada correctamente')
+
+    toast.success(esModoInformar.value ? 'Informe registrado correctamente' : 'Tarea finalizada y registrada correctamente')
     showModalFinalizar.value = false
     cargarTareas()
   } catch (err) { toast.error(errMsg(err)) }
@@ -7764,19 +7965,51 @@ const cambiarLegajo = () => {
   router.push({ name: 'mecanico-login' }) 
 }
 const tareasCliente = computed(() => tareas.value.filter(t => t.ot !== '0000'))
+
+const ordenesAgrupadas = computed(() => {
+  const mapa = new Map()
+  tareasCliente.value.forEach(tarea => {
+    if (!mapa.has(tarea.ot)) {
+      mapa.set(tarea.ot, {
+        ot: tarea.ot,
+        patente: tarea.patente,
+        unidad: tarea.unidad,
+        cliente: tarea.cliente,
+        tareas: []
+      })
+    }
+    mapa.get(tarea.ot).tareas.push(tarea)
+  })
+  return Array.from(mapa.values())
+})
+
 const tareasInternas = computed(() => tareas.value.filter(t => t.ot === '0000'))
 
 const toggleTareaInterna = async (tarea) => {
   const nuevo_estado = tarea.estado === 'En Curso' ? 'Pausada' : 'En Curso';
+
+  let pausadaAuto = null
+  if (nuevo_estado === 'En Curso') {
+    for (const t of tareas.value) {
+      if (t.id !== tarea.id && t.estado === 'En Curso') {
+        t.estado = 'Pausada'
+        pausadaAuto = t
+      }
+    }
+  }
+  tarea.estado = nuevo_estado
+
   try {
     await fetchJSON(`/actividades/${tarea.id}/estado`, {
       method: 'POST',
       body: JSON.stringify({ nuevo_estado, motivo: 'En Espera' })
     })
     toast.success(`Tarea interna ${nuevo_estado}`);
+    if (pausadaAuto) toast.info(`Se pausó automáticamente la tarea de OT ${pausadaAuto.ot}`)
     cargarTareas();
   } catch (err) {
     toast.error(errMsg(err));
+    cargarTareas()
   }
 }
 
@@ -7812,7 +8045,7 @@ onMounted(() => {
 </style>
 </file>
 
-<file path="ivemar-frontend/src/views/SalaEsperaView.vue">
+<file path="gitaller-frontend/src/views/SalaEsperaView.vue">
 <template>
   <div class="view-sala">
     <div class="sala-navbar">
@@ -8131,7 +8364,7 @@ onUnmounted(() => {
 </style>
 </file>
 
-<file path="ivemar-frontend/src/App.vue">
+<file path="gitaller-frontend/src/App.vue">
 <template>
   <div class="container" id="app">
     <!-- Aquí se inyecta HomeView, AsesorView, etc., según la URL -->
@@ -8145,7 +8378,7 @@ import ToastContainer from './components/common/ToastContainer.vue'
 </script>
 </file>
 
-<file path="ivemar-frontend/src/main.js">
+<file path="gitaller-frontend/src/main.js">
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import App from './App.vue'
@@ -8174,7 +8407,7 @@ app.directive('can', {
 app.mount('#app')
 </file>
 
-<file path="ivemar-frontend/src/style.css">
+<file path="gitaller-frontend/src/style.css">
 /* ────────────────────────────────────────────────────────────────
    IVEMAR · Sistema de diseño global
    Antes este archivo no se importaba desde ningún lugar de la app,
@@ -8418,7 +8651,7 @@ tr:hover td { background: #fafcfe; }
 }
 </file>
 
-<file path="ivemar-frontend/.gitignore">
+<file path="gitaller-frontend/.gitignore">
 # Logs
 logs
 *.log
@@ -8445,7 +8678,7 @@ dist-ssr
 *.sw?
 </file>
 
-<file path="ivemar-frontend/index.html">
+<file path="gitaller-frontend/index.html">
 <!doctype html>
 <html lang="es">
   <head>
@@ -8462,7 +8695,7 @@ dist-ssr
 </html>
 </file>
 
-<file path="ivemar-frontend/package.json">
+<file path="gitaller-frontend/package.json">
 {
   "name": "ivemar-frontend",
   "private": true,
@@ -8490,7 +8723,7 @@ dist-ssr
 }
 </file>
 
-<file path="ivemar-frontend/README.md">
+<file path="gitaller-frontend/README.md">
 # Vue 3 + Vite
 
 This template should help get you started developing with Vue 3 in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
@@ -8498,7 +8731,7 @@ This template should help get you started developing with Vue 3 in Vite. The tem
 Learn more about IDE Support for Vue in the [Vue Docs Scaling up Guide](https://vuejs.org/guide/scaling-up/tooling.html#ide-support).
 </file>
 
-<file path="ivemar-frontend/vite.config.js">
+<file path="gitaller-frontend/vite.config.js">
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
@@ -8533,6 +8766,29 @@ backups/
 *.xml
 *.env
 dotenv
+</file>
+
+<file path="MIGRACION_LEEME.txt">
+MIGRACIÓN REQUERIDA — Nuevo estado 'Cerrada por Jefe'
+=======================================================
+
+Antes de desplegar estos archivos, hay que migrar la tabla `actividades`
+para que su columna `estado` acepte el nuevo valor 'Cerrada por Jefe'
+(SQLite no permite ALTER de una restricción CHECK existente).
+
+1. Hacé un backup de tu taller.db por las dudas.
+2. Parate en gitaller-backend/ y ejecutá esto en una sola línea:
+
+node sql.js "PRAGMA foreign_keys=OFF; CREATE TABLE actividades_nueva (id INTEGER PRIMARY KEY AUTOINCREMENT, ot TEXT NOT NULL, descripcion TEXT NOT NULL, tiempo_estimado REAL NOT NULL, tiempo_real REAL DEFAULT 0, estado TEXT DEFAULT 'Asignada' CHECK(estado IN ('Pendiente', 'Asignada', 'En Curso', 'Pausada', 'Finalizada', 'Cerrada por Jefe')), legajo_mecanico TEXT NOT NULL, auto_pausa INTEGER DEFAULT 0, fecha_inicio DATETIME, fecha_fin DATETIME, FOREIGN KEY(ot) REFERENCES ordenes(ot) ON DELETE CASCADE ON UPDATE CASCADE, FOREIGN KEY(legajo_mecanico) REFERENCES legajos(legajo) ON DELETE RESTRICT ON UPDATE CASCADE); INSERT INTO actividades_nueva SELECT * FROM actividades; DROP TABLE actividades; ALTER TABLE actividades_nueva RENAME TO actividades; CREATE INDEX idx_actividades_ot ON actividades(ot); CREATE INDEX idx_actividades_legajo ON actividades(legajo_mecanico); CREATE INDEX idx_actividades_estado ON actividades(estado); PRAGMA foreign_keys=ON;"
+
+3. Recién después de correr esto, copiá/sobrescribí los archivos del zip
+   sobre el repo y reiniciá el backend.
+
+Archivos incluidos en este parche:
+- gitaller-backend/config/database.js       (CHECK actualizado + sincronizarEstadoOT)
+- gitaller-backend/routes/ordenes.js         (PUT /:ot/explicacion + cierre forzado en /controlar)
+- gitaller-frontend/src/components/mecanico/ModalFinalizarTarea.vue
+- gitaller-frontend/src/views/MecanicoView.vue
 </file>
 
 <file path="README.md">

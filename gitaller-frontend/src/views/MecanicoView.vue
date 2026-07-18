@@ -40,30 +40,48 @@
         <div v-if="tareasCliente.length > 0">
           <h3 style="color: var(--primary-dark); border-bottom: 1px solid var(--border-soft); padding-bottom: 8px;">Órdenes de Trabajo</h3>
           <div class="grid-tareas">
-            <div v-for="tarea in tareasCliente" :key="tarea.id" class="card-tarea">
-              <div class="tarea-header">
-                <h3>OT {{ tarea.ot }}</h3>
-                <span :class="['badge-sm', estadoClass(tarea.estado)]">{{ tarea.estado }}</span>
+            
+            <!-- TARJETA MADRE POR OT -->
+            <div v-for="orden in ordenesAgrupadas" :key="orden.ot" class="card-tarea" style="grid-column: 1 / -1; padding: 20px;">
+              
+              <!-- Cabecera de la OT agrupada -->
+              <div class="tarea-header" style="border-bottom: 2px solid #eef3f9; padding-bottom: 15px; margin-bottom: 15px;">
+                <h3 style="font-size: 1.3rem;">OT {{ orden.ot }}</h3>
+                <div style="text-align: right;">
+                    <span class="patente-badge" style="background: #111; color: white; padding: 4px 10px; border-radius: 6px; font-family: monospace; font-size: 1.1rem;">{{ orden.patente }}</span>
+                    <div class="tarea-vehiculo mt-10" style="font-weight: 600;">{{ orden.unidad }}</div>
+                    <div class="tarea-cliente">{{ orden.cliente }}</div>
+                </div>
               </div>
-              <p class="tarea-vehiculo">{{ tarea.unidad }} · <strong>{{ tarea.patente }}</strong></p>
-              <p class="tarea-cliente">{{ tarea.cliente }}</p>
-              <p class="tarea-desc"><strong>Tarea:</strong> {{ tarea.descripcion }}</p>
-              <p class="tarea-horas">Estimado: {{ tarea.tiempo_estimado }} hs</p>
+              
+              <!-- Lista de subtareas internas -->
+              <div v-for="tarea in orden.tareas" :key="tarea.id" style="padding: 15px; border: 1px solid #d0d7e2; border-radius: 8px; margin-bottom: 10px; background: #fafcfe;">
+                <div style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <p class="tarea-desc" style="margin:0; font-size: 1rem;"><strong>Tarea:</strong> {{ tarea.descripcion }}</p>
+                    <span :class="['badge-sm', estadoClass(tarea.estado)]" style="font-size: 0.85rem;">{{ tarea.estado }}</span>
+                </div>
+                <p class="tarea-horas" style="margin: 0 0 15px;">Estimado: {{ tarea.tiempo_estimado }} hs</p>
 
-              <div class="acciones-tarea mt-10">
-                <button v-if="['Asignada', 'Pendiente'].includes(tarea.estado)" v-can="'tarea_operar'" @click="cambiarEstado(tarea, 'En Curso')" class="btn btn-primary btn-sm">▶ Iniciar</button>
-                <button v-if="tarea.estado === 'Pausada'" v-can="'tarea_operar'" @click="cambiarEstado(tarea, 'En Curso')" class="btn btn-primary btn-sm">▶ Reanudar</button>
-                
-                <button v-if="tarea.estado === 'En Curso'" v-can="'tarea_operar'" @click="abrirPausa(tarea)" class="btn btn-warning btn-sm">⏸ Pausar</button>
-                <button v-if="tarea.estado === 'En Curso'" v-can="'tarea_operar'" @click="abrirFinalizar(tarea)" class="btn btn-success btn-sm">✔ Finalizar</button>
+                <!-- Botones de acción originales -->
+                <div class="acciones-tarea">
+                  <button v-if="['Asignada', 'Pendiente'].includes(tarea.estado)" v-can="'tarea_operar'" @click="cambiarEstado(tarea, 'En Curso')" class="btn btn-primary btn-sm">▶ Iniciar</button>
+                  <button v-if="tarea.estado === 'Pausada'" v-can="'tarea_operar'" @click="cambiarEstado(tarea, 'En Curso')" class="btn btn-primary btn-sm">▶ Reanudar</button>
+                  
+                  <button v-if="tarea.estado === 'En Curso'" v-can="'tarea_operar'" @click="abrirPausa(tarea)" class="btn btn-warning btn-sm">⏸ Pausar</button>
+                  <button v-if="tarea.estado === 'En Curso'" v-can="'tarea_operar'" @click="abrirFinalizar(tarea)" class="btn btn-success btn-sm">✔ Finalizar</button>
+
+                  <!-- NUEVO BOTÓN INFORMAR -->
+                  <button v-if="tarea.estado === 'Cerrada por Jefe'" v-can="'tarea_operar'" @click="abrirInformar(tarea)" class="btn btn-primary btn-sm">📝 Informar</button>
+                </div>
               </div>
+
             </div>
           </div>
         </div>
       </div>
 
     <ModalPausarTarea v-if="showModalPausa" @close="showModalPausa = false" @confirm="ejecutarPausa" />
-    <ModalFinalizarTarea v-if="showModalFinalizar" @close="showModalFinalizar = false" @confirm="ejecutarFinalizacion" />
+    <ModalFinalizarTarea v-if="showModalFinalizar" :otId="tareaActiva.ot" :modoInformar="esModoInformar" @close="showModalFinalizar = false" @confirm="ejecutarFinalizacion" />
   </div>
   </div>
 </template>
@@ -139,7 +157,10 @@ const cambiarEstado = async (tarea, estado) => {
 }
 
 const abrirPausa = (tarea) => { tareaActiva.value = tarea; showModalPausa.value = true; }
-const abrirFinalizar = (tarea) => { tareaActiva.value = tarea; showModalFinalizar.value = true; }
+const esModoInformar = ref(false)
+
+const abrirFinalizar = (tarea) => { tareaActiva.value = tarea; esModoInformar.value = false; showModalFinalizar.value = true; }
+const abrirInformar = (tarea) => { tareaActiva.value = tarea; esModoInformar.value = true; showModalFinalizar.value = true; }
 
 const ejecutarPausa = async (motivo) => {
   try {
@@ -154,17 +175,27 @@ const ejecutarPausa = async (motivo) => {
 }
 
 const ejecutarFinalizacion = async (datos) => {
-  const textoEstructurado = `CAUSA DEL DESPERFECTO:\n${datos.causa}\n\nREPARACIÓN REALIZADA:\n${datos.reparacion}`
   try {
+    // 1. Guardar/Actualizar la causa colaborativa de la OT (Método PUT)
+    await fetchJSON(`/ordenes/${tareaActiva.value.ot}/explicacion`, {
+      method: 'PUT',
+      body: JSON.stringify({ causa: datos.causa })
+    })
+
+    // 2. Guardar el aporte de reparación individual (Método POST)
+    await fetchJSON(`/ordenes/${tareaActiva.value.ot}/aportes`, {
+      method: 'POST',
+      body: JSON.stringify({ legajo: legajo.value, actividades: datos.reparacion, horas: 0 })
+    })
+
+    // 3. Cambiar el estado de la tarea a Finalizada (tanto si era propia
+    // como si estaba cerrada por el jefe, para limpiarla de la lista)
     await fetchJSON(`/actividades/${tareaActiva.value.id}/estado`, {
       method: 'POST',
       body: JSON.stringify({ nuevo_estado: 'Finalizada' })
     })
-    await fetchJSON(`/ordenes/${tareaActiva.value.ot}/aportes`, {
-      method: 'POST',
-      body: JSON.stringify({ legajo: legajo.value, actividades: textoEstructurado, horas: 0 })
-    })
-    toast.success('Tarea finalizada y registrada correctamente')
+
+    toast.success(esModoInformar.value ? 'Informe registrado correctamente' : 'Tarea finalizada y registrada correctamente')
     showModalFinalizar.value = false
     cargarTareas()
   } catch (err) { toast.error(errMsg(err)) }
@@ -175,6 +206,24 @@ const cambiarLegajo = () => {
   router.push({ name: 'mecanico-login' }) 
 }
 const tareasCliente = computed(() => tareas.value.filter(t => t.ot !== '0000'))
+
+const ordenesAgrupadas = computed(() => {
+  const mapa = new Map()
+  tareasCliente.value.forEach(tarea => {
+    if (!mapa.has(tarea.ot)) {
+      mapa.set(tarea.ot, {
+        ot: tarea.ot,
+        patente: tarea.patente,
+        unidad: tarea.unidad,
+        cliente: tarea.cliente,
+        tareas: []
+      })
+    }
+    mapa.get(tarea.ot).tareas.push(tarea)
+  })
+  return Array.from(mapa.values())
+})
+
 const tareasInternas = computed(() => tareas.value.filter(t => t.ot === '0000'))
 
 const toggleTareaInterna = async (tarea) => {

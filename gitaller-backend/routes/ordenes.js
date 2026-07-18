@@ -166,12 +166,31 @@ const cambiarEstadoHandler = async (req, res) => {
 router.put('/:ot/estado', cambiarEstadoHandler);
 router.post('/:ot/estado', cambiarEstadoHandler);
 
+// NUEVO: Endpoint colaborativo para la causa de la OT
+router.put('/:ot/explicacion', async (req, res) => {
+    const { causa } = req.body;
+    try {
+        await withTransaction(async () => {
+            const existe = await get(`SELECT id FROM explicaciones WHERE ot = ?`, [req.params.ot]);
+            if (existe) {
+                await run(`UPDATE explicaciones SET causa = ? WHERE ot = ?`, [causa, req.params.ot]);
+            } else {
+                await run(`INSERT INTO explicaciones (ot, causa) VALUES (?, ?)`, [req.params.ot, causa]);
+            }
+        });
+        res.json({ status: 'Explicación actualizada' });
+    } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
 router.post('/:ot/controlar', async (req, res) => {
     const { jefe_legajo } = req.body;
     try {
         await withTransaction(async () => {
             await run(`UPDATE ordenes SET controlada = 1, jefe_legajo = ?, fecha_cierre = CURRENT_TIMESTAMP WHERE ot = ?`, [jefe_legajo, req.params.ot]);
             await cambiarEstado(req.params.ot, 'Finalizada');
+
+            // NUEVO: Cerrar forzosamente actividades colgadas del mecánico
+            await run(`UPDATE actividades SET estado = 'Cerrada por Jefe' WHERE ot = ? AND estado NOT IN ('Finalizada', 'Cerrada por Jefe')`, [req.params.ot]);
         });
         res.json({ status: 'OT controlada y finalizada' });
     } catch (error) { res.status(500).json({ error: error.message }); }

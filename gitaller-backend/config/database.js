@@ -147,7 +147,7 @@ db.serialize(async () => {
     db.run(`CREATE TABLE IF NOT EXISTS asignaciones (id INTEGER PRIMARY KEY AUTOINCREMENT, ot TEXT NOT NULL, legajo_mecanico TEXT NOT NULL, fecha_asignacion DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(ot) REFERENCES ordenes(ot) ON DELETE CASCADE ON UPDATE CASCADE, FOREIGN KEY(legajo_mecanico) REFERENCES legajos(legajo) ON DELETE RESTRICT ON UPDATE CASCADE)`);
     db.run(`CREATE TABLE IF NOT EXISTS explicaciones (id INTEGER PRIMARY KEY AUTOINCREMENT, ot TEXT NOT NULL UNIQUE, causa TEXT, FOREIGN KEY(ot) REFERENCES ordenes(ot) ON DELETE CASCADE ON UPDATE CASCADE)`);
     db.run(`CREATE TABLE IF NOT EXISTS aportes (id INTEGER PRIMARY KEY AUTOINCREMENT, ot TEXT NOT NULL, legajo TEXT NOT NULL, actividades TEXT NOT NULL, horas REAL DEFAULT 0, fecha_aporte DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(ot) REFERENCES ordenes(ot) ON DELETE CASCADE ON UPDATE CASCADE, FOREIGN KEY(legajo) REFERENCES legajos(legajo) ON DELETE RESTRICT ON UPDATE CASCADE)`);
-    db.run(`CREATE TABLE IF NOT EXISTS actividades (id INTEGER PRIMARY KEY AUTOINCREMENT, ot TEXT NOT NULL, descripcion TEXT NOT NULL, tiempo_estimado REAL NOT NULL, tiempo_real REAL DEFAULT 0, estado TEXT DEFAULT 'Asignada' CHECK(estado IN ('Pendiente', 'Asignada', 'En Curso', 'Pausada', 'Finalizada')), legajo_mecanico TEXT NOT NULL, auto_pausa INTEGER DEFAULT 0, fecha_inicio DATETIME, fecha_fin DATETIME, FOREIGN KEY(ot) REFERENCES ordenes(ot) ON DELETE CASCADE ON UPDATE CASCADE, FOREIGN KEY(legajo_mecanico) REFERENCES legajos(legajo) ON DELETE RESTRICT ON UPDATE CASCADE)`);
+    db.run(`CREATE TABLE IF NOT EXISTS actividades (id INTEGER PRIMARY KEY AUTOINCREMENT, ot TEXT NOT NULL, descripcion TEXT NOT NULL, tiempo_estimado REAL NOT NULL, tiempo_real REAL DEFAULT 0, estado TEXT DEFAULT 'Asignada' CHECK(estado IN ('Pendiente', 'Asignada', 'En Curso', 'Pausada', 'Finalizada', 'Cerrada por Jefe')), legajo_mecanico TEXT NOT NULL, auto_pausa INTEGER DEFAULT 0, fecha_inicio DATETIME, fecha_fin DATETIME, FOREIGN KEY(ot) REFERENCES ordenes(ot) ON DELETE CASCADE ON UPDATE CASCADE, FOREIGN KEY(legajo_mecanico) REFERENCES legajos(legajo) ON DELETE RESTRICT ON UPDATE CASCADE)`);
     db.run(`CREATE TABLE IF NOT EXISTS tiempos_actividad (id INTEGER PRIMARY KEY AUTOINCREMENT, actividad_id INTEGER NOT NULL, inicio DATETIME NOT NULL, fin DATETIME, FOREIGN KEY(actividad_id) REFERENCES actividades(id) ON DELETE CASCADE ON UPDATE CASCADE)`);
     db.run(`CREATE TABLE IF NOT EXISTS excepciones_mecanicos (id INTEGER PRIMARY KEY AUTOINCREMENT, legajo TEXT NOT NULL, fecha DATE NOT NULL, motivo TEXT NOT NULL, horas_descontadas REAL DEFAULT 10, FOREIGN KEY(legajo) REFERENCES legajos(legajo) ON DELETE CASCADE ON UPDATE CASCADE)`);
     db.run(`CREATE TABLE IF NOT EXISTS feriados (fecha DATE PRIMARY KEY, descripcion TEXT DEFAULT '')`);
@@ -180,15 +180,32 @@ db.serialize(async () => {
         FOREIGN KEY(rol_id) REFERENCES roles(id) ON DELETE CASCADE ON UPDATE CASCADE,
         FOREIGN KEY(permiso_clave) REFERENCES permisos(clave) ON DELETE CASCADE ON UPDATE CASCADE
     )`);
-    // Actualizamos la tabla usuarios para que soporte el nuevo rol_id relacional
-    // (Ejecutamos un try/catch silencioso por si la columna ya existe en reinicios futuros)
+
+    db.run(`CREATE TABLE IF NOT EXISTS configuracion (
+        id INTEGER PRIMARY KEY CHECK (id = 1), 
+        nombre_taller TEXT DEFAULT 'GITaller', 
+        logo_path TEXT, 
+        hora_apertura INTEGER DEFAULT 8, 
+        hora_cierre INTEGER DEFAULT 18, 
+        hora_almuerzo_inicio INTEGER DEFAULT 13, 
+        hora_almuerzo_fin INTEGER DEFAULT 14, 
+        trabaja_corrido INTEGER DEFAULT 0
+    )`);
+    
     db.run(`ALTER TABLE usuarios ADD COLUMN rol_id TEXT REFERENCES roles(id) ON DELETE SET NULL`, (err) => { /* Ignorar si ya existe */ });
-    setTimeout(() => { migrarEstructura(); inicializarTallerInterno(); inicializarRolesYPermisos(); }, 500);
+    setTimeout(async () => { 
+        migrarEstructura(); 
+        inicializarTallerInterno(); 
+        inicializarRolesYPermisos(); 
+        // Inyectar configuración por defecto
+        const conf = await get(`SELECT id FROM configuracion WHERE id = 1`);
+        if (!conf) await run(`INSERT INTO configuracion (id) VALUES (1)`);
+    }, 500);
 });
 
 async function inicializarTallerInterno() {
     try {
-        // 1. Asegurar Cliente IVEMAR
+        // 1. Asegurar Cliente gitaller
         let cli = await get(`SELECT id FROM clientes WHERE nombre = 'IVEMAR'`);
         if (!cli) {
             await run(`INSERT INTO clientes (nombre) VALUES ('IVEMAR')`);
@@ -235,7 +252,7 @@ async function sincronizarEstadoOT(ot) {
 
     let estadoCalculado = orden.estado_actual;
     const enCurso = acts.filter(a => a.estado === 'En Curso').length;
-    const finalizadas = acts.filter(a => a.estado === 'Finalizada').length;
+    const finalizadas = acts.filter(a => a.estado === 'Finalizada' || a.estado === 'Cerrada por Jefe').length;
 
     if (enCurso > 0) {
         estadoCalculado = 'En Proceso';
