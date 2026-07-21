@@ -6,9 +6,8 @@
 
       <form @submit.prevent="submitAsignacion">
         <div class="form-group">
-          <label>Mecánico</label>
-          <select v-model="form.legajo" required>
-            <option value="" disabled>Seleccione un mecánico</option>
+          <label>Mecánicos (Mantén presionado Ctrl/Cmd para elegir varios)</label>
+          <select v-model="form.legajos" multiple required class="form-control" style="height: 100px;">
             <option v-for="m in mecanicos" :key="m.legajo" :value="m.legajo">{{ m.nombre }}</option>
           </select>
         </div>
@@ -51,7 +50,7 @@ const props = defineProps({
 const emit = defineEmits(['close', 'confirm'])
 
 const isEdit = computed(() => !!props.actividadEdit)
-const form = ref({ id: null, legajo: '', descripcion: '', tiempo_estimado: 1, tiempo_real: 0, fecha_inicio: '', fecha_fin: '' })
+const form = ref({ id: null, legajos: [], descripcion: '', tiempo_estimado: 1, tiempo_real: 0, fecha_inicio: '', fecha_fin: '' })
 
 onMounted(() => {
   if (props.actividadEdit) {
@@ -59,7 +58,7 @@ onMounted(() => {
     
     form.value = {
       id: props.actividadEdit.id,
-      legajo: props.actividadEdit.legajo_mecanico,
+      legajos: props.actividadEdit.legajos_mecanicos ? props.actividadEdit.legajos_mecanicos.split(',') : [],
       descripcion: props.actividadEdit.descripcion,
       tiempo_estimado: props.actividadEdit.tiempo_estimado,
       tiempo_real: props.actividadEdit.tiempo_real,
@@ -77,21 +76,22 @@ const parseNum = (val) => {
 }
 
 const submitAsignacion = () => {
-  emit('confirm', { 
-    ...form.value, 
+  const payload = {
+    ...form.value,
     tiempo_estimado: parseNum(form.value.tiempo_estimado),
     tiempo_real: isEdit.value ? parseNum(form.value.tiempo_real) : undefined,
-    
-    // Si estamos editando y el campo NO está vacío, enviamos el texto formateado. 
-    // Si está vacío, enviamos undefined para que la base de datos no lo sobrescriba.
     fecha_inicio: (isEdit.value && form.value.fecha_inicio) 
                     ? form.value.fecha_inicio.replace('T', ' ') 
                     : undefined,
-                    
     fecha_fin: (isEdit.value && form.value.fecha_fin) 
                     ? form.value.fecha_fin.replace('T', ' ') 
-                    : undefined
-  })
+                    : undefined,
+    legajos_mecanicos: form.value.legajos
+  };
+  
+  delete payload.legajos; // remove original array
+  
+  emit('confirm', payload)
 }
 
 </script>

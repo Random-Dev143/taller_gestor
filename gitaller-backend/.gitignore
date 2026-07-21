@@ -4,6 +4,9 @@ node_modules/
 # Variables de entorno (cuando se agregue configuración sensible)
 .env
 .env.local
+*.md
+*.yaml
+*.yml   
 
 # Base de datos SQLite: NUNCA debe versionarse. Contiene datos reales de
 # clientes (nombre, teléfono, correo) y crece indefinidamente con el uso.

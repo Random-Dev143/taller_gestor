@@ -25,11 +25,11 @@
             <div v-for="tarea in tareasInternas" :key="tarea.id" class="card-tarea" style="background-color: #f8fafc; border-left: 4px solid #b8860b;">
               <div class="tarea-header">
                 <h3>{{ tarea.descripcion }}</h3>
-                <span :class="['badge-sm', estadoClass(tarea.estado)]">{{ tarea.estado }}</span>
+                <span :class="['badge-sm', estadoClass(tarea.mi_estado)]">{{ tarea.mi_estado }}</span>
               </div>
               <p class="tarea-horas">Asignado por Jefe de Taller</p>
               <div class="acciones-tarea mt-10">
-                <button v-if="tarea.estado !== 'En Curso'" v-can="'tarea_operar'" @click="toggleTareaInterna(tarea)" class="btn btn-outline btn-sm w-100">▶ Iniciar Rutina</button>
+                <button v-if="tarea.mi_estado !== 'En Curso'" v-can="'tarea_operar'" @click="toggleTareaInterna(tarea)" class="btn btn-outline btn-sm w-100">▶ Iniciar Rutina</button>
                 <button v-else v-can="'tarea_operar'" @click="toggleTareaInterna(tarea)" class="btn btn-warning btn-sm w-100">⏸ Detener / Pausar</button>
               </div>
             </div>
@@ -58,20 +58,28 @@
               <div v-for="tarea in orden.tareas" :key="tarea.id" style="padding: 15px; border: 1px solid #d0d7e2; border-radius: 8px; margin-bottom: 10px; background: #fafcfe;">
                 <div style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                     <p class="tarea-desc" style="margin:0; font-size: 1rem;"><strong>Tarea:</strong> {{ tarea.descripcion }}</p>
-                    <span :class="['badge-sm', estadoClass(tarea.estado)]" style="font-size: 0.85rem;">{{ tarea.estado }}</span>
+                    <div style="display:flex; gap:6px; align-items:center;">
+                      <span class="badge-sm" style="background:#eef3f9; color:#334155;" title="Estado general de la tarea (todo el equipo)">Tarea: {{ tarea.estado }}</span>
+                      <span :class="['badge-sm', estadoClass(tarea.mi_estado)]" style="font-size: 0.85rem;" title="Tu estado personal">Yo: {{ tarea.mi_estado }}</span>
+                    </div>
                 </div>
-                <p class="tarea-horas" style="margin: 0 0 15px;">Estimado: {{ tarea.tiempo_estimado }} hs</p>
+                <p class="tarea-horas" style="margin: 0 0 5px;">Estimado: {{ tarea.tiempo_estimado }} hs · Mis horas: {{ (tarea.mi_tiempo_real || 0).toFixed(2) }} hs</p>
+                <p class="tarea-horas" style="margin: 0 0 15px; color: #0056a7;"><strong>Equipo:</strong> {{ tarea.equipo }}</p>
 
-                <!-- Botones de acción originales -->
+                <p v-if="tarea.estado === 'Finalizada' && tarea.mi_estado !== 'Finalizada'" class="tarea-horas" style="margin: 0 0 10px; color: #b8860b;">
+                  ⚠ Un compañero ya cerró esta tarea. Podés reanudar si falta algo, o solo completar tu informe.
+                </p>
+
+                <!-- Botones de acción: actúan sobre TU propio estado, independiente del resto del equipo -->
                 <div class="acciones-tarea">
-                  <button v-if="['Asignada', 'Pendiente'].includes(tarea.estado)" v-can="'tarea_operar'" @click="cambiarEstado(tarea, 'En Curso')" class="btn btn-primary btn-sm">▶ Iniciar</button>
-                  <button v-if="tarea.estado === 'Pausada'" v-can="'tarea_operar'" @click="cambiarEstado(tarea, 'En Curso')" class="btn btn-primary btn-sm">▶ Reanudar</button>
-                  
-                  <button v-if="tarea.estado === 'En Curso'" v-can="'tarea_operar'" @click="abrirPausa(tarea)" class="btn btn-warning btn-sm">⏸ Pausar</button>
-                  <button v-if="tarea.estado === 'En Curso'" v-can="'tarea_operar'" @click="abrirFinalizar(tarea)" class="btn btn-success btn-sm">✔ Finalizar</button>
+                  <button v-if="tarea.mi_estado === 'Asignada'" v-can="'tarea_operar'" @click="cambiarEstado(tarea, 'En Curso')" class="btn btn-primary btn-sm">▶ Iniciar</button>
+                  <button v-if="tarea.mi_estado === 'Pausada'" v-can="'tarea_operar'" @click="cambiarEstado(tarea, 'En Curso')" class="btn btn-primary btn-sm">▶ Reanudar</button>
 
-                  <!-- NUEVO BOTÓN INFORMAR -->
-                  <button v-if="tarea.estado === 'Cerrada por Jefe'" v-can="'tarea_operar'" @click="abrirInformar(tarea)" class="btn btn-primary btn-sm">📝 Informar</button>
+                  <button v-if="tarea.mi_estado === 'En Curso'" v-can="'tarea_operar'" @click="abrirPausa(tarea)" class="btn btn-warning btn-sm">⏸ Pausar</button>
+                  <button v-if="['En Curso', 'Pausada'].includes(tarea.mi_estado)" v-can="'tarea_operar'" @click="abrirFinalizar(tarea)" class="btn btn-success btn-sm">✔ Finalizar mi parte</button>
+
+                  <!-- La tarea completa fue cerrada por el Jefe: solo queda completar el informe -->
+                  <button v-if="tarea.estado === 'Cerrada por Jefe' && tarea.mi_estado !== 'Finalizada'" v-can="'tarea_operar'" @click="abrirInformar(tarea)" class="btn btn-primary btn-sm">📝 Informar</button>
                 </div>
               </div>
 
@@ -112,7 +120,8 @@ const estadoClass = (estado) => ({
   'Pendiente': 'badge-info',
   'Asignada': 'badge-info',
   'En Curso': 'badge-progress',
-  'Pausada': 'badge-warn'
+  'Pausada': 'badge-warn',
+  'Finalizada': 'badge-progress'
 }[estado] || '')
 
 const cargarTareas = async () => {
@@ -127,28 +136,26 @@ const cargarTareas = async () => {
 }
 
 const cambiarEstado = async (tarea, estado) => {
-  // Optimista: el backend ya pausa automáticamente cualquier otra tarea
-  // "En Curso" de este mecánico al iniciar una nueva (ver actividades.js).
-  // Reflejamos ese efecto en la lista local al toque, sin esperar la
-  // respuesta ni el refetch, para que la UI no se sienta atrasada.
+  // Optimista: el backend pausa automáticamente cualquier OTRA tarea "En Curso" de ESTE
+  // mecánico al iniciar una nueva (por persona, no afecta a sus compañeros de equipo).
   let pausadaAuto = null
   if (estado === 'En Curso') {
     for (const t of tareas.value) {
-      if (t.id !== tarea.id && t.estado === 'En Curso') {
-        t.estado = 'Pausada'
+      if (t.id !== tarea.id && t.mi_estado === 'En Curso') {
+        t.mi_estado = 'Pausada'
         pausadaAuto = t
       }
     }
   }
-  tarea.estado = estado
+  tarea.mi_estado = estado
 
   try {
     await fetchJSON(`/actividades/${tarea.id}/estado`, {
       method: 'POST',
-      body: JSON.stringify({ nuevo_estado: estado })
+      body: JSON.stringify({ nuevo_estado: estado, legajo_mecanico: legajo.value })
     })
-    toast.success(`Tarea de OT ${tarea.ot} actualizada a "${estado}"`)
-    if (pausadaAuto) toast.info(`Se pausó automáticamente la tarea de OT ${pausadaAuto.ot}`)
+    toast.success(`Tu tarea de OT ${tarea.ot} pasó a "${estado}"`)
+    if (pausadaAuto) toast.info(`Se pausó automáticamente tu tarea de OT ${pausadaAuto.ot}`)
     cargarTareas()
   } catch (err) {
     toast.error('Error al actualizar la tarea: ' + errMsg(err))
@@ -166,7 +173,7 @@ const ejecutarPausa = async (motivo) => {
   try {
     await fetchJSON(`/actividades/${tareaActiva.value.id}/estado`, {
       method: 'POST',
-      body: JSON.stringify({ nuevo_estado: 'Pausada', motivo })
+      body: JSON.stringify({ nuevo_estado: 'Pausada', motivo, legajo_mecanico: legajo.value })
     })
     toast.info(`Tarea pausada: ${motivo}`)
     showModalPausa.value = false
@@ -188,14 +195,15 @@ const ejecutarFinalizacion = async (datos) => {
       body: JSON.stringify({ legajo: legajo.value, actividades: datos.reparacion, horas: 0 })
     })
 
-    // 3. Cambiar el estado de la tarea a Finalizada (tanto si era propia
-    // como si estaba cerrada por el jefe, para limpiarla de la lista)
+    // 3. Marcar TU parte de la tarea como Finalizada. Si tenías una sesión en curso, el
+    // backend la cierra; si no (venías de "Pausada" o de una tarea cerrada por el jefe),
+    // simplemente registra que terminaste, sin afectar a tus compañeros de equipo.
     await fetchJSON(`/actividades/${tareaActiva.value.id}/estado`, {
       method: 'POST',
-      body: JSON.stringify({ nuevo_estado: 'Finalizada' })
+      body: JSON.stringify({ nuevo_estado: 'Finalizada', legajo_mecanico: legajo.value })
     })
 
-    toast.success(esModoInformar.value ? 'Informe registrado correctamente' : 'Tarea finalizada y registrada correctamente')
+    toast.success(esModoInformar.value ? 'Informe registrado correctamente' : 'Tu parte de la tarea quedó finalizada')
     showModalFinalizar.value = false
     cargarTareas()
   } catch (err) { toast.error(errMsg(err)) }
@@ -227,23 +235,23 @@ const ordenesAgrupadas = computed(() => {
 const tareasInternas = computed(() => tareas.value.filter(t => t.ot === '0000'))
 
 const toggleTareaInterna = async (tarea) => {
-  const nuevo_estado = tarea.estado === 'En Curso' ? 'Pausada' : 'En Curso';
+  const nuevo_estado = tarea.mi_estado === 'En Curso' ? 'Pausada' : 'En Curso';
 
   let pausadaAuto = null
   if (nuevo_estado === 'En Curso') {
     for (const t of tareas.value) {
-      if (t.id !== tarea.id && t.estado === 'En Curso') {
-        t.estado = 'Pausada'
+      if (t.id !== tarea.id && t.mi_estado === 'En Curso') {
+        t.mi_estado = 'Pausada'
         pausadaAuto = t
       }
     }
   }
-  tarea.estado = nuevo_estado
+  tarea.mi_estado = nuevo_estado
 
   try {
     await fetchJSON(`/actividades/${tarea.id}/estado`, {
       method: 'POST',
-      body: JSON.stringify({ nuevo_estado, motivo: 'En Espera' })
+      body: JSON.stringify({ nuevo_estado, motivo: 'En Espera', legajo_mecanico: legajo.value })
     })
     toast.success(`Tarea interna ${nuevo_estado}`);
     if (pausadaAuto) toast.info(`Se pausó automáticamente la tarea de OT ${pausadaAuto.ot}`)

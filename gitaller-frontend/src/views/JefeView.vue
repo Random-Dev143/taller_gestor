@@ -215,7 +215,7 @@ const confirmarAsignacion = async (datos) => {
       await fetchJSON(`/actividades/${datos.id}`, {
         method: 'PUT',
         body: JSON.stringify({
-          legajo_mecanico: datos.legajo,
+          legajos_mecanicos: datos.legajos_mecanicos,
           descripcion: datos.descripcion,
           tiempo_estimado: datos.tiempo_estimado,
           tiempo_real: datos.tiempo_real
@@ -225,7 +225,12 @@ const confirmarAsignacion = async (datos) => {
     } else {
       await fetchJSON(`/actividades/orden/${otSeleccionada.value}`, {
         method: 'POST',
-        body: JSON.stringify({ legajo_mecanico: datos.legajo, descripcion: datos.descripcion, tiempo_estimado: datos.tiempo_estimado, jefe_legajo: jefeLegajo.value })
+        body: JSON.stringify({ 
+            legajos_mecanicos: datos.legajos_mecanicos, 
+            descripcion: datos.descripcion, 
+            tiempo_estimado: datos.tiempo_estimado, 
+            jefe_legajo: jefeLegajo.value 
+        })
       })
       toast.success('Nueva tarea asignada')
     }
