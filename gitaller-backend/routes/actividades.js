@@ -169,6 +169,7 @@ router.get('/mecanico/:legajo', async (req, res) => {
         const actividades = await all(`
             SELECT a.*, 
                    am.estado AS mi_estado, am.tiempo_real AS mi_tiempo_real, am.informe AS mi_informe,
+                   (SELECT ta.inicio FROM tiempos_actividad ta WHERE ta.actividad_id = a.id AND ta.legajo_mecanico = am.legajo_mecanico AND ta.fin IS NULL ORDER BY ta.id DESC LIMIT 1) AS mi_sesion_inicio,
                    o.patente, u.unidad, c.nombre AS cliente,
                    (SELECT GROUP_CONCAT(l.nombre, ', ') FROM actividad_mecanicos am2 JOIN legajos l ON am2.legajo_mecanico = l.legajo WHERE am2.actividad_id = a.id) AS equipo
             FROM actividad_mecanicos am

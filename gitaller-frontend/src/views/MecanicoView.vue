@@ -5,8 +5,12 @@
     <div class="card">
       <div class="header-row">
         <h2>Tareas Asignadas</h2>
-        <span class="legajo-pill">Legajo: <strong>{{ legajo }}</strong></span>
+        <div style="display:flex; align-items:center; gap:8px; flex-wrap: wrap;">
+          <span class="legajo-pill">Legajo: <strong>{{ legajo }}</strong></span>
+          <button class="btn btn-outline btn-sm" @click="cargarTareas(false)" :disabled="loading" title="Actualizar ahora">🔄</button>
+        </div>
       </div>
+      <p class="ultima-actualizacion" v-if="ultimaActualizacion">Actualizado hace {{ segundosDesdeActualizacion }}s · se actualiza solo cada 45s</p>
 
       <div v-if="loading" class="loading-state">
         <div class="spinner"></div>
@@ -45,41 +49,50 @@
             <div v-for="orden in ordenesAgrupadas" :key="orden.ot" class="card-tarea" style="grid-column: 1 / -1; padding: 20px;">
               
               <!-- Cabecera de la OT agrupada -->
-              <div class="tarea-header" style="border-bottom: 2px solid #eef3f9; padding-bottom: 15px; margin-bottom: 15px;">
-                <h3 style="font-size: 1.3rem;">OT {{ orden.ot }}</h3>
-                <div style="text-align: right;">
-                    <span class="patente-badge" style="background: #111; color: white; padding: 4px 10px; border-radius: 6px; font-family: monospace; font-size: 1.1rem;">{{ orden.patente }}</span>
-                    <div class="tarea-vehiculo mt-10" style="font-weight: 600;">{{ orden.unidad }}</div>
+              <div class="ot-header">
+                <h3 class="ot-header__titulo">OT {{ orden.ot }}</h3>
+                <div class="ot-header__info">
+                    <span class="patente-badge">{{ orden.patente }}</span>
+                    <div class="ot-header__unidad">{{ orden.unidad }}</div>
                     <div class="tarea-cliente">{{ orden.cliente }}</div>
                 </div>
               </div>
               
               <!-- Lista de subtareas internas -->
-              <div v-for="tarea in orden.tareas" :key="tarea.id" style="padding: 15px; border: 1px solid #d0d7e2; border-radius: 8px; margin-bottom: 10px; background: #fafcfe;">
-                <div style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                    <p class="tarea-desc" style="margin:0; font-size: 1rem;"><strong>Tarea:</strong> {{ tarea.descripcion }}</p>
-                    <div style="display:flex; gap:6px; align-items:center;">
-                      <span class="badge-sm" style="background:#eef3f9; color:#334155;" title="Estado general de la tarea (todo el equipo)">Tarea: {{ tarea.estado }}</span>
-                      <span :class="['badge-sm', estadoClass(tarea.mi_estado)]" style="font-size: 0.85rem;" title="Tu estado personal">Yo: {{ tarea.mi_estado }}</span>
-                    </div>
+              <div
+                v-for="tarea in orden.tareas"
+                :key="tarea.id"
+                class="tarea-card"
+                :class="tarjetaClass(tarea)"
+              >
+                <div class="tarea-card__top">
+                  <p class="tarea-card__desc">{{ tarea.descripcion }}</p>
+                  <span class="mi-estado-chip" :class="estadoClass(tarea.mi_estado)">{{ tarea.mi_estado }}</span>
                 </div>
-                <p class="tarea-horas" style="margin: 0 0 5px;">Estimado: {{ tarea.tiempo_estimado }} hs · Mis horas: {{ (tarea.mi_tiempo_real || 0).toFixed(2) }} hs</p>
-                <p class="tarea-horas" style="margin: 0 0 15px; color: #0056a7;"><strong>Equipo:</strong> {{ tarea.equipo }}</p>
 
-                <p v-if="tarea.estado === 'Finalizada' && tarea.mi_estado !== 'Finalizada'" class="tarea-horas" style="margin: 0 0 10px; color: #b8860b;">
-                  ⚠ Un compañero ya cerró esta tarea. Podés reanudar si falta algo, o solo completar tu informe.
+                <div class="tarea-card__meta">
+                  <span>⏱ Est. {{ tarea.tiempo_estimado }} hs</span>
+                  <span v-if="tarea.mi_estado === 'En Curso'">· <strong class="tiempo-vivo">{{ tiempoVivo(tarea) }}</strong> ⏺</span>
+                  <span v-else>· Mis horas: <strong>{{ (tarea.mi_tiempo_real || 0).toFixed(2) }}</strong></span>
+                </div>
+                <div class="tarea-card__equipo">👥 {{ tarea.equipo }}</div>
+                <div class="tarea-card__tarea-general">Estado general de la tarea: <strong>{{ tarea.estado }}</strong></div>
+
+                <p v-if="tarea.estado === 'Finalizada' && tarea.mi_estado !== 'Finalizada'" class="aviso-compañero">
+                  <span class="aviso-compañero__icono">⚠</span>
+                  <span><strong>Un compañero ya cerró esta tarea.</strong> Podés reanudar si falta algo, o solo completar tu informe.</span>
                 </p>
 
                 <!-- Botones de acción: actúan sobre TU propio estado, independiente del resto del equipo -->
                 <div class="acciones-tarea">
-                  <button v-if="tarea.mi_estado === 'Asignada'" v-can="'tarea_operar'" @click="cambiarEstado(tarea, 'En Curso')" class="btn btn-primary btn-sm">▶ Iniciar</button>
-                  <button v-if="tarea.mi_estado === 'Pausada'" v-can="'tarea_operar'" @click="cambiarEstado(tarea, 'En Curso')" class="btn btn-primary btn-sm">▶ Reanudar</button>
+                  <button v-if="tarea.mi_estado === 'Asignada'" v-can="'tarea_operar'" @click="cambiarEstado(tarea, 'En Curso')" class="btn btn-primary btn-lg">▶ Iniciar</button>
+                  <button v-if="tarea.mi_estado === 'Pausada'" v-can="'tarea_operar'" @click="cambiarEstado(tarea, 'En Curso')" class="btn btn-primary btn-lg">▶ Reanudar</button>
 
-                  <button v-if="tarea.mi_estado === 'En Curso'" v-can="'tarea_operar'" @click="abrirPausa(tarea)" class="btn btn-warning btn-sm">⏸ Pausar</button>
-                  <button v-if="['En Curso', 'Pausada'].includes(tarea.mi_estado)" v-can="'tarea_operar'" @click="abrirFinalizar(tarea)" class="btn btn-success btn-sm">✔ Finalizar mi parte</button>
+                  <button v-if="tarea.mi_estado === 'En Curso'" v-can="'tarea_operar'" @click="abrirPausa(tarea)" class="btn btn-warning btn-lg">⏸ Pausar</button>
+                  <button v-if="['En Curso', 'Pausada'].includes(tarea.mi_estado)" v-can="'tarea_operar'" @click="abrirFinalizar(tarea)" class="btn btn-success btn-lg">✔ Finalizar mi parte</button>
 
                   <!-- La tarea completa fue cerrada por el Jefe: solo queda completar el informe -->
-                  <button v-if="tarea.estado === 'Cerrada por Jefe' && tarea.mi_estado !== 'Finalizada'" v-can="'tarea_operar'" @click="abrirInformar(tarea)" class="btn btn-primary btn-sm">📝 Informar</button>
+                  <button v-if="tarea.estado === 'Cerrada por Jefe' && tarea.mi_estado !== 'Finalizada'" v-can="'tarea_operar'" @click="abrirInformar(tarea)" class="btn btn-primary btn-lg">📝 Informar</button>
                 </div>
               </div>
 
@@ -95,7 +108,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useApi } from '../composables/useApi'
 import { useToast, errMsg } from '../composables/useToast'
@@ -116,6 +129,34 @@ const showModalPausa = ref(false)
 const showModalFinalizar = ref(false)
 const tareaActiva = ref(null)
 
+// Reloj compartido: un solo timer que actualiza "ahora" cada segundo, del que
+// dependen tanto el cronómetro en vivo de cada tarea como el "Actualizado hace Ns".
+const ahora = ref(Date.now())
+const ultimaActualizacion = ref(null)
+let relojInterval = null
+let autoRefreshInterval = null
+
+const segundosDesdeActualizacion = computed(() => {
+  if (!ultimaActualizacion.value) return 0
+  return Math.max(0, Math.round((ahora.value - ultimaActualizacion.value) / 1000))
+})
+
+// Horas trabajadas en vivo: lo ya acumulado (mi_tiempo_real) + lo transcurrido
+// desde que arrancó la sesión actual (mi_sesion_inicio), mostrado como HH:MM:SS.
+const tiempoVivo = (tarea) => {
+  let horas = tarea.mi_tiempo_real || 0
+  if (tarea.mi_sesion_inicio) {
+    const inicioUTC = new Date(tarea.mi_sesion_inicio.replace(' ', 'T') + 'Z').getTime()
+    const transcurridoMs = Math.max(0, ahora.value - inicioUTC)
+    horas += transcurridoMs / 3600000
+  }
+  const totalSeg = Math.floor(horas * 3600)
+  const h = Math.floor(totalSeg / 3600)
+  const m = Math.floor((totalSeg % 3600) / 60)
+  const s = totalSeg % 60
+  return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+}
+
 const estadoClass = (estado) => ({
   'Pendiente': 'badge-info',
   'Asignada': 'badge-info',
@@ -124,14 +165,23 @@ const estadoClass = (estado) => ({
   'Finalizada': 'badge-progress'
 }[estado] || '')
 
-const cargarTareas = async () => {
-  loading.value = true
+// Color del borde izquierdo de la tarjeta según TU estado personal en esa tarea
+const tarjetaClass = (tarea) => ({
+  'Asignada': 'tarea-card--info',
+  'En Curso': 'tarea-card--progress',
+  'Pausada': 'tarea-card--warn',
+  'Finalizada': 'tarea-card--done'
+}[tarea.mi_estado] || 'tarea-card--info')
+
+const cargarTareas = async (silencioso = false) => {
+  if (!silencioso) loading.value = true
   try {
     tareas.value = await fetchJSON(`/actividades/mecanico/${encodeURIComponent(legajo.value)}`)
+    ultimaActualizacion.value = Date.now()
   } catch (err) {
-    toast.error('Error cargando tareas: ' + errMsg(err))
+    if (!silencioso) toast.error('Error cargando tareas: ' + errMsg(err))
   } finally {
-    loading.value = false
+    if (!silencioso) loading.value = false
   }
 }
 
@@ -166,7 +216,15 @@ const cambiarEstado = async (tarea, estado) => {
 const abrirPausa = (tarea) => { tareaActiva.value = tarea; showModalPausa.value = true; }
 const esModoInformar = ref(false)
 
-const abrirFinalizar = (tarea) => { tareaActiva.value = tarea; esModoInformar.value = false; showModalFinalizar.value = true; }
+const abrirFinalizar = (tarea) => {
+  // Confirmación explícita: cerrar tu parte de la tarea no tiene "deshacer" fácil,
+  // así que evitamos que un toque accidental la cierre.
+  const mensaje = tarea.estado === 'Finalizada'
+    ? `Un compañero ya cerró "${tarea.descripcion}". ¿Confirmás que también finalizás tu parte?`
+    : `¿Confirmás que terminaste tu parte de "${tarea.descripcion}"?`
+  if (!confirm(mensaje)) return
+  tareaActiva.value = tarea; esModoInformar.value = false; showModalFinalizar.value = true;
+}
 const abrirInformar = (tarea) => { tareaActiva.value = tarea; esModoInformar.value = true; showModalFinalizar.value = true; }
 
 const ejecutarPausa = async (motivo) => {
@@ -270,13 +328,27 @@ onMounted(() => {
     return
   }
   cargarTareas()
+
+  // Reloj en vivo (cronómetro + "actualizado hace Ns"): 1 tick por segundo
+  relojInterval = setInterval(() => { ahora.value = Date.now() }, 1000)
+
+  // Auto-refresh silencioso: como varios mecánicos pueden compartir la misma
+  // tarea, esto evita que alguien tome decisiones sobre datos desactualizados
+  // sin tener que recargar la página a mano.
+  autoRefreshInterval = setInterval(() => { cargarTareas(true) }, 45000)
+})
+
+onUnmounted(() => {
+  if (relojInterval) clearInterval(relojInterval)
+  if (autoRefreshInterval) clearInterval(autoRefreshInterval)
 })
 </script>
 
 <style scoped>
-.header-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.header-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 4px; }
 .header-row h2 { margin: 0; }
 .legajo-pill { background: var(--primary-light); color: var(--primary); padding: 4px 12px; border-radius: 20px; font-size: 0.85rem; }
+.ultima-actualizacion { margin: 0 0 10px; font-size: 0.75rem; color: var(--muted); }
 
 .grid-tareas { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 15px; margin-top: 10px; }
 .card-tarea { border: 1px solid var(--border-soft); padding: 16px; border-radius: var(--radius); background: #fff; box-shadow: var(--shadow-sm); }
@@ -291,4 +363,112 @@ onMounted(() => {
 .badge-info { background: #0056a7; color: white; }
 .badge-progress { background: #1d8a4f; color: white; }
 .badge-warn { background: #b8860b; color: white; }
+
+/* --- Tarjeta de subtarea: legible primero en celular --- */
+.tarea-card {
+  padding: 14px;
+  border: 1px solid #d0d7e2;
+  border-left: 5px solid #94a3b8;
+  border-radius: 10px;
+  margin-bottom: 12px;
+  background: #fafcfe;
+}
+.tarea-card--info { border-left-color: #0056a7; }
+.tarea-card--progress { border-left-color: #1d8a4f; }
+.tarea-card--warn { border-left-color: #b8860b; }
+.tarea-card--done { border-left-color: #6c7a8a; }
+
+.tarea-card__top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.tarea-card__desc {
+  margin: 0;
+  font-size: 1.05rem;
+  line-height: 1.35;
+  font-weight: 600;
+  color: #0f172a;
+}
+.mi-estado-chip {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.tarea-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.tarea-card__equipo {
+  font-size: 0.85rem;
+  color: #0056a7;
+  margin-bottom: 4px;
+}
+.tarea-card__tarea-general {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px dashed #d0d7e2;
+}
+
+.aviso-compañero {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  background: #fef6e6;
+  border: 1px solid #f0d79b;
+  color: #8a6100;
+  font-size: 0.85rem;
+  padding: 10px 12px;
+  border-radius: 8px;
+  margin: 0 0 12px;
+}
+.aviso-compañero__icono { font-size: 1.1rem; line-height: 1.2; flex-shrink: 0; }
+
+.tiempo-vivo {
+  color: #1d8a4f;
+  font-variant-numeric: tabular-nums;
+}
+
+.acciones-tarea .btn-lg {
+  padding: 12px 16px;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+/* En celular, cada botón ocupa todo el ancho y se apilan: son más fáciles
+   de tocar con el pulgar y no hay riesgo de tocar el botón equivocado. */
+@media (max-width: 640px) {
+  .grid-tareas { grid-template-columns: 1fr; }
+  .acciones-tarea { flex-direction: column; }
+  .acciones-tarea .btn-lg { width: 100%; }
+  .tarea-card__desc { font-size: 1rem; }
+  .ot-header { flex-direction: column; align-items: flex-start !important; }
+  .ot-header__info { text-align: left !important; }
+}
+
+.ot-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  border-bottom: 2px solid #eef3f9;
+  padding-bottom: 15px;
+  margin-bottom: 15px;
+}
+.ot-header__titulo { font-size: 1.3rem; margin: 0; }
+.ot-header__info { text-align: right; }
+.ot-header__unidad { font-weight: 600; margin-top: 6px; }
+.patente-badge { background: #111; color: white; padding: 4px 10px; border-radius: 6px; font-family: monospace; font-size: 1.1rem; display: inline-block; }
 </style>

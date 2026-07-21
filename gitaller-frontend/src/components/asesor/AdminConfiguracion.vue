@@ -10,6 +10,15 @@
           <input type="text" v-model="form.nombre_taller" required />
         </div>
         
+        <!-- Agrega este bloque debajo del div de nombre_taller -->
+        <div class="form-group">
+          <label>Puerto del Servidor</label>
+          <input type="number" v-model="form.puerto_servidor" required />
+          <small style="color: #b22234; display:block; margin-top:4px;">
+            ⚠️ Si modificas este valor, debes reiniciar manualmente la consola del backend.
+          </small>
+        </div>
+
         <div class="form-group">
           <label>Hora de Apertura (0-23)</label>
           <input type="number" v-model="form.hora_apertura" min="0" max="23" required />
@@ -70,11 +79,11 @@ const configStore = useConfigStore()
 const guardando = ref(false)
 const form = ref({
   nombre_taller: '', hora_apertura: 8, hora_cierre: 18, 
-  hora_almuerzo_inicio: 13, hora_almuerzo_fin: 14, trabaja_corrido: false
+  hora_almuerzo_inicio: 13, hora_almuerzo_fin: 14, trabaja_corrido: false,
+  puerto_servidor: 5881 // Añadir a la base
 })
 
 onMounted(() => {
-  // Poblamos el formulario con lo que haya en Pinia
   const c = configStore.config
   form.value = {
     nombre_taller: c.nombre_taller,
@@ -82,7 +91,8 @@ onMounted(() => {
     hora_cierre: c.hora_cierre,
     hora_almuerzo_inicio: c.hora_almuerzo_inicio,
     hora_almuerzo_fin: c.hora_almuerzo_fin,
-    trabaja_corrido: c.trabaja_corrido === 1
+    trabaja_corrido: c.trabaja_corrido === 1,
+    puerto_servidor: c.puerto_servidor || 5881 // Asignarlo
   }
 })
 

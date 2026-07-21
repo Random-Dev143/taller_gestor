@@ -1,6 +1,6 @@
 <template>
   <div class="main-menu">
-    <h1>🚗 IVEMAR - Taller</h1>
+    <h1>🚗 {{ configStore.config.nombre_taller }}</h1>
     <p>Sistema de gestión de órdenes de trabajo</p>
 
     <div class="role-buttons">
@@ -30,8 +30,10 @@
 
 <script setup>
 import { useRouter } from 'vue-router'
+import { useConfigStore } from '../stores/useConfigStore';
 
 const router = useRouter()
+const configStore = useConfigStore();
 
 const goTo = (routeName) => {
   router.push({ name: routeName })

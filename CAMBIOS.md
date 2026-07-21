@@ -137,3 +137,71 @@ que adivinar a partir del estado agregado.
 
 No requiere migración adicional: usa las columnas `estado`/`tiempo_real` de
 `actividad_mecanicos` que ya se agregaron en el paso anterior.
+
+---
+
+## Rediseño mobile-first de las tarjetas en MecanicoView
+
+Objetivo: que un mecánico mirando el celular en el taller entienda de un
+vistazo, sin acercar el dedo a nada, qué tarea es, en qué estado está ÉL
+(no el equipo), y qué puede hacer.
+
+Cambios:
+- **Borde de color a la izquierda de la tarjeta** según tu estado personal
+  (azul=Asignada, verde=En Curso, ámbar=Pausada, gris=Finalizada) — reconocible
+  de reojo, sin tener que leer texto.
+- **Chip de estado propio** arriba a la derecha del título de la tarea, en vez
+  de dos badges chiquitos apretados uno al lado del otro.
+- **Jerarquía de texto**: la descripción de la tarea ahora es lo más grande y
+  lo primero que se lee; el resto (horas, equipo, estado general) baja de
+  tamaño y se agrupa debajo, separado por una línea punteada.
+- **Botones grandes** (`.btn-lg`, más padding) y, en pantallas de hasta 640px,
+  se apilan uno debajo del otro ocupando todo el ancho — mucho más fácil de
+  tocar con el pulgar y sin riesgo de apretar el botón vecino por error.
+- **Encabezado de la OT responsive**: patente/vehículo/cliente ya no fuerza
+  dos columnas fijas que se pisaban en pantallas chicas; en mobile pasa a
+  apilarse verticalmente.
+- El aviso de "un compañero ya cerró esta tarea" ahora tiene su propio fondo
+  y borde (antes era solo texto de color), para que se note como una alerta
+  real y no se confunda con el resto de la info.
+
+## Otras mejoras sugeridas (no implementadas, para decidir si se agregan)
+1. Confirmación antes de "Finalizar mi parte" (evitar cierres accidentales).
+2. Cronómetro en vivo cuando `mi_estado === 'En Curso'`.
+3. Refresco automático o botón "Actualizar", ya que ahora varios mecánicos
+   comparten la misma tarea y pueden desincronizarse si no recargan.
+4. Reforzar aún más visualmente el caso "compañero cerró la tarea" si en la
+   práctica se ve que genera confusión.
+
+---
+
+## Las 4 mejoras aplicadas
+
+1. **Confirmación antes de "Finalizar mi parte"**: `abrirFinalizar` ahora pide
+   confirmación (`confirm()`, misma convención que ya usa el resto del sistema
+   en `JefeView.vue`) antes de abrir el modal de finalización. Si la tarea ya
+   fue cerrada por un compañero, el mensaje lo aclara explícitamente.
+
+2. **Cronómetro en vivo**: cuando tu estado personal es "En Curso", en vez de
+   ver las horas acumuladas estáticas, ves un reloj `H:MM:SS` que corre en
+   tiempo real (actualizado cada segundo en el cliente). Requirió un cambio
+   chico en el backend: `GET /actividades/mecanico/:legajo` ahora también
+   devuelve `mi_sesion_inicio` (el inicio de tu sesión de cronómetro abierta),
+   para poder calcular el tiempo transcurrido sin tener que consultar al
+   servidor a cada segundo.
+
+3. **Auto-refresh + botón manual**: la lista se refresca sola cada 45s de
+   forma silenciosa (sin spinner ni toasts de error, para no ser invasiva), y
+   además hay un botón 🔄 en el header para forzar la actualización al
+   toque. Se muestra "Actualizado hace Ns" para que sepas qué tan fresca es
+   la info que estás mirando — importante ahora que varios mecánicos pueden
+   estar tocando la misma tarea.
+
+4. **Aviso de "compañero cerró la tarea" reforzado**: pasó de ser una línea
+   de texto en color a una alerta con ícono, fondo y borde propios, más fácil
+   de detectar de reojo en el celular.
+
+Cambios de archivos en esta iteración:
+- `gitaller-backend/routes/actividades.js` — agrega `mi_sesion_inicio` a
+  `GET /mecanico/:legajo`
+- `gitaller-frontend/src/views/MecanicoView.vue` — las 4 mejoras de UI/UX

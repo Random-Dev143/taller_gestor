@@ -123,6 +123,7 @@ gitaller-frontend/
       index.js
     stores/
       useAuthStore.js
+      useConfigStore.js
       useInformesStore.js
     views/
       AdminView.vue
@@ -142,6 +143,7 @@ gitaller-frontend/
   README.md
   vite.config.js
 .gitignore
+CAMBIOS.md
 MIGRACION_LEEME.txt
 README.md
 </directory_structure>
@@ -274,6 +276,41 @@ async function migrarEstructura() {
             await run(`ALTER TABLE ordenes ADD COLUMN descuento_autorizado_en DATETIME`);
         }
 
+        // Trabajo en equipo independiente: cada mecánico de una actividad tiene su propio
+        // estado (Asignada/En Curso/Pausada/Finalizada), su propio acumulado de horas, y
+        // puede escribir su propio informe/aporte, sin depender de lo que hagan sus compañeros.
+        const actMecCols = (await all(`PRAGMA table_info(actividad_mecanicos)`)).map(c => c.name);
+        if (!actMecCols.includes('estado')) {
+            await run(`ALTER TABLE actividad_mecanicos ADD COLUMN estado TEXT NOT NULL DEFAULT 'Asignada'`);
+            await run(`ALTER TABLE actividad_mecanicos ADD COLUMN tiempo_real REAL NOT NULL DEFAULT 0`);
+            await run(`ALTER TABLE actividad_mecanicos ADD COLUMN informe TEXT`);
+
+            // Migración de datos: para las actividades ya existentes, el estado/tiempo_real
+            // "de la actividad" en realidad pertenecía a UNA sola persona (el sistema todavía
+            // no soportaba equipos independientes). Se lo asignamos al mecánico "representante"
+            // (actividades.legajo_mecanico); el resto del equipo, si lo hay, arranca en 0/Asignada
+            // porque no hay forma de reconstruir cuánto trabajó cada uno en el pasado.
+            await run(`
+                UPDATE actividad_mecanicos
+                SET estado = (SELECT a.estado FROM actividades a WHERE a.id = actividad_mecanicos.actividad_id),
+                    tiempo_real = (SELECT a.tiempo_real FROM actividades a WHERE a.id = actividad_mecanicos.actividad_id)
+                WHERE legajo_mecanico = (SELECT a.legajo_mecanico FROM actividades a WHERE a.id = actividad_mecanicos.actividad_id)
+            `);
+            console.log('✅ Migración de equipo independiente (actividad_mecanicos) completada.');
+        }
+
+        const tiemposCols = (await all(`PRAGMA table_info(tiempos_actividad)`)).map(c => c.name);
+        if (!tiemposCols.includes('legajo_mecanico')) {
+            await run(`ALTER TABLE tiempos_actividad ADD COLUMN legajo_mecanico TEXT`);
+            // Best-effort: las sesiones viejas se atribuyen al mecánico representante de su actividad
+            await run(`
+                UPDATE tiempos_actividad
+                SET legajo_mecanico = (SELECT legajo_mecanico FROM actividades WHERE id = tiempos_actividad.actividad_id)
+                WHERE legajo_mecanico IS NULL
+            `);
+            console.log('✅ Migración de sesiones de tiempo por mecánico (tiempos_actividad.legajo_mecanico) completada.');
+        }
+
         await run(`UPDATE actividades SET estado = 'Asignada' WHERE estado = 'Pendiente'`);
         await run(`UPDATE actividades SET tiempo_real = 0 WHERE tiempo_real < 0`);
         await run(`UPDATE ordenes SET tiempo_empleado_horas = 0 WHERE tiempo_empleado_horas < 0`);
@@ -287,6 +324,8 @@ async function migrarEstructura() {
             `CREATE INDEX IF NOT EXISTS idx_estados_historial_ot ON estados_historial(ot)`,
             `CREATE INDEX IF NOT EXISTS idx_aportes_ot ON aportes(ot)`,
             `CREATE INDEX IF NOT EXISTS idx_tiempos_actividad_actividad_id ON tiempos_actividad(actividad_id)`,
+            `CREATE INDEX IF NOT EXISTS idx_tiempos_actividad_legajo ON tiempos_actividad(legajo_mecanico)`,
+            `CREATE INDEX IF NOT EXISTS idx_actividad_mecanicos_legajo ON actividad_mecanicos(legajo_mecanico)`,
             `CREATE INDEX IF NOT EXISTS idx_ordenes_fecha_apertura ON ordenes(fecha_apertura)`,
             `CREATE INDEX IF NOT EXISTS idx_ordenes_fecha_cierre ON ordenes(fecha_cierre)`,
             `CREATE INDEX IF NOT EXISTS idx_ordenes_estado_actual ON ordenes(estado_actual)`,
@@ -310,10 +349,13 @@ db.serialize(async () => {
     db.run(`CREATE TABLE IF NOT EXISTS explicaciones (id INTEGER PRIMARY KEY AUTOINCREMENT, ot TEXT NOT NULL UNIQUE, causa TEXT, FOREIGN KEY(ot) REFERENCES ordenes(ot) ON DELETE CASCADE ON UPDATE CASCADE)`);
     db.run(`CREATE TABLE IF NOT EXISTS aportes (id INTEGER PRIMARY KEY AUTOINCREMENT, ot TEXT NOT NULL, legajo TEXT NOT NULL, actividades TEXT NOT NULL, horas REAL DEFAULT 0, fecha_aporte DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(ot) REFERENCES ordenes(ot) ON DELETE CASCADE ON UPDATE CASCADE, FOREIGN KEY(legajo) REFERENCES legajos(legajo) ON DELETE RESTRICT ON UPDATE CASCADE)`);
     db.run(`CREATE TABLE IF NOT EXISTS actividades (id INTEGER PRIMARY KEY AUTOINCREMENT, ot TEXT NOT NULL, descripcion TEXT NOT NULL, tiempo_estimado REAL NOT NULL, tiempo_real REAL DEFAULT 0, estado TEXT DEFAULT 'Asignada' CHECK(estado IN ('Pendiente', 'Asignada', 'En Curso', 'Pausada', 'Finalizada', 'Cerrada por Jefe')), legajo_mecanico TEXT NOT NULL, auto_pausa INTEGER DEFAULT 0, fecha_inicio DATETIME, fecha_fin DATETIME, FOREIGN KEY(ot) REFERENCES ordenes(ot) ON DELETE CASCADE ON UPDATE CASCADE, FOREIGN KEY(legajo_mecanico) REFERENCES legajos(legajo) ON DELETE RESTRICT ON UPDATE CASCADE)`);
-    db.run(`CREATE TABLE IF NOT EXISTS tiempos_actividad (id INTEGER PRIMARY KEY AUTOINCREMENT, actividad_id INTEGER NOT NULL, inicio DATETIME NOT NULL, fin DATETIME, FOREIGN KEY(actividad_id) REFERENCES actividades(id) ON DELETE CASCADE ON UPDATE CASCADE)`);
+    db.run(`CREATE TABLE IF NOT EXISTS tiempos_actividad (id INTEGER PRIMARY KEY AUTOINCREMENT, actividad_id INTEGER NOT NULL, legajo_mecanico TEXT, inicio DATETIME NOT NULL, fin DATETIME, FOREIGN KEY(actividad_id) REFERENCES actividades(id) ON DELETE CASCADE ON UPDATE CASCADE)`);
     db.run(`CREATE TABLE IF NOT EXISTS actividad_mecanicos (
     actividad_id INTEGER NOT NULL, 
     legajo_mecanico TEXT NOT NULL, 
+    estado TEXT NOT NULL DEFAULT 'Asignada' CHECK(estado IN ('Asignada','En Curso','Pausada','Finalizada')),
+    tiempo_real REAL NOT NULL DEFAULT 0,
+    informe TEXT,
     PRIMARY KEY(actividad_id, legajo_mecanico),
     FOREIGN KEY(actividad_id) REFERENCES actividades(id) ON DELETE CASCADE, 
     FOREIGN KEY(legajo_mecanico) REFERENCES legajos(legajo) ON DELETE RESTRICT
@@ -364,7 +406,8 @@ db.serialize(async () => {
         hora_cierre INTEGER DEFAULT 18, 
         hora_almuerzo_inicio INTEGER DEFAULT 13, 
         hora_almuerzo_fin INTEGER DEFAULT 14, 
-        trabaja_corrido INTEGER DEFAULT 0
+        trabaja_corrido INTEGER DEFAULT 0,
+        puerto_servidor INTEGER DEFAULT 5881
     )`);
     
     db.run(`ALTER TABLE usuarios ADD COLUMN rol_id TEXT REFERENCES roles(id) ON DELETE SET NULL`, (err) => { /* Ignorar si ya existe */ });
@@ -440,6 +483,48 @@ async function sincronizarEstadoOT(ot) {
     if (estadoCalculado !== orden.estado_actual) await cambiarEstado(ot, estadoCalculado);
 }
 
+// Recalcula el estado y el tiempo_real "de la actividad" (agregado) a partir del
+// estado individual de cada mecánico del equipo (actividad_mecanicos). La actividad
+// ya NO es la fuente de verdad del estado/tiempo: es un resumen calculado.
+//
+// Reglas (ver flujos de trabajo reales que las motivan):
+// - Si alguien está "En Curso" -> la actividad se ve "En Curso" (aunque otro ya haya terminado su parte).
+// - Si nadie está "En Curso", nadie quedó "Asignada" sin arrancar, y al menos uno "Finalizada"
+//   -> la actividad se considera Finalizada (el resto que quedó "Pausada" sin cerrar formalmente
+//      no bloquea el cierre: son compañeros que entregaron la posta o no volvieron a loguearse,
+//      y siguen viendo la tarea para reanudarla o completar su informe).
+// - Si el Jefe la cerró manualmente ("Cerrada por Jefe"), esa cerradura manda salvo que alguien
+//   la reabra activamente poniéndose "En Curso".
+// - Cualquier otro caso intermedio -> "Pausada".
+async function sincronizarEstadoActividad(actividadId) {
+    const miembros = await all(`SELECT estado, tiempo_real FROM actividad_mecanicos WHERE actividad_id = ?`, [actividadId]);
+    if (miembros.length === 0) return; // no debería pasar tras la migración, pero por las dudas
+
+    const actividad = await get(`SELECT ot, estado AS estado_actual FROM actividades WHERE id = ?`, [actividadId]);
+    if (!actividad) return;
+
+    const tiempoTotal = miembros.reduce((acc, m) => acc + (m.tiempo_real || 0), 0);
+    const hayEnCurso = miembros.some(m => m.estado === 'En Curso');
+    const haySinArrancar = miembros.some(m => m.estado === 'Asignada');
+    const hayFinalizada = miembros.some(m => m.estado === 'Finalizada');
+
+    let estadoCalc;
+    if (hayEnCurso) {
+        estadoCalc = 'En Curso';
+    } else if (hayFinalizada && !haySinArrancar) {
+        estadoCalc = 'Finalizada';
+    } else if (actividad.estado_actual === 'Cerrada por Jefe') {
+        estadoCalc = 'Cerrada por Jefe';
+    } else if (miembros.every(m => m.estado === 'Asignada')) {
+        estadoCalc = 'Asignada';
+    } else {
+        estadoCalc = 'Pausada';
+    }
+
+    await run(`UPDATE actividades SET estado = ?, tiempo_real = ? WHERE id = ?`, [estadoCalc, tiempoTotal, actividadId]);
+    await sincronizarEstadoOT(actividad.ot);
+}
+
 async function recalcularTiempoEmpleado(ot) {
     await run(`UPDATE ordenes SET tiempo_empleado_horas = ROUND(COALESCE((SELECT SUM(tiempo_real) FROM actividades WHERE ot = ?), 0) + COALESCE((SELECT SUM(horas) FROM aportes WHERE ot = ?), 0), 1) WHERE ot = ?`, [ot, ot, ot]);
 }
@@ -505,7 +590,7 @@ async function inicializarRolesYPermisos() {
     }
 }
 
-module.exports = { db, run, all, get, cambiarEstado, sincronizarEstadoOT, recalcularTiempoEmpleado, DB_PATH, withTransaction };
+module.exports = { db, run, all, get, cambiarEstado, sincronizarEstadoOT, sincronizarEstadoActividad, recalcularTiempoEmpleado, DB_PATH, withTransaction };
 </file>
 
 <file path="gitaller-backend/middlewares/auth.js">
@@ -585,43 +670,47 @@ module.exports = upload;
 <file path="gitaller-backend/routes/actividades.js">
 const express = require('express');
 const router = express.Router();
-const { run, all, get, cambiarEstado, recalcularTiempoEmpleado, withTransaction, sincronizarEstadoOT } = require('../config/database');
+const { run, all, get, cambiarEstado, recalcularTiempoEmpleado, withTransaction, sincronizarEstadoOT, sincronizarEstadoActividad } = require('../config/database');
 
 router.post('/orden/:ot', async (req, res) => {
-    // Cambiar legajo_mecanico por legajos_mecanicos (array)
     const { descripcion, tiempo_estimado, legajos_mecanicos, jefe_legajo } = req.body;
+
+    if (!Array.isArray(legajos_mecanicos) || legajos_mecanicos.length === 0) {
+        return res.status(400).json({ error: 'Debes seleccionar al menos un mecánico' });
+    }
+
     try {
         await withTransaction(async () => {
             if(jefe_legajo) await run(`UPDATE ordenes SET jefe_legajo = ? WHERE ot = ?`, [jefe_legajo, req.params.ot]);
-            
-            // Insertar la actividad (dejando legajo_mecanico en blanco o adaptando el esquema)
-            const result = await run(`INSERT INTO actividades (ot, descripcion, tiempo_estimado, legajo_mecanico, estado) VALUES (?, ?, ?, 'EQUIPO', 'Asignada')`, [req.params.ot, descripcion, tiempo_estimado]);
-            
-            // Vincular todos los mecánicos a esta actividad
+
+            // legajo_mecanico se mantiene como "representante" del equipo (el primero elegido),
+            // ya que algunas partes del sistema todavía lo usan como referencia rápida.
+            // El estado REAL de cada mecánico vive en actividad_mecanicos, de forma independiente.
+            const result = await run(`INSERT INTO actividades (ot, descripcion, tiempo_estimado, legajo_mecanico, estado) VALUES (?, ?, ?, ?, 'Asignada')`, [req.params.ot, descripcion, tiempo_estimado, legajos_mecanicos[0]]);
+
             for (const legajo of legajos_mecanicos) {
-                await run(`INSERT INTO actividad_mecanicos (actividad_id, legajo_mecanico) VALUES (?, ?)`, [result.lastID, legajo]);
+                await run(`INSERT INTO actividad_mecanicos (actividad_id, legajo_mecanico, estado, tiempo_real) VALUES (?, ?, 'Asignada', 0)`, [result.lastID, legajo]);
                 await run(`INSERT INTO asignaciones (ot, legajo_mecanico) SELECT ?, ? WHERE NOT EXISTS (SELECT 1 FROM asignaciones WHERE ot = ? AND legajo_mecanico = ?)`, [req.params.ot, legajo, req.params.ot, legajo]);
             }
-            
+
             await sincronizarEstadoOT(req.params.ot);
         });
         res.json({ status: 'Actividad asignada al equipo' });
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-// ivemar-backend/routes/actividades.js
 router.put('/tiempos/:id', async (req, res) => {
     const { inicio, fin } = req.body;
     try {
         await withTransaction(async () => {
-            const tiempo = await get(`SELECT actividad_id FROM tiempos_actividad WHERE id = ?`, [req.params.id]);
+            const tiempo = await get(`SELECT actividad_id, legajo_mecanico FROM tiempos_actividad WHERE id = ?`, [req.params.id]);
             if (!tiempo) throw new Error('Registro de tiempo no encontrado');
 
             // 1. Actualizar el registro modificado por el Jefe
             await run(`UPDATE tiempos_actividad SET inicio = ?, fin = ? WHERE id = ?`, [inicio, fin, req.params.id]);
-            
-            // 2. Recalcular la sumatoria exacta de todas las sesiones de esta actividad
-            const sesiones = await all(`SELECT inicio, fin FROM tiempos_actividad WHERE actividad_id = ? AND fin IS NOT NULL`, [tiempo.actividad_id]);
+
+            // 2. Recalcular la sumatoria exacta de las sesiones de ESE mecánico en esa actividad
+            const sesiones = await all(`SELECT inicio, fin FROM tiempos_actividad WHERE actividad_id = ? AND legajo_mecanico = ? AND fin IS NOT NULL`, [tiempo.actividad_id, tiempo.legajo_mecanico]);
             let totalHorasReal = 0;
             for (const s of sesiones) {
                 const start = new Date(s.inicio + 'Z');
@@ -630,11 +719,14 @@ router.put('/tiempos/:id', async (req, res) => {
                     totalHorasReal += (end - start) / 3600000; // Convertir ms a horas
                 }
             }
-            
-            // 3. Impactar el nuevo valor en la tabla de actividades
-            await run(`UPDATE actividades SET tiempo_real = ? WHERE id = ?`, [totalHorasReal, tiempo.actividad_id]);
 
-            // 4. Recalcular el tiempo general de la OT
+            // 3. Impactar el nuevo valor en el acumulado de ESE mecánico (no de toda la actividad)
+            if (tiempo.legajo_mecanico) {
+                await run(`UPDATE actividad_mecanicos SET tiempo_real = ? WHERE actividad_id = ? AND legajo_mecanico = ?`, [totalHorasReal, tiempo.actividad_id, tiempo.legajo_mecanico]);
+            }
+
+            // 4. Recalcular agregados de la actividad y de la OT
+            await sincronizarEstadoActividad(tiempo.actividad_id);
             const actividad = await get(`SELECT ot FROM actividades WHERE id = ?`, [tiempo.actividad_id]);
             if (actividad) await recalcularTiempoEmpleado(actividad.ot);
         });
@@ -642,57 +734,85 @@ router.put('/tiempos/:id', async (req, res) => {
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
+// Calcula horas transcurridas entre el inicio de una sesión abierta y ahora
+function horasDesde(inicioStr) {
+    const inicioUTC = new Date(inicioStr + 'Z');
+    let horas = (new Date() - inicioUTC) / 3600000;
+    return horas < 0 ? 0 : horas;
+}
+
+// POST /:id/estado — ahora es POR MECÁNICO: cada integrante del equipo tiene su propio
+// play/pausa/finalizar, totalmente independiente del resto (ver flujos de trabajo del equipo).
 router.post('/:id/estado', async (req, res) => {
-    const { nuevo_estado, motivo } = req.body; 
+    const { nuevo_estado, motivo, legajo_mecanico } = req.body;
+    if (!legajo_mecanico) return res.status(400).json({ error: 'Falta indicar qué mecánico está operando la tarea' });
+
     try {
         await withTransaction(async () => {
             const actividad = await get(`SELECT * FROM actividades WHERE id = ?`, [req.params.id]);
             if (!actividad) throw new Error('Actividad no encontrada');
-            
-            await run(`UPDATE actividades SET auto_pausa = 0 WHERE id = ?`, [req.params.id]);
+
+            const miEquipo = await get(`SELECT * FROM actividad_mecanicos WHERE actividad_id = ? AND legajo_mecanico = ?`, [req.params.id, legajo_mecanico]);
+            if (!miEquipo) throw new Error('Este mecánico no forma parte del equipo asignado a esta tarea');
 
             if (nuevo_estado === 'En Curso') {
-                const enCurso = await all(`SELECT id, ot FROM actividades WHERE legajo_mecanico = ? AND estado = 'En Curso' AND id != ?`, [actividad.legajo_mecanico, req.params.id]);
-                for (const act of enCurso) {
-                    const sesion = await get(`SELECT id, inicio FROM tiempos_actividad WHERE actividad_id = ? AND fin IS NULL ORDER BY id DESC LIMIT 1`, [act.id]);
-                    if (sesion) {
-                        const inicioUTC = new Date(sesion.inicio + 'Z');
-                        let horas = (new Date() - inicioUTC) / 3600000;
-                        if (horas < 0) horas = 0;
+                // Si este mecánico tiene OTRA tarea en curso (en cualquier OT), se la pausamos
+                // automáticamente. Esto es por-persona: no afecta a sus compañeros de equipo.
+                const otrasEnCurso = await all(`
+                    SELECT am.actividad_id AS id, a.ot FROM actividad_mecanicos am
+                    JOIN actividades a ON a.id = am.actividad_id
+                    WHERE am.legajo_mecanico = ? AND am.estado = 'En Curso' AND am.actividad_id != ?
+                `, [legajo_mecanico, req.params.id]);
 
+                for (const otra of otrasEnCurso) {
+                    const sesion = await get(`SELECT id, inicio FROM tiempos_actividad WHERE actividad_id = ? AND legajo_mecanico = ? AND fin IS NULL ORDER BY id DESC LIMIT 1`, [otra.id, legajo_mecanico]);
+                    if (sesion) {
+                        const horas = horasDesde(sesion.inicio);
                         await run(`UPDATE tiempos_actividad SET fin = CURRENT_TIMESTAMP WHERE id = ?`, [sesion.id]);
-                        await run(`UPDATE actividades SET tiempo_real = tiempo_real + ?, estado = 'Pausada' WHERE id = ?`, [horas, act.id]);
-                        await recalcularTiempoEmpleado(act.ot);
+                        await run(`UPDATE actividad_mecanicos SET tiempo_real = tiempo_real + ?, estado = 'Pausada' WHERE actividad_id = ? AND legajo_mecanico = ?`, [horas, otra.id, legajo_mecanico]);
+                        await sincronizarEstadoActividad(otra.id);
                     }
                 }
-                await run(`INSERT INTO tiempos_actividad (actividad_id, inicio) VALUES (?, CURRENT_TIMESTAMP)`, [req.params.id]);
-                await run(`UPDATE actividades SET estado = 'En Curso' WHERE id = ?`, [req.params.id]);
-                await sincronizarEstadoOT(actividad.ot);
+
+                await run(`INSERT INTO tiempos_actividad (actividad_id, legajo_mecanico, inicio) VALUES (?, ?, CURRENT_TIMESTAMP)`, [req.params.id, legajo_mecanico]);
+                await run(`UPDATE actividad_mecanicos SET estado = 'En Curso' WHERE actividad_id = ? AND legajo_mecanico = ?`, [req.params.id, legajo_mecanico]);
+                await run(`UPDATE actividades SET auto_pausa = 0 WHERE id = ?`, [req.params.id]);
 
             } else if (nuevo_estado === 'Pausada' || nuevo_estado === 'Finalizada') {
-                const sesion = await get(`SELECT id, inicio FROM tiempos_actividad WHERE actividad_id = ? AND fin IS NULL ORDER BY id DESC LIMIT 1`, [req.params.id]);
+                const sesion = await get(`SELECT id, inicio FROM tiempos_actividad WHERE actividad_id = ? AND legajo_mecanico = ? AND fin IS NULL ORDER BY id DESC LIMIT 1`, [req.params.id, legajo_mecanico]);
                 if (sesion) {
-                    const inicioUTC = new Date(sesion.inicio + 'Z');
-                    let horas = (new Date() - inicioUTC) / 3600000;
-                    if (horas < 0) horas = 0;
-
+                    const horas = horasDesde(sesion.inicio);
                     await run(`UPDATE tiempos_actividad SET fin = CURRENT_TIMESTAMP WHERE id = ?`, [sesion.id]);
-                    await run(`UPDATE actividades SET tiempo_real = tiempo_real + ?, estado = ? WHERE id = ?`, [horas, nuevo_estado, req.params.id]);
-                    await recalcularTiempoEmpleado(actividad.ot);
-                } else {
-                    await run(`UPDATE actividades SET estado = ? WHERE id = ?`, [nuevo_estado, req.params.id]);
+                    await run(`UPDATE actividad_mecanicos SET tiempo_real = tiempo_real + ? WHERE actividad_id = ? AND legajo_mecanico = ?`, [horas, req.params.id, legajo_mecanico]);
                 }
+                await run(`UPDATE actividad_mecanicos SET estado = ? WHERE actividad_id = ? AND legajo_mecanico = ?`, [nuevo_estado, req.params.id, legajo_mecanico]);
 
-                // Si la pausamos expresamente por un motivo (espera repuestos), forzamos a la OT a ese estado
+                // Si se pausa por un motivo que bloquea a todo el equipo (espera de repuestos,
+                // trabajos de terceros), eso sigue siendo una condición de la OT completa.
                 if (nuevo_estado === 'Pausada' && (motivo === 'Espera de Repuestos' || motivo === 'Trabajos de Terceros')) {
                     await cambiarEstado(actividad.ot, motivo);
-                } else {
-                    // Si no es especial o se finalizó, dejamos que el sistema resuelva qué hacer
-                    await sincronizarEstadoOT(actividad.ot);
                 }
+            } else {
+                throw new Error('Estado no soportado');
             }
+
+            await sincronizarEstadoActividad(req.params.id);
         });
         res.json({ status: 'Estado actualizado' });
+    } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// Un mecánico escribe/actualiza su propio aporte a la tarea sin necesariamente cambiar de estado
+// (por ejemplo, al entregar la posta a un compañero, o al completar el informe de una tarea
+// que un compañero ya cerró). No reabre la tarea.
+router.post('/:id/informe', async (req, res) => {
+    const { legajo_mecanico, informe } = req.body;
+    if (!legajo_mecanico) return res.status(400).json({ error: 'Falta indicar el mecánico' });
+    try {
+        const miEquipo = await get(`SELECT * FROM actividad_mecanicos WHERE actividad_id = ? AND legajo_mecanico = ?`, [req.params.id, legajo_mecanico]);
+        if (!miEquipo) throw new Error('Este mecánico no forma parte del equipo asignado a esta tarea');
+        await run(`UPDATE actividad_mecanicos SET informe = ? WHERE actividad_id = ? AND legajo_mecanico = ?`, [informe, req.params.id, legajo_mecanico]);
+        res.json({ status: 'Informe guardado' });
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
@@ -711,34 +831,45 @@ router.delete('/:id', async (req, res) => {
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
+// Lista de tareas del mecánico. am.estado es SU estado personal, independiente del agregado.
+// Se le sigue mostrando una tarea mientras SU parte no esté Finalizada, incluso si un
+// compañero ya cerró la tarea entera (así puede reanudar o simplemente completar su informe).
 router.get('/mecanico/:legajo', async (req, res) => {
     try {
         const actividades = await all(`
-            SELECT a.*, o.patente, u.unidad, c.nombre AS cliente,
-                   COALESCE(
-                       (SELECT GROUP_CONCAT(l.nombre, ', ') FROM actividad_mecanicos am JOIN legajos l ON am.legajo_mecanico = l.legajo WHERE am.actividad_id = a.id),
-                       (SELECT nombre FROM legajos WHERE legajo = a.legajo_mecanico)
-                   ) AS equipo
-            FROM actividades a 
-            LEFT JOIN actividad_mecanicos am_filtro ON a.id = am_filtro.actividad_id
-            JOIN ordenes o ON a.ot = o.ot 
+            SELECT a.*, 
+                   am.estado AS mi_estado, am.tiempo_real AS mi_tiempo_real, am.informe AS mi_informe,
+                   o.patente, u.unidad, c.nombre AS cliente,
+                   (SELECT GROUP_CONCAT(l.nombre, ', ') FROM actividad_mecanicos am2 JOIN legajos l ON am2.legajo_mecanico = l.legajo WHERE am2.actividad_id = a.id) AS equipo
+            FROM actividad_mecanicos am
+            JOIN actividades a ON a.id = am.actividad_id
+            JOIN ordenes o ON a.ot = o.ot
             JOIN unidades u ON o.patente = u.patente
             JOIN clientes c ON u.cliente_id = c.id
-            WHERE (am_filtro.legajo_mecanico = ? OR a.legajo_mecanico = ?) AND a.estado != 'Finalizada'
-        `, [req.params.legajo, req.params.legajo]);
+            WHERE am.legajo_mecanico = ? AND am.estado != 'Finalizada'
+            ORDER BY a.id
+        `, [req.params.legajo]);
         res.json(actividades);
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
 router.post('/:id/tiempos', async (req, res) => {
-    const { inicio, fin } = req.body;
+    const { inicio, fin, legajo_mecanico } = req.body;
     if (!inicio) return res.status(400).json({ error: 'El inicio es obligatorio' });
     try {
         await withTransaction(async () => {
             const actividad = await get(`SELECT ot FROM actividades WHERE id = ?`, [req.params.id]);
             if (!actividad) throw new Error('Actividad no encontrada');
 
-            await run(`INSERT INTO tiempos_actividad (actividad_id, inicio, fin) VALUES (?, ?, ?)`, [req.params.id, inicio, fin || null]);
+            await run(`INSERT INTO tiempos_actividad (actividad_id, legajo_mecanico, inicio, fin) VALUES (?, ?, ?, ?)`, [req.params.id, legajo_mecanico || null, inicio, fin || null]);
+
+            if (legajo_mecanico && fin) {
+                const start = new Date(inicio + 'Z');
+                const end = new Date(fin + 'Z');
+                const horas = end > start ? (end - start) / 3600000 : 0;
+                await run(`UPDATE actividad_mecanicos SET tiempo_real = tiempo_real + ? WHERE actividad_id = ? AND legajo_mecanico = ?`, [horas, req.params.id, legajo_mecanico]);
+                await sincronizarEstadoActividad(req.params.id);
+            }
             await recalcularTiempoEmpleado(actividad.ot);
         });
         res.json({ status: 'Tiempo agregado' });
@@ -748,12 +879,20 @@ router.post('/:id/tiempos', async (req, res) => {
 router.delete('/tiempos/:id', async (req, res) => {
     try {
         await withTransaction(async () => {
-            const tiempo = await get(`SELECT actividad_id FROM tiempos_actividad WHERE id = ?`, [req.params.id]);
+            const tiempo = await get(`SELECT actividad_id, legajo_mecanico, inicio, fin FROM tiempos_actividad WHERE id = ?`, [req.params.id]);
             if (!tiempo) throw new Error('Registro de tiempo no encontrado');
-            
+
             const actividad = await get(`SELECT ot FROM actividades WHERE id = ?`, [tiempo.actividad_id]);
             await run(`DELETE FROM tiempos_actividad WHERE id = ?`, [req.params.id]);
-            
+
+            if (tiempo.legajo_mecanico && tiempo.fin) {
+                const start = new Date(tiempo.inicio + 'Z');
+                const end = new Date(tiempo.fin + 'Z');
+                const horas = end > start ? (end - start) / 3600000 : 0;
+                await run(`UPDATE actividad_mecanicos SET tiempo_real = MAX(0, tiempo_real - ?) WHERE actividad_id = ? AND legajo_mecanico = ?`, [horas, tiempo.actividad_id, tiempo.legajo_mecanico]);
+                await sincronizarEstadoActividad(tiempo.actividad_id);
+            }
+
             if (actividad) await recalcularTiempoEmpleado(actividad.ot);
         });
         res.json({ status: 'Tiempo eliminado' });
@@ -769,21 +908,45 @@ router.put('/:id', async (req, res) => {
 
             await run(
                 `UPDATE actividades 
-                 SET descripcion = ?, tiempo_estimado = ?, tiempo_real = ?,
+                 SET descripcion = ?, tiempo_estimado = ?,
                      fecha_inicio = COALESCE(NULLIF(?, ''), fecha_inicio),
                      fecha_fin = COALESCE(NULLIF(?, ''), fecha_fin)
                  WHERE id = ?`,
-                [descripcion, tiempo_estimado, tiempo_real, fecha_inicio, fecha_fin, req.params.id]
+                [descripcion, tiempo_estimado, fecha_inicio, fecha_fin, req.params.id]
             );
 
             if (legajos_mecanicos && legajos_mecanicos.length > 0) {
-                await run(`DELETE FROM actividad_mecanicos WHERE actividad_id = ?`, [req.params.id]);
-                for (const legajo of legajos_mecanicos) {
-                    await run(`INSERT INTO actividad_mecanicos (actividad_id, legajo_mecanico) VALUES (?, ?)`, [req.params.id, legajo]);
+                // A diferencia de antes, NO se borra y recrea todo el equipo: eso destruiría
+                // el progreso individual (estado/horas/informe) de quienes siguen en el equipo.
+                // Solo se agregan los nuevos y se quitan los que ya no están.
+                const actuales = (await all(`SELECT legajo_mecanico FROM actividad_mecanicos WHERE actividad_id = ?`, [req.params.id])).map(r => r.legajo_mecanico);
+                const aAgregar = legajos_mecanicos.filter(l => !actuales.includes(l));
+                const aQuitar = actuales.filter(l => !legajos_mecanicos.includes(l));
+
+                for (const legajo of aQuitar) {
+                    await run(`DELETE FROM actividad_mecanicos WHERE actividad_id = ? AND legajo_mecanico = ?`, [req.params.id, legajo]);
+                }
+                for (const legajo of aAgregar) {
+                    await run(`INSERT INTO actividad_mecanicos (actividad_id, legajo_mecanico, estado, tiempo_real) VALUES (?, ?, 'Asignada', 0)`, [req.params.id, legajo]);
                     await run(`INSERT INTO asignaciones (ot, legajo_mecanico) SELECT ?, ? WHERE NOT EXISTS (SELECT 1 FROM asignaciones WHERE ot = ? AND legajo_mecanico = ?)`, [actividad.ot, legajo, actividad.ot, legajo]);
                 }
+
+                // Mantener el campo "representante" sincronizado con el nuevo equipo
+                await run(`UPDATE actividades SET legajo_mecanico = ? WHERE id = ?`, [legajos_mecanicos[0], req.params.id]);
+
+                // Corrección manual de horas del Jefe: como ahora el tiempo total es la suma de
+                // cada mecánico, la corrección se aplica sobre el "representante" (ajustándolo
+                // para que el nuevo total agregado coincida con lo que puso el Jefe), en vez de
+                // pisar un único campo. El resto del equipo mantiene sus horas propias intactas.
+                if (tiempo_real !== undefined && tiempo_real !== null && !Number.isNaN(Number(tiempo_real))) {
+                    const rep = legajos_mecanicos[0];
+                    const otros = await get(`SELECT COALESCE(SUM(tiempo_real),0) AS s FROM actividad_mecanicos WHERE actividad_id = ? AND legajo_mecanico != ?`, [req.params.id, rep]);
+                    const nuevoRepTiempo = Math.max(0, Number(tiempo_real) - (otros.s || 0));
+                    await run(`UPDATE actividad_mecanicos SET tiempo_real = ? WHERE actividad_id = ? AND legajo_mecanico = ?`, [nuevoRepTiempo, req.params.id, rep]);
+                }
             }
-            
+
+            await sincronizarEstadoActividad(req.params.id);
             await recalcularTiempoEmpleado(actividad.ot);
         });
         res.json({ status: 'Actividad actualizada' });
@@ -955,14 +1118,14 @@ router.get('/', async (req, res) => {
 
 // PUT PROTEGIDO (Solo Admin)
 router.put('/', requireAuth(['usuario_gestionar']), async (req, res) => {
-    const { nombre_taller, hora_apertura, hora_cierre, hora_almuerzo_inicio, hora_almuerzo_fin, trabaja_corrido } = req.body;
+    const { nombre_taller, hora_apertura, hora_cierre, hora_almuerzo_inicio, hora_almuerzo_fin, trabaja_corrido, puerto_servidor } = req.body;
     try {
         await run(`
             UPDATE configuracion SET 
             nombre_taller = ?, hora_apertura = ?, hora_cierre = ?, 
-            hora_almuerzo_inicio = ?, hora_almuerzo_fin = ?, trabaja_corrido = ? 
+            hora_almuerzo_inicio = ?, hora_almuerzo_fin = ?, trabaja_corrido = ?, puerto_servidor = ?
             WHERE id = 1
-        `, [nombre_taller, hora_apertura, hora_cierre, hora_almuerzo_inicio, hora_almuerzo_fin, trabaja_corrido ? 1 : 0]);
+        `, [nombre_taller, hora_apertura, hora_cierre, hora_almuerzo_inicio, hora_almuerzo_fin, trabaja_corrido ? 1 : 0, puerto_servidor || 5881]);
         res.json({ status: 'Configuración actualizada' });
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
@@ -1281,7 +1444,13 @@ router.get('/:ot', async (req, res) => {
             COALESCE(
                 (SELECT GROUP_CONCAT(am.legajo_mecanico, ',') FROM actividad_mecanicos am WHERE am.actividad_id = a.id),
                 a.legajo_mecanico
-            ) AS legajos_mecanicos
+            ) AS legajos_mecanicos,
+            -- Detalle por mecánico: "Nombre|Estado|Horas" por integrante, separado por ';;'.
+            -- Permite que el Jefe vea quién ya terminó su parte y quién sigue trabajando,
+            -- en vez de solo el estado agregado de la tarea.
+            (SELECT GROUP_CONCAT(l.nombre || '|' || am.estado || '|' || am.tiempo_real, ';;')
+             FROM actividad_mecanicos am JOIN legajos l ON am.legajo_mecanico = l.legajo
+             WHERE am.actividad_id = a.id) AS equipo_detalle
             FROM actividades a 
             WHERE a.ot = ?
         `, [req.params.ot]);
@@ -2102,20 +2271,24 @@ async function getOperativo(inicio, fin) {
     `);
     const denomPorOTMap = new Map(denomEstimadoPorOT.map(r => [r.ot, r.denom_estimado]));
 
+    // Ahora que tiempos_actividad guarda el legajo real de quien tuvo la sesión abierta
+    // (cada mecánico juega/pausa su propio cronómetro de forma independiente), el reporte
+    // puede acreditar las horas exactas a la persona que efectivamente las trabajó, en vez
+    // de repartir la sesión completa entre todo el equipo.
     const sesiones = await all(`
         SELECT
-            a.legajo_mecanico AS legajo, l.nombre, a.estado,
+            ta.legajo_mecanico AS legajo, l.nombre, a.estado,
             a.id AS actividad_id, a.ot, a.tiempo_estimado, a.tiempo_real AS tiempo_real_total,
             ta.inicio, ta.fin, c.nombre AS cliente_nombre,
             (o.monto_mano_obra + o.monto_mano_obra_garantia) AS monto_mano_obra_total
         FROM tiempos_actividad ta
         JOIN actividades a ON ta.actividad_id = a.id
-        JOIN legajos l ON a.legajo_mecanico = l.legajo
+        JOIN legajos l ON ta.legajo_mecanico = l.legajo
         JOIN ordenes o ON a.ot = o.ot
         JOIN unidades u ON o.patente = u.patente
         JOIN clientes c ON u.cliente_id = c.id
         WHERE ta.inicio < ? AND (ta.fin IS NULL OR ta.fin > ?)
-          AND (ta.fin IS NOT NULL OR (a.estado = 'En Curso' AND ta.id = (SELECT MAX(id) FROM tiempos_actividad WHERE actividad_id = a.id)))
+          AND (ta.fin IS NOT NULL OR (ta.id = (SELECT MAX(id) FROM tiempos_actividad WHERE actividad_id = a.id AND legajo_mecanico = ta.legajo_mecanico)))
     `, [fin, inicio]);
 
     for (const s of sesiones) {
@@ -2151,9 +2324,9 @@ async function getOperativo(inicio, fin) {
     }
 
     const diasActivosRows = await all(`
-        SELECT a.legajo_mecanico AS legajo, DATE(ta.inicio) as fecha
-        FROM tiempos_actividad ta JOIN actividades a ON ta.actividad_id = a.id
-        WHERE ta.inicio >= ? AND ta.inicio < ? GROUP BY a.legajo_mecanico, DATE(ta.inicio)
+        SELECT DISTINCT ta.legajo_mecanico AS legajo, DATE(ta.inicio) as fecha
+        FROM tiempos_actividad ta
+        WHERE ta.legajo_mecanico IS NOT NULL AND ta.inicio >= ? AND ta.inicio < ?
     `, [inicio, fin]);
 
     const excepcionesRows = await all(`SELECT id, legajo, DATE(fecha) as fecha, motivo, horas_descontadas FROM excepciones_mecanicos WHERE DATE(fecha) >= ? AND DATE(fecha) < ?`, [inicio, fin]);
@@ -2352,7 +2525,7 @@ module.exports = { calcularMinutosHabiles };
 <file path="gitaller-backend/utils/cron.js">
 const fs = require('fs');
 const path = require('path');
-const { all, get, run, recalcularTiempoEmpleado, sincronizarEstadoOT, DB_PATH } = require('../config/database');
+const { all, get, run, recalcularTiempoEmpleado, sincronizarEstadoOT, sincronizarEstadoActividad, DB_PATH } = require('../config/database');
 
 const BACKUPS_DIR = path.join(__dirname, '..', 'backups');
 const MAX_BACKUPS = 14;
@@ -2360,17 +2533,21 @@ const MAX_BACKUPS = 14;
 let ultimaAccionAutomatica = null;
 let cronEjecutando = false; 
 
+// Pausa/reanudación automática (mediodía): opera POR MECÁNICO, no por actividad completa.
+// Si dos mecánicos comparten una tarea, cada uno se pausa/reanuda de forma independiente
+// según lo que él mismo tenía en curso, no lo que tenía su compañero.
 async function procesarPausaAutomatica(esAlmuerzo) {
     console.log(`[SISTEMA] Ejecutando corte automático. ¿Es almuerzo?: ${esAlmuerzo}`);
     try {
-        const enCurso = await all(`SELECT id, ot FROM actividades WHERE estado = 'En Curso'`);
-        
-        for (const act of enCurso) {
+        const enCurso = await all(`SELECT actividad_id, legajo_mecanico FROM actividad_mecanicos WHERE estado = 'En Curso'`);
+        const actividadesAfectadas = new Set();
+
+        for (const m of enCurso) {
             const sesion = await get(
-                `SELECT id, inicio FROM tiempos_actividad WHERE actividad_id = ? AND fin IS NULL ORDER BY id DESC LIMIT 1`, 
-                [act.id]
+                `SELECT id, inicio FROM tiempos_actividad WHERE actividad_id = ? AND legajo_mecanico = ? AND fin IS NULL ORDER BY id DESC LIMIT 1`,
+                [m.actividad_id, m.legajo_mecanico]
             );
-            
+
             if (sesion) {
                 const ahora = new Date();
                 const inicioUTC = new Date(sesion.inicio.replace(' ', 'T') + 'Z');
@@ -2379,14 +2556,22 @@ async function procesarPausaAutomatica(esAlmuerzo) {
 
                 await run(`UPDATE tiempos_actividad SET fin = CURRENT_TIMESTAMP WHERE id = ?`, [sesion.id]);
                 await run(
-                    `UPDATE actividades SET tiempo_real = tiempo_real + ?, estado = 'Pausada', auto_pausa = ? WHERE id = ?`, 
-                    [horas, esAlmuerzo ? 1 : 0, act.id]
+                    `UPDATE actividad_mecanicos SET tiempo_real = tiempo_real + ?, estado = 'Pausada' WHERE actividad_id = ? AND legajo_mecanico = ?`,
+                    [horas, m.actividad_id, m.legajo_mecanico]
                 );
-                await recalcularTiempoEmpleado(act.ot);
-                
-                // Aplicamos sincronización (esta función respetará los estados externos si los hay)
-                await sincronizarEstadoOT(act.ot);
+                // auto_pausa vive en la actividad (marca "esto lo pausó el sistema, hay que
+                // reanudarlo solo"); si más de un mecánico estaba en curso en la misma tarea,
+                // el flag queda igual en 1 para ambos, que es lo que queremos.
+                await run(`UPDATE actividades SET auto_pausa = ? WHERE id = ?`, [esAlmuerzo ? 1 : 0, m.actividad_id]);
+
+                actividadesAfectadas.add(m.actividad_id);
+                const actividad = await get(`SELECT ot FROM actividades WHERE id = ?`, [m.actividad_id]);
+                if (actividad) await recalcularTiempoEmpleado(actividad.ot);
             }
+        }
+
+        for (const actividadId of actividadesAfectadas) {
+            await sincronizarEstadoActividad(actividadId);
         }
     } catch (error) {
         console.error('[SISTEMA] Error en corte automático:', error.message);
@@ -2422,12 +2607,25 @@ async function hacerBackupDB() {
 async function procesarReanudacionAutomatica() {
     console.log(`[SISTEMA] Ejecutando reanudación automática post-almuerzo.`);
     try {
-        const paraReanudar = await all(`SELECT id, ot FROM actividades WHERE estado = 'Pausada' AND auto_pausa = 1`);
-        for (const act of paraReanudar) {
-            await run(`UPDATE actividades SET estado = 'En Curso', auto_pausa = 0 WHERE id = ?`, [act.id]);
-            await run(`INSERT INTO tiempos_actividad (actividad_id, inicio) VALUES (?, CURRENT_TIMESTAMP)`, [act.id]);
-            // Levantar OT si estaba pausada a En Proceso de vuelta
-            await sincronizarEstadoOT(act.ot);
+        // Solo reanuda a quienes el sistema pausó automáticamente (auto_pausa=1 en la actividad)
+        // y que efectivamente seguían "Pausada" en su estado personal (si alguien ya arrancó
+        // otra cosa o finalizó su parte mientras tanto, no lo tocamos).
+        const paraReanudar = await all(`
+            SELECT am.actividad_id, am.legajo_mecanico FROM actividad_mecanicos am
+            JOIN actividades a ON a.id = am.actividad_id
+            WHERE am.estado = 'Pausada' AND a.auto_pausa = 1
+        `);
+
+        const actividadesAfectadas = new Set();
+        for (const m of paraReanudar) {
+            await run(`UPDATE actividad_mecanicos SET estado = 'En Curso' WHERE actividad_id = ? AND legajo_mecanico = ?`, [m.actividad_id, m.legajo_mecanico]);
+            await run(`INSERT INTO tiempos_actividad (actividad_id, legajo_mecanico, inicio) VALUES (?, ?, CURRENT_TIMESTAMP)`, [m.actividad_id, m.legajo_mecanico]);
+            actividadesAfectadas.add(m.actividad_id);
+        }
+
+        for (const actividadId of actividadesAfectadas) {
+            await run(`UPDATE actividades SET auto_pausa = 0 WHERE id = ?`, [actividadId]);
+            await sincronizarEstadoActividad(actividadId);
         }
     } catch (error) {
         console.error('[SISTEMA] Error en reanudación automática:', error.message);
@@ -2476,6 +2674,9 @@ node_modules/
 # Variables de entorno (cuando se agregue configuración sensible)
 .env
 .env.local
+*.md
+*.yaml
+*.yml   
 
 # Base de datos SQLite: NUNCA debe versionarse. Contiene datos reales de
 # clientes (nombre, teléfono, correo) y crece indefinidamente con el uso.
@@ -2605,6 +2806,8 @@ app.get('/status', (req, res) => {
 
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/sala', limiterSala, require('./routes/sala')); // Sala blindada con su propio limitador
+app.use('/api/configuracion', require('./routes/configuracion'));
+
 
 // ─── RUTAS PROTEGIDAS (Requieren sesión válida y permisos específicos) ───
 
@@ -2633,11 +2836,26 @@ app.use('/api/roles', requireAuth(['rol_gestionar']), require('./routes/roles'))
 // ─── INICIAR TAREAS PROGRAMADAS ────────────────────────────────────
 iniciarCron();
 
-// ─── ARRANQUE ──────────────────────────────────────────────────────
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 API IVEMAR Segura activa en http://0.0.0.0:${PORT}`);
-    console.log(`📁 Firmas: ${FIRMAS_DIR}`);
-});
+// ─── ARRANQUE DINÁMICO ─────────────────────────────────────────────
+const { get } = require('./config/database');
+
+// Esperamos 1.5s para que database.js termine de crear/migrar las tablas
+setTimeout(async () => {
+    try {
+        const conf = await get(`SELECT puerto_servidor FROM configuracion WHERE id = 1`);
+        const PORT_FINAL = (conf && conf.puerto_servidor) ? conf.puerto_servidor : PORT;
+        
+        app.listen(PORT_FINAL, '0.0.0.0', () => {
+            console.log(`🚀 API Taller Segura activa en http://0.0.0.0:${PORT_FINAL}`);
+            console.log(`📁 Firmas y Logos: ${FIRMAS_DIR}`);
+        });
+    } catch (error) {
+        // Fallback de emergencia
+        app.listen(PORT, '0.0.0.0', () => {
+            console.log(`🚀 API activa en puerto: ${PORT}`);
+        });
+    }
+}, 1500);
 </file>
 
 <file path="gitaller-backend/sql.js">
@@ -2797,6 +3015,15 @@ c140 -138 239 -320 285 -526 8 -34 13 -118 13 -199 0 -113 -4 -157 -23 -229
           <input type="text" v-model="form.nombre_taller" required />
         </div>
         
+        <!-- Agrega este bloque debajo del div de nombre_taller -->
+        <div class="form-group">
+          <label>Puerto del Servidor</label>
+          <input type="number" v-model="form.puerto_servidor" required />
+          <small style="color: #b22234; display:block; margin-top:4px;">
+            ⚠️ Si modificas este valor, debes reiniciar manualmente la consola del backend.
+          </small>
+        </div>
+
         <div class="form-group">
           <label>Hora de Apertura (0-23)</label>
           <input type="number" v-model="form.hora_apertura" min="0" max="23" required />
@@ -2857,11 +3084,11 @@ const configStore = useConfigStore()
 const guardando = ref(false)
 const form = ref({
   nombre_taller: '', hora_apertura: 8, hora_cierre: 18, 
-  hora_almuerzo_inicio: 13, hora_almuerzo_fin: 14, trabaja_corrido: false
+  hora_almuerzo_inicio: 13, hora_almuerzo_fin: 14, trabaja_corrido: false,
+  puerto_servidor: 5881 // Añadir a la base
 })
 
 onMounted(() => {
-  // Poblamos el formulario con lo que haya en Pinia
   const c = configStore.config
   form.value = {
     nombre_taller: c.nombre_taller,
@@ -2869,7 +3096,8 @@ onMounted(() => {
     hora_cierre: c.hora_cierre,
     hora_almuerzo_inicio: c.hora_almuerzo_inicio,
     hora_almuerzo_fin: c.hora_almuerzo_fin,
-    trabaja_corrido: c.trabaja_corrido === 1
+    trabaja_corrido: c.trabaja_corrido === 1,
+    puerto_servidor: c.puerto_servidor || 5881 // Asignarlo
   }
 })
 
@@ -3838,7 +4066,18 @@ onMounted(cargarAgenda)
               <tbody>
                 <template v-for="a in data.actividades" :key="a.id">
                   <tr>
-                    <td>{{ a.legajo_mecanico }}</td>
+                    <td>
+                      <div v-if="parseEquipo(a.equipo_detalle).length" class="equipo-mini">
+                        <span
+                          v-for="(m, idx) in parseEquipo(a.equipo_detalle)"
+                          :key="idx"
+                          class="mini-pill"
+                          :class="miniPillClass(m.estado)"
+                          :title="`${m.nombre}: ${m.estado} · ${m.horas.toFixed(2)} hs`"
+                        >{{ m.nombre }} <small>({{ m.estado }})</small></span>
+                      </div>
+                      <span v-else>{{ a.nombre_mecanico || a.legajo_mecanico }}</span>
+                    </td>
                     <td>{{ a.descripcion }}</td>
                     <td><span class="badge-sm">{{ a.estado }}</span></td>
                     <td>{{ a.tiempo_estimado }}</td>
@@ -3926,6 +4165,22 @@ const getTiempos = (actId) => {
   return (data.value?.tiempos_actividad || []).filter(t => t.actividad_id === actId);
 }
 
+// "Nombre|Estado|Horas;;Nombre|Estado|Horas" -> [{nombre, estado, horas}]
+const parseEquipo = (equipoDetalle) => {
+  if (!equipoDetalle) return [];
+  return equipoDetalle.split(';;').map(parte => {
+    const [nombre, estado, horas] = parte.split('|');
+    return { nombre, estado, horas: parseFloat(horas) || 0 };
+  }).filter(m => m.nombre);
+}
+
+const miniPillClass = (estado) => ({
+  'Asignada': 'pill-info',
+  'En Curso': 'pill-progress',
+  'Pausada': 'pill-warn',
+  'Finalizada': 'pill-done'
+}[estado] || 'pill-info')
+
 const tiemposAbiertos = ref(null);
 const toggleTiempos = (actId) => tiemposAbiertos.value = (tiemposAbiertos.value === actId ? null : actId);
 
@@ -4012,6 +4267,13 @@ th, td { padding: 8px; text-align: left; border-bottom: 1px solid #eee; }
 th { background: #f8fafc; }
 .badge { background: #0056a7; color: white; padding: 4px 10px; border-radius: 20px; font-size: 0.85rem; font-weight: bold; }
 .badge-sm { background: #6c7a8a; color: white; padding: 2px 8px; border-radius: 10px; font-size: 0.75rem; }
+.equipo-mini { display: flex; flex-direction: column; gap: 4px; }
+.mini-pill { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.78rem; color: white; white-space: nowrap; }
+.mini-pill small { opacity: 0.85; }
+.pill-info { background: #0056a7; }
+.pill-progress { background: #1d8a4f; }
+.pill-warn { background: #b8860b; }
+.pill-done { background: #6c7a8a; }
 .aportes-list { list-style: none; padding: 0; margin: 0; }
 .aportes-list li { border-bottom: 1px solid #eee; padding: 10px 0; font-size: 0.95rem; }
 .btn { margin-right: 4px; }
@@ -5266,7 +5528,10 @@ th { background: #f8fafc; font-weight: 600; color: #1a2a3a; }
     <!-- Botón de Cerrar sesión, ahora donde estaba el de Inicio -->
     <button class="logout" @click="handleLogout">{{ logoutText }}</button>
 
-    <span class="brand" :style="brandStyle">{{ brand }}</span>
+    <div style="display: flex; align-items: center; gap: 12px; margin-right: auto;">
+      <img v-if="configStore.config.logo_path" :src="configStore.getLogoUrl()" style="max-height: 35px; border-radius: 4px;" alt="Logo" />
+      <span class="brand" :style="brandStyle">{{ configStore.config.nombre_taller }} | <small style="color:#666;">{{ brand }}</small></span>
+    </div>
     
     <!-- Pestañas dinámicas -->
     <button
@@ -5289,9 +5554,11 @@ th { background: #f8fafc; font-weight: 600; color: #1a2a3a; }
 <script setup>
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../../stores/useAuthStore'
+import { useConfigStore } from '../../stores/useConfigStore'
 
 const router = useRouter()
 const authStore = useAuthStore()
+const configStore = useConfigStore()
 
 const props = defineProps({
   brand: { type: String, required: true },
@@ -7291,6 +7558,37 @@ export const useAuthStore = defineStore('auth', () => {
 })
 </file>
 
+<file path="gitaller-frontend/src/stores/useConfigStore.js">
+import { defineStore } from 'pinia'
+import { ref } from 'vue'
+import { useApi } from '../composables/useApi'
+
+export const useConfigStore = defineStore('config', () => {
+  const { fetchJSON, API_BASE } = useApi()
+  const config = ref({ nombre_taller: 'Cargando...', trabaja_corrido: 0, puerto_servidor: 5881, logo_path: '' })
+
+  const cargarConfig = async () => {
+    try {
+      const data = await fetchJSON('/configuracion')
+      config.value = data
+      // Cambiar el título de la pestaña del navegador dinámicamente
+      if (data.nombre_taller) {
+        document.title = data.nombre_taller + ' - Gestión'
+      }
+    } catch (err) {
+      console.error('Error cargando configuración')
+    }
+  }
+
+  const getLogoUrl = () => {
+    if (!config.value.logo_path) return ''
+    return `${API_BASE.replace('/api', '')}${config.value.logo_path}`
+  }
+
+  return { config, cargarConfig, getLogoUrl }
+})
+</file>
+
 <file path="gitaller-frontend/src/stores/useInformesStore.js">
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
@@ -7362,13 +7660,15 @@ export const useInformesStore = defineStore('informes', () => {
   <div class="view-admin">
     <NavBar brand="⚙️ Administración" :tabs="tabs" v-model:activeTab="activeTab" />
 
+    <div v-if="activeTab === 'admin-config'" class="tab-content">
+      <AdminConfiguracion />
+    </div>
     <div v-if="activeTab === 'admin-usuarios'" class="tab-content">
       <AdminUsuarios />
     </div>
     <div v-if="activeTab === 'admin-roles'" class="tab-content">
       <AdminRoles />
     </div>
-    <!-- Aquí agregaremos futuras pestañas de configuración -->
   </div>
 </template>
 
@@ -7377,10 +7677,12 @@ import { ref } from 'vue'
 import NavBar from '../components/common/NavBar.vue'
 import AdminUsuarios from '../components/asesor/AdminUsuarios.vue'
 import AdminRoles from '../components/asesor/AdminRoles.vue'
+import AdminConfiguracion from '../components/asesor/AdminConfiguracion.vue' // Importado
 
-const activeTab = ref('admin-usuarios')
+const activeTab = ref('admin-config') // Hacemos que sea la primera en abrir
 
 const tabs = [
+  { id: 'admin-config', label: 'Configuración General' }, // Nueva Pestaña
   { id: 'admin-usuarios', label: 'Usuarios y Accesos' },
   { id: 'admin-roles', label: 'Perfiles y Permisos' }
 ]
@@ -7592,7 +7894,7 @@ onMounted(cargarOTs)
 <file path="gitaller-frontend/src/views/HomeView.vue">
 <template>
   <div class="main-menu">
-    <h1>🚗 IVEMAR - Taller</h1>
+    <h1>🚗 {{ configStore.config.nombre_taller }}</h1>
     <p>Sistema de gestión de órdenes de trabajo</p>
 
     <div class="role-buttons">
@@ -7622,8 +7924,10 @@ onMounted(cargarOTs)
 
 <script setup>
 import { useRouter } from 'vue-router'
+import { useConfigStore } from '../stores/useConfigStore';
 
 const router = useRouter()
+const configStore = useConfigStore();
 
 const goTo = (routeName) => {
   router.push({ name: routeName })
@@ -8042,7 +8346,7 @@ const ingresar = () => {
   <div class="login-container">
     <div class="card login-box">
       <div class="brand-header">
-        <h1>🚗 IVEMAR</h1>
+        <h1>🚗 {{ configStore.config.nombre_taller }}</h1>
         <p class="subtitle">Gestión Integral de Taller</p>
       </div>
 
@@ -8113,10 +8417,12 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/useAuthStore'
 import { useToast, errMsg } from '../composables/useToast'
+import { useConfigStore } from '../stores/useConfigStore'
 
 const router = useRouter()
 const authStore = useAuthStore()
 const toast = useToast()
+const configStore = useConfigStore()
 
 const mostrandoRegistro = ref(false)
 const procesando = ref(false)
@@ -8238,11 +8544,11 @@ const ejecutarRegistro = async () => {
             <div v-for="tarea in tareasInternas" :key="tarea.id" class="card-tarea" style="background-color: #f8fafc; border-left: 4px solid #b8860b;">
               <div class="tarea-header">
                 <h3>{{ tarea.descripcion }}</h3>
-                <span :class="['badge-sm', estadoClass(tarea.estado)]">{{ tarea.estado }}</span>
+                <span :class="['badge-sm', estadoClass(tarea.mi_estado)]">{{ tarea.mi_estado }}</span>
               </div>
               <p class="tarea-horas">Asignado por Jefe de Taller</p>
               <div class="acciones-tarea mt-10">
-                <button v-if="tarea.estado !== 'En Curso'" v-can="'tarea_operar'" @click="toggleTareaInterna(tarea)" class="btn btn-outline btn-sm w-100">▶ Iniciar Rutina</button>
+                <button v-if="tarea.mi_estado !== 'En Curso'" v-can="'tarea_operar'" @click="toggleTareaInterna(tarea)" class="btn btn-outline btn-sm w-100">▶ Iniciar Rutina</button>
                 <button v-else v-can="'tarea_operar'" @click="toggleTareaInterna(tarea)" class="btn btn-warning btn-sm w-100">⏸ Detener / Pausar</button>
               </div>
             </div>
@@ -8271,21 +8577,28 @@ const ejecutarRegistro = async () => {
               <div v-for="tarea in orden.tareas" :key="tarea.id" style="padding: 15px; border: 1px solid #d0d7e2; border-radius: 8px; margin-bottom: 10px; background: #fafcfe;">
                 <div style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                     <p class="tarea-desc" style="margin:0; font-size: 1rem;"><strong>Tarea:</strong> {{ tarea.descripcion }}</p>
-                    <span :class="['badge-sm', estadoClass(tarea.estado)]" style="font-size: 0.85rem;">{{ tarea.estado }}</span>
+                    <div style="display:flex; gap:6px; align-items:center;">
+                      <span class="badge-sm" style="background:#eef3f9; color:#334155;" title="Estado general de la tarea (todo el equipo)">Tarea: {{ tarea.estado }}</span>
+                      <span :class="['badge-sm', estadoClass(tarea.mi_estado)]" style="font-size: 0.85rem;" title="Tu estado personal">Yo: {{ tarea.mi_estado }}</span>
+                    </div>
                 </div>
-                <p class="tarea-horas" style="margin: 0 0 5px;">Estimado: {{ tarea.tiempo_estimado }} hs</p>
+                <p class="tarea-horas" style="margin: 0 0 5px;">Estimado: {{ tarea.tiempo_estimado }} hs · Mis horas: {{ (tarea.mi_tiempo_real || 0).toFixed(2) }} hs</p>
                 <p class="tarea-horas" style="margin: 0 0 15px; color: #0056a7;"><strong>Equipo:</strong> {{ tarea.equipo }}</p>
 
-                <!-- Botones de acción originales -->
-                <div class="acciones-tarea">
-                  <button v-if="['Asignada', 'Pendiente'].includes(tarea.estado)" v-can="'tarea_operar'" @click="cambiarEstado(tarea, 'En Curso')" class="btn btn-primary btn-sm">▶ Iniciar</button>
-                  <button v-if="tarea.estado === 'Pausada'" v-can="'tarea_operar'" @click="cambiarEstado(tarea, 'En Curso')" class="btn btn-primary btn-sm">▶ Reanudar</button>
-                  
-                  <button v-if="tarea.estado === 'En Curso'" v-can="'tarea_operar'" @click="abrirPausa(tarea)" class="btn btn-warning btn-sm">⏸ Pausar</button>
-                  <button v-if="tarea.estado === 'En Curso'" v-can="'tarea_operar'" @click="abrirFinalizar(tarea)" class="btn btn-success btn-sm">✔ Finalizar</button>
+                <p v-if="tarea.estado === 'Finalizada' && tarea.mi_estado !== 'Finalizada'" class="tarea-horas" style="margin: 0 0 10px; color: #b8860b;">
+                  ⚠ Un compañero ya cerró esta tarea. Podés reanudar si falta algo, o solo completar tu informe.
+                </p>
 
-                  <!-- NUEVO BOTÓN INFORMAR -->
-                  <button v-if="tarea.estado === 'Cerrada por Jefe'" v-can="'tarea_operar'" @click="abrirInformar(tarea)" class="btn btn-primary btn-sm">📝 Informar</button>
+                <!-- Botones de acción: actúan sobre TU propio estado, independiente del resto del equipo -->
+                <div class="acciones-tarea">
+                  <button v-if="tarea.mi_estado === 'Asignada'" v-can="'tarea_operar'" @click="cambiarEstado(tarea, 'En Curso')" class="btn btn-primary btn-sm">▶ Iniciar</button>
+                  <button v-if="tarea.mi_estado === 'Pausada'" v-can="'tarea_operar'" @click="cambiarEstado(tarea, 'En Curso')" class="btn btn-primary btn-sm">▶ Reanudar</button>
+
+                  <button v-if="tarea.mi_estado === 'En Curso'" v-can="'tarea_operar'" @click="abrirPausa(tarea)" class="btn btn-warning btn-sm">⏸ Pausar</button>
+                  <button v-if="['En Curso', 'Pausada'].includes(tarea.mi_estado)" v-can="'tarea_operar'" @click="abrirFinalizar(tarea)" class="btn btn-success btn-sm">✔ Finalizar mi parte</button>
+
+                  <!-- La tarea completa fue cerrada por el Jefe: solo queda completar el informe -->
+                  <button v-if="tarea.estado === 'Cerrada por Jefe' && tarea.mi_estado !== 'Finalizada'" v-can="'tarea_operar'" @click="abrirInformar(tarea)" class="btn btn-primary btn-sm">📝 Informar</button>
                 </div>
               </div>
 
@@ -8326,7 +8639,8 @@ const estadoClass = (estado) => ({
   'Pendiente': 'badge-info',
   'Asignada': 'badge-info',
   'En Curso': 'badge-progress',
-  'Pausada': 'badge-warn'
+  'Pausada': 'badge-warn',
+  'Finalizada': 'badge-progress'
 }[estado] || '')
 
 const cargarTareas = async () => {
@@ -8341,28 +8655,26 @@ const cargarTareas = async () => {
 }
 
 const cambiarEstado = async (tarea, estado) => {
-  // Optimista: el backend ya pausa automáticamente cualquier otra tarea
-  // "En Curso" de este mecánico al iniciar una nueva (ver actividades.js).
-  // Reflejamos ese efecto en la lista local al toque, sin esperar la
-  // respuesta ni el refetch, para que la UI no se sienta atrasada.
+  // Optimista: el backend pausa automáticamente cualquier OTRA tarea "En Curso" de ESTE
+  // mecánico al iniciar una nueva (por persona, no afecta a sus compañeros de equipo).
   let pausadaAuto = null
   if (estado === 'En Curso') {
     for (const t of tareas.value) {
-      if (t.id !== tarea.id && t.estado === 'En Curso') {
-        t.estado = 'Pausada'
+      if (t.id !== tarea.id && t.mi_estado === 'En Curso') {
+        t.mi_estado = 'Pausada'
         pausadaAuto = t
       }
     }
   }
-  tarea.estado = estado
+  tarea.mi_estado = estado
 
   try {
     await fetchJSON(`/actividades/${tarea.id}/estado`, {
       method: 'POST',
-      body: JSON.stringify({ nuevo_estado: estado })
+      body: JSON.stringify({ nuevo_estado: estado, legajo_mecanico: legajo.value })
     })
-    toast.success(`Tarea de OT ${tarea.ot} actualizada a "${estado}"`)
-    if (pausadaAuto) toast.info(`Se pausó automáticamente la tarea de OT ${pausadaAuto.ot}`)
+    toast.success(`Tu tarea de OT ${tarea.ot} pasó a "${estado}"`)
+    if (pausadaAuto) toast.info(`Se pausó automáticamente tu tarea de OT ${pausadaAuto.ot}`)
     cargarTareas()
   } catch (err) {
     toast.error('Error al actualizar la tarea: ' + errMsg(err))
@@ -8380,7 +8692,7 @@ const ejecutarPausa = async (motivo) => {
   try {
     await fetchJSON(`/actividades/${tareaActiva.value.id}/estado`, {
       method: 'POST',
-      body: JSON.stringify({ nuevo_estado: 'Pausada', motivo })
+      body: JSON.stringify({ nuevo_estado: 'Pausada', motivo, legajo_mecanico: legajo.value })
     })
     toast.info(`Tarea pausada: ${motivo}`)
     showModalPausa.value = false
@@ -8402,14 +8714,15 @@ const ejecutarFinalizacion = async (datos) => {
       body: JSON.stringify({ legajo: legajo.value, actividades: datos.reparacion, horas: 0 })
     })
 
-    // 3. Cambiar el estado de la tarea a Finalizada (tanto si era propia
-    // como si estaba cerrada por el jefe, para limpiarla de la lista)
+    // 3. Marcar TU parte de la tarea como Finalizada. Si tenías una sesión en curso, el
+    // backend la cierra; si no (venías de "Pausada" o de una tarea cerrada por el jefe),
+    // simplemente registra que terminaste, sin afectar a tus compañeros de equipo.
     await fetchJSON(`/actividades/${tareaActiva.value.id}/estado`, {
       method: 'POST',
-      body: JSON.stringify({ nuevo_estado: 'Finalizada' })
+      body: JSON.stringify({ nuevo_estado: 'Finalizada', legajo_mecanico: legajo.value })
     })
 
-    toast.success(esModoInformar.value ? 'Informe registrado correctamente' : 'Tarea finalizada y registrada correctamente')
+    toast.success(esModoInformar.value ? 'Informe registrado correctamente' : 'Tu parte de la tarea quedó finalizada')
     showModalFinalizar.value = false
     cargarTareas()
   } catch (err) { toast.error(errMsg(err)) }
@@ -8441,23 +8754,23 @@ const ordenesAgrupadas = computed(() => {
 const tareasInternas = computed(() => tareas.value.filter(t => t.ot === '0000'))
 
 const toggleTareaInterna = async (tarea) => {
-  const nuevo_estado = tarea.estado === 'En Curso' ? 'Pausada' : 'En Curso';
+  const nuevo_estado = tarea.mi_estado === 'En Curso' ? 'Pausada' : 'En Curso';
 
   let pausadaAuto = null
   if (nuevo_estado === 'En Curso') {
     for (const t of tareas.value) {
-      if (t.id !== tarea.id && t.estado === 'En Curso') {
-        t.estado = 'Pausada'
+      if (t.id !== tarea.id && t.mi_estado === 'En Curso') {
+        t.mi_estado = 'Pausada'
         pausadaAuto = t
       }
     }
   }
-  tarea.estado = nuevo_estado
+  tarea.mi_estado = nuevo_estado
 
   try {
     await fetchJSON(`/actividades/${tarea.id}/estado`, {
       method: 'POST',
-      body: JSON.stringify({ nuevo_estado, motivo: 'En Espera' })
+      body: JSON.stringify({ nuevo_estado, motivo: 'En Espera', legajo_mecanico: legajo.value })
     })
     toast.success(`Tarea interna ${nuevo_estado}`);
     if (pausadaAuto) toast.info(`Se pausó automáticamente la tarea de OT ${pausadaAuto.ot}`)
@@ -8829,7 +9142,15 @@ onUnmounted(() => {
 </template>
 
 <script setup>
+import { onMounted } from 'vue'
 import ToastContainer from './components/common/ToastContainer.vue'
+import { useConfigStore } from './stores/useConfigStore'
+
+const configStore = useConfigStore()
+
+onMounted(() => {
+  configStore.cargarConfig()
+})
 </script>
 </file>
 
@@ -9221,6 +9542,148 @@ backups/
 *.xml
 *.env
 dotenv
+</file>
+
+<file path="CAMBIOS.md">
+# Rediseño: cada mecánico maneja su parte de forma independiente
+
+Tenías razón: la arquitectura anterior no podía soportar esto. `actividades.estado`
+era un único campo compartido por todo el equipo — cuando cualquiera daba "play",
+el sistema entendía que *la tarea* (no la persona) pasaba a "En Curso", y de ahí
+el bug: reanudar afectaba a todos.
+
+## Qué cambió de fondo
+
+Antes: el estado y el cronómetro vivían en `actividades` (una fila = un estado para
+todo el equipo).
+
+Ahora: el estado y el cronómetro viven **por mecánico**, en `actividad_mecanicos`
+(estado propio: Asignada/En Curso/Pausada/Finalizada, horas propias, informe propio).
+`actividades.estado` pasa a ser un **resumen calculado** a partir de esas filas
+individuales — se sigue usando para todo lo que necesita "una foto general" (la
+vista del Jefe, el estado de la OT, los badges), pero ya no es la fuente de verdad.
+
+### Tabla nueva/ampliada: `actividad_mecanicos`
+Se agregaron 3 columnas:
+- `estado` — el estado individual de ESE mecánico en ESA tarea.
+- `tiempo_real` — sus horas acumuladas, independientes de sus compañeros.
+- `informe` — su propio texto de "qué hice", sin depender de que el resto también escriba.
+
+### Tabla `tiempos_actividad`
+Se agregó `legajo_mecanico`: cada sesión de cronómetro (play→pausa) ahora sabe de
+quién es. Antes el cronómetro era "de la tarea", sin dueño — por eso era imposible
+separar el trabajo de cada uno.
+
+### `sincronizarEstadoActividad()` (nueva función, en `database.js`)
+Recalcula el estado "de la tarea" mirando a todo el equipo:
+- Si alguien está En Curso → la tarea se ve En Curso.
+- Si nadie está En Curso, nadie quedó sin arrancar, y al menos uno Finalizó → la tarea
+  se considera Finalizada (a los que quedaron en "Pausada" sin cerrar formalmente no
+  los bloquea: son compañeros que entregaron la posta o no volvieron a loguearse ese día).
+- Si el Jefe la cerró a mano ("Cerrada por Jefe"), eso manda salvo que alguien la reabra.
+- Cualquier otro caso intermedio → Pausada.
+
+Se llama automáticamente cada vez que un mecánico cambia su propio estado.
+
+## Cómo quedan mapeados tus 3 casos de uso
+
+**Caso 1 (cada uno con su parte, en paralelo):**
+Mec 1 y Mec 2 dan play cada uno por separado → dos filas en `actividad_mecanicos`,
+cada una "En Curso" con su propio cronómetro corriendo. Mec 1 finaliza y escribe su
+informe → su fila pasa a Finalizada, desaparece de SU lista, pero Mec 2 sigue viendo
+la tarea "En Curso" (porque él sigue trabajando) y su cronómetro no se tocó.
+
+**Caso 2 (posta / handoff):**
+Mec 1 pausa (su fila → Pausada, guarda su informe). Mec 2 da play (su fila → En Curso,
+inicia su propio cronómetro). El estado general de la tarea sigue "En Curso" mientras
+Mec 2 trabaja. Al finalizar Mec 2, como nadie quedó "En Curso" y hay al menos un
+"Finalizada" (Mec 2) sin nadie "sin arrancar", la tarea general pasa a Finalizada —
+aunque Mec 1 haya quedado técnicamente en "Pausada" para siempre (ya escribió lo suyo).
+
+**Caso 3 (ausencia y retorno):**
+Mec 1 arranca. Se pausa (fin de jornada, manual o por el cron de las 18hs). Mec 2 da
+play al día siguiente sin tocar el estado de Mec 1. Al tercer día Mec 1 reanuda (su
+propia fila vuelve a En Curso) sin afectar a Mec 2, que quedó pausado el día anterior.
+Mec 1 finaliza → tarea general Finalizada. Mec 2, que nunca finalizó, sigue apareciendo
+en SU lista (porque su fila individual no es "Finalizada") con dos botones disponibles:
+"Reanudar" (por si necesita volver a trabajar en algo) o "Finalizar mi parte" (solo
+completar su informe sin reabrir nada). Esto lo ves reflejado en la UI con el aviso
+amarillo "Un compañero ya cerró esta tarea..." en `MecanicoView.vue`.
+
+## Endpoints que cambiaron
+
+- `POST /actividades/:id/estado` — ahora requiere `legajo_mecanico` en el body (el
+  mecánico logueado, ya disponible en el frontend). Cada llamado afecta solo a su fila
+  en `actividad_mecanicos`. El chequeo de "¿tengo otra tarea en curso en otro lado?"
+  también es por persona: no revienta el trabajo de un compañero en otra tarea.
+- `POST /actividades/:id/informe` (nuevo) — un mecánico puede guardar/actualizar su
+  informe sin necesariamente cambiar de estado (por si quiere ir anotando mientras
+  trabaja, sin esperar a pausar o finalizar).
+- `GET /actividades/mecanico/:legajo` — devuelve `mi_estado`, `mi_tiempo_real`,
+  `mi_informe` (tu fila individual) además de `estado` (el agregado del equipo).
+  Se sigue mostrando una tarea mientras TU parte no esté Finalizada, aunque el
+  agregado ya diga "Finalizada" (para cubrir el Caso 3).
+- `PUT /actividades/:id` (editar equipo desde el modal del Jefe) — ya NO borra y
+  recrea todo el equipo (eso hubiera destruido el progreso individual de quien
+  seguía en el equipo). Solo agrega a los nuevos integrantes y quita a los que
+  sacaron, preservando estado/horas/informe de los que se mantienen.
+- El cron de pausa/reanudación automática (mediodía) también pasa a ser por persona.
+
+## Reportes (`informes.service.js`)
+Como ahora cada sesión de `tiempos_actividad` sabe de quién es, el reporte de
+Rendimiento le acredita las horas EXACTAS a quien las trabajó (mejora respecto
+al parche anterior, que repartía la sesión completa entre todo el equipo por
+no tener esta información).
+
+## Migración de datos existentes
+Al reiniciar el backend, la migración:
+1. Agrega las columnas nuevas a `actividad_mecanicos` y `tiempos_actividad`.
+2. Para actividades que ya tenían un mecánico "representante" (todo lo creado hasta
+   ahora), le copia el estado y las horas actuales a SU fila individual. Si esa
+   actividad tenía otros compañeros de equipo (creados con el sistema anterior, que
+   no distinguía por persona), esos compañeros arrancan en 0 horas / "Asignada" —
+   no hay forma de reconstruir retroactivamente cuánto había trabajado cada uno,
+   porque esa información nunca se guardó separada.
+3. Las sesiones de tiempo (`tiempos_actividad`) viejas se atribuyen también al
+   mecánico representante, por la misma razón.
+
+No hace falta que hagas nada manual: es automático al reiniciar `node server.js` /
+`npm start`.
+
+## Archivos modificados en este patch
+- `gitaller-backend/config/database.js` — schema + `sincronizarEstadoActividad`
+- `gitaller-backend/routes/actividades.js` — reescrito, estado por mecánico
+- `gitaller-backend/utils/cron.js` — pausa/reanudación automática por mecánico
+- `gitaller-backend/services/informes.service.js` — horas exactas por persona
+- `gitaller-backend/routes/ordenes.js` — sin cambios nuevos, incluido por consistencia
+- `gitaller-frontend/src/views/MecanicoView.vue` — botones por `mi_estado`, no por
+  el estado agregado; muestra "Tarea: X / Yo: Y"
+- `gitaller-frontend/src/components/asesor/ModalDetalleOT.vue` — sin cambios nuevos
+  (ya venía del parche anterior), incluido por consistencia
+
+## Qué quedó afuera (posible siguiente paso)
+La vista del Jefe (`JefeView.vue` / `ModalDetalleOT.vue`) sigue mostrando solo el
+estado agregado de la tarea, no el detalle "Mec 1: Finalizada, Mec 2: En Curso".
+Funciona bien así (el Jefe ve si la tarea está resuelta o no), pero si en algún
+momento querés que el Jefe vea el detalle por persona, es un cambio menor —
+la información ya está disponible en el backend (`actividad_mecanicos`), solo
+faltaría exponerla en `GET /ordenes/:ot` y pintarla en el modal.
+
+---
+
+## Siguiente paso ya implementado: detalle por mecánico en la vista del Jefe
+
+`GET /ordenes/:ot` ahora devuelve, por cada actividad, un campo `equipo_detalle`
+con el desglose "Nombre|Estado|Horas" de cada integrante del equipo (separado por
+`;;`). `ModalDetalleOT.vue` lo parsea y muestra, en la columna "Mecánico" de la
+tabla de tareas, una pill de color por persona con su estado individual y sus
+horas propias (verde = En Curso, ámbar = Pausada, gris = Finalizada, azul =
+Asignada) en vez de un solo nombre plano. Así el Jefe ve de un vistazo, por
+ejemplo, "Mec 1 (Finalizada) / Mec 2 (En Curso)" en la misma tarea, sin tener
+que adivinar a partir del estado agregado.
+
+No requiere migración adicional: usa las columnas `estado`/`tiempo_real` de
+`actividad_mecanicos` que ya se agregaron en el paso anterior.
 </file>
 
 <file path="MIGRACION_LEEME.txt">

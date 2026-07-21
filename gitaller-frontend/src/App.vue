@@ -7,5 +7,13 @@
 </template>
 
 <script setup>
+import { onMounted } from 'vue'
 import ToastContainer from './components/common/ToastContainer.vue'
+import { useConfigStore } from './stores/useConfigStore'
+
+const configStore = useConfigStore()
+
+onMounted(() => {
+  configStore.cargarConfig()
+})
 </script>
