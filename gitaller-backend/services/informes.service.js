@@ -254,20 +254,24 @@ async function getOperativo(inicio, fin) {
     `);
     const denomPorOTMap = new Map(denomEstimadoPorOT.map(r => [r.ot, r.denom_estimado]));
 
+    // Ahora que tiempos_actividad guarda el legajo real de quien tuvo la sesión abierta
+    // (cada mecánico juega/pausa su propio cronómetro de forma independiente), el reporte
+    // puede acreditar las horas exactas a la persona que efectivamente las trabajó, en vez
+    // de repartir la sesión completa entre todo el equipo.
     const sesiones = await all(`
         SELECT
-            a.legajo_mecanico AS legajo, l.nombre, a.estado,
+            ta.legajo_mecanico AS legajo, l.nombre, a.estado,
             a.id AS actividad_id, a.ot, a.tiempo_estimado, a.tiempo_real AS tiempo_real_total,
             ta.inicio, ta.fin, c.nombre AS cliente_nombre,
             (o.monto_mano_obra + o.monto_mano_obra_garantia) AS monto_mano_obra_total
         FROM tiempos_actividad ta
         JOIN actividades a ON ta.actividad_id = a.id
-        JOIN legajos l ON a.legajo_mecanico = l.legajo
+        JOIN legajos l ON ta.legajo_mecanico = l.legajo
         JOIN ordenes o ON a.ot = o.ot
         JOIN unidades u ON o.patente = u.patente
         JOIN clientes c ON u.cliente_id = c.id
         WHERE ta.inicio < ? AND (ta.fin IS NULL OR ta.fin > ?)
-          AND (ta.fin IS NOT NULL OR (a.estado = 'En Curso' AND ta.id = (SELECT MAX(id) FROM tiempos_actividad WHERE actividad_id = a.id)))
+          AND (ta.fin IS NOT NULL OR (ta.id = (SELECT MAX(id) FROM tiempos_actividad WHERE actividad_id = a.id AND legajo_mecanico = ta.legajo_mecanico)))
     `, [fin, inicio]);
 
     for (const s of sesiones) {
@@ -303,9 +307,9 @@ async function getOperativo(inicio, fin) {
     }
 
     const diasActivosRows = await all(`
-        SELECT a.legajo_mecanico AS legajo, DATE(ta.inicio) as fecha
-        FROM tiempos_actividad ta JOIN actividades a ON ta.actividad_id = a.id
-        WHERE ta.inicio >= ? AND ta.inicio < ? GROUP BY a.legajo_mecanico, DATE(ta.inicio)
+        SELECT DISTINCT ta.legajo_mecanico AS legajo, DATE(ta.inicio) as fecha
+        FROM tiempos_actividad ta
+        WHERE ta.legajo_mecanico IS NOT NULL AND ta.inicio >= ? AND ta.inicio < ?
     `, [inicio, fin]);
 
     const excepcionesRows = await all(`SELECT id, legajo, DATE(fecha) as fecha, motivo, horas_descontadas FROM excepciones_mecanicos WHERE DATE(fecha) >= ? AND DATE(fecha) < ?`, [inicio, fin]);

@@ -3,7 +3,10 @@
     <!-- Botón de Cerrar sesión, ahora donde estaba el de Inicio -->
     <button class="logout" @click="handleLogout">{{ logoutText }}</button>
 
-    <span class="brand" :style="brandStyle">{{ brand }}</span>
+    <div style="display: flex; align-items: center; gap: 12px; margin-right: auto;">
+      <img v-if="configStore.config.logo_path" :src="configStore.getLogoUrl()" style="max-height: 35px; border-radius: 4px;" alt="Logo" />
+      <span class="brand" :style="brandStyle">{{ configStore.config.nombre_taller }} | <small style="color:#666;">{{ brand }}</small></span>
+    </div>
     
     <!-- Pestañas dinámicas -->
     <button
@@ -26,9 +29,11 @@
 <script setup>
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../../stores/useAuthStore'
+import { useConfigStore } from '../../stores/useConfigStore'
 
 const router = useRouter()
 const authStore = useAuthStore()
+const configStore = useConfigStore()
 
 const props = defineProps({
   brand: { type: String, required: true },

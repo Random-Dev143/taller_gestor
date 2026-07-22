@@ -87,7 +87,25 @@ router.get('/:ot', async (req, res) => {
         if (!ot) return res.status(404).json({ error: 'OT no encontrada' });
 
         const asignaciones = await all(`SELECT a.*, l.nombre FROM asignaciones a JOIN legajos l ON a.legajo_mecanico = l.legajo WHERE a.ot = ?`, [req.params.ot]);
-        const actividades = await all(`SELECT a.*, l.nombre AS nombre_mecanico FROM actividades a JOIN legajos l ON a.legajo_mecanico = l.legajo WHERE a.ot = ?`, [req.params.ot]);
+        const actividades = await all(`
+            SELECT a.*, 
+            COALESCE(
+                (SELECT GROUP_CONCAT(l.nombre, ', ') FROM actividad_mecanicos am JOIN legajos l ON am.legajo_mecanico = l.legajo WHERE am.actividad_id = a.id),
+                (SELECT nombre FROM legajos WHERE legajo = a.legajo_mecanico)
+            ) AS nombre_mecanico,
+            COALESCE(
+                (SELECT GROUP_CONCAT(am.legajo_mecanico, ',') FROM actividad_mecanicos am WHERE am.actividad_id = a.id),
+                a.legajo_mecanico
+            ) AS legajos_mecanicos,
+            -- Detalle por mecánico: "Nombre|Estado|Horas" por integrante, separado por ';;'.
+            -- Permite que el Jefe vea quién ya terminó su parte y quién sigue trabajando,
+            -- en vez de solo el estado agregado de la tarea.
+            (SELECT GROUP_CONCAT(l.nombre || '|' || am.estado || '|' || am.tiempo_real, ';;')
+             FROM actividad_mecanicos am JOIN legajos l ON am.legajo_mecanico = l.legajo
+             WHERE am.actividad_id = a.id) AS equipo_detalle
+            FROM actividades a 
+            WHERE a.ot = ?
+        `, [req.params.ot]);
         const explicacion = await get(`SELECT * FROM explicaciones WHERE ot = ?`, [req.params.ot]);
         const aportes = await all(`SELECT ap.*, l.nombre, l.firma_path FROM aportes ap JOIN legajos l ON ap.legajo = l.legajo WHERE ap.ot = ?`, [req.params.ot]);
         const historial = await all(`SELECT * FROM estados_historial WHERE ot = ? ORDER BY id`, [req.params.ot]);

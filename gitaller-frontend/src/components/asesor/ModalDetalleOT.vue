@@ -51,7 +51,18 @@
               <tbody>
                 <template v-for="a in data.actividades" :key="a.id">
                   <tr>
-                    <td>{{ a.legajo_mecanico }}</td>
+                    <td>
+                      <div v-if="parseEquipo(a.equipo_detalle).length" class="equipo-mini">
+                        <span
+                          v-for="(m, idx) in parseEquipo(a.equipo_detalle)"
+                          :key="idx"
+                          class="mini-pill"
+                          :class="miniPillClass(m.estado)"
+                          :title="`${m.nombre}: ${m.estado} · ${m.horas.toFixed(2)} hs`"
+                        >{{ m.nombre }} <small>({{ m.estado }})</small></span>
+                      </div>
+                      <span v-else>{{ a.nombre_mecanico || a.legajo_mecanico }}</span>
+                    </td>
                     <td>{{ a.descripcion }}</td>
                     <td><span class="badge-sm">{{ a.estado }}</span></td>
                     <td>{{ a.tiempo_estimado }}</td>
@@ -139,6 +150,22 @@ const getTiempos = (actId) => {
   return (data.value?.tiempos_actividad || []).filter(t => t.actividad_id === actId);
 }
 
+// "Nombre|Estado|Horas;;Nombre|Estado|Horas" -> [{nombre, estado, horas}]
+const parseEquipo = (equipoDetalle) => {
+  if (!equipoDetalle) return [];
+  return equipoDetalle.split(';;').map(parte => {
+    const [nombre, estado, horas] = parte.split('|');
+    return { nombre, estado, horas: parseFloat(horas) || 0 };
+  }).filter(m => m.nombre);
+}
+
+const miniPillClass = (estado) => ({
+  'Asignada': 'pill-info',
+  'En Curso': 'pill-progress',
+  'Pausada': 'pill-warn',
+  'Finalizada': 'pill-done'
+}[estado] || 'pill-info')
+
 const tiemposAbiertos = ref(null);
 const toggleTiempos = (actId) => tiemposAbiertos.value = (tiemposAbiertos.value === actId ? null : actId);
 
@@ -225,6 +252,13 @@ th, td { padding: 8px; text-align: left; border-bottom: 1px solid #eee; }
 th { background: #f8fafc; }
 .badge { background: #0056a7; color: white; padding: 4px 10px; border-radius: 20px; font-size: 0.85rem; font-weight: bold; }
 .badge-sm { background: #6c7a8a; color: white; padding: 2px 8px; border-radius: 10px; font-size: 0.75rem; }
+.equipo-mini { display: flex; flex-direction: column; gap: 4px; }
+.mini-pill { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.78rem; color: white; white-space: nowrap; }
+.mini-pill small { opacity: 0.85; }
+.pill-info { background: #0056a7; }
+.pill-progress { background: #1d8a4f; }
+.pill-warn { background: #b8860b; }
+.pill-done { background: #6c7a8a; }
 .aportes-list { list-style: none; padding: 0; margin: 0; }
 .aportes-list li { border-bottom: 1px solid #eee; padding: 10px 0; font-size: 0.95rem; }
 .btn { margin-right: 4px; }

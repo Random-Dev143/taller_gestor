@@ -2,7 +2,7 @@
   <div class="login-container">
     <div class="card login-box">
       <div class="brand-header">
-        <h1>🚗 IVEMAR</h1>
+        <h1>🚗 {{ configStore.config.nombre_taller }}</h1>
         <p class="subtitle">Gestión Integral de Taller</p>
       </div>
 
@@ -73,10 +73,12 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/useAuthStore'
 import { useToast, errMsg } from '../composables/useToast'
+import { useConfigStore } from '../stores/useConfigStore'
 
 const router = useRouter()
 const authStore = useAuthStore()
 const toast = useToast()
+const configStore = useConfigStore()
 
 const mostrandoRegistro = ref(false)
 const procesando = ref(false)

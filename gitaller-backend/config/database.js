@@ -122,6 +122,58 @@ async function migrarEstructura() {
             await run(`ALTER TABLE ordenes ADD COLUMN descuento_autorizado_en DATETIME`);
         }
 
+        // Trabajo en equipo independiente: cada mecánico de una actividad tiene su propio
+        // estado (Asignada/En Curso/Pausada/Finalizada), su propio acumulado de horas, y
+        // puede escribir su propio informe/aporte, sin depender de lo que hagan sus compañeros.
+        const actMecCols = (await all(`PRAGMA table_info(actividad_mecanicos)`)).map(c => c.name);
+        if (!actMecCols.includes('estado')) {
+            await run(`ALTER TABLE actividad_mecanicos ADD COLUMN estado TEXT NOT NULL DEFAULT 'Asignada'`);
+            await run(`ALTER TABLE actividad_mecanicos ADD COLUMN tiempo_real REAL NOT NULL DEFAULT 0`);
+            await run(`ALTER TABLE actividad_mecanicos ADD COLUMN informe TEXT`);
+
+            // Migración de datos: para las actividades ya existentes, el estado/tiempo_real
+            // "de la actividad" en realidad pertenecía a UNA sola persona (el sistema todavía
+            // no soportaba equipos independientes). Se lo asignamos al mecánico "representante"
+            // (actividades.legajo_mecanico); el resto del equipo, si lo hay, arranca en 0/Asignada
+            // porque no hay forma de reconstruir cuánto trabajó cada uno en el pasado.
+            await run(`
+                UPDATE actividad_mecanicos
+                SET estado = (SELECT a.estado FROM actividades a WHERE a.id = actividad_mecanicos.actividad_id),
+                    tiempo_real = (SELECT a.tiempo_real FROM actividades a WHERE a.id = actividad_mecanicos.actividad_id)
+                WHERE legajo_mecanico = (SELECT a.legajo_mecanico FROM actividades a WHERE a.id = actividad_mecanicos.actividad_id)
+            `);
+            console.log('✅ Migración de equipo independiente (actividad_mecanicos) completada.');
+        }
+
+        const tiemposCols = (await all(`PRAGMA table_info(tiempos_actividad)`)).map(c => c.name);
+        if (!tiemposCols.includes('legajo_mecanico')) {
+            await run(`ALTER TABLE tiempos_actividad ADD COLUMN legajo_mecanico TEXT`);
+            // Best-effort: las sesiones viejas se atribuyen al mecánico representante de su actividad
+            await run(`
+                UPDATE tiempos_actividad
+                SET legajo_mecanico = (SELECT legajo_mecanico FROM actividades WHERE id = tiempos_actividad.actividad_id)
+                WHERE legajo_mecanico IS NULL
+            `);
+            console.log('✅ Migración de sesiones de tiempo por mecánico (tiempos_actividad.legajo_mecanico) completada.');
+        }
+
+        const configCols = (await all(`PRAGMA table_info(configuracion)`)).map(c => c.name);
+        
+        // Agregar puerto_servidor si no existía (como vimos antes)
+        if (!configCols.includes('puerto_servidor')) {
+            await run(`ALTER TABLE configuracion ADD COLUMN puerto_servidor INTEGER DEFAULT 5881`);
+        }
+        
+        // NUEVOS CAMPOS DE MEMBRETE
+        if (!configCols.includes('slogan')) {
+            await run(`ALTER TABLE configuracion ADD COLUMN slogan TEXT DEFAULT ''`);
+            await run(`ALTER TABLE configuracion ADD COLUMN direccion TEXT DEFAULT ''`);
+            await run(`ALTER TABLE configuracion ADD COLUMN cuit TEXT DEFAULT ''`);
+            await run(`ALTER TABLE configuracion ADD COLUMN telefono TEXT DEFAULT ''`);
+            await run(`ALTER TABLE configuracion ADD COLUMN email TEXT DEFAULT ''`);
+            console.log('✅ Migración de configuración (datos de membrete) completada.');
+        }
+
         await run(`UPDATE actividades SET estado = 'Asignada' WHERE estado = 'Pendiente'`);
         await run(`UPDATE actividades SET tiempo_real = 0 WHERE tiempo_real < 0`);
         await run(`UPDATE ordenes SET tiempo_empleado_horas = 0 WHERE tiempo_empleado_horas < 0`);
@@ -135,6 +187,8 @@ async function migrarEstructura() {
             `CREATE INDEX IF NOT EXISTS idx_estados_historial_ot ON estados_historial(ot)`,
             `CREATE INDEX IF NOT EXISTS idx_aportes_ot ON aportes(ot)`,
             `CREATE INDEX IF NOT EXISTS idx_tiempos_actividad_actividad_id ON tiempos_actividad(actividad_id)`,
+            `CREATE INDEX IF NOT EXISTS idx_tiempos_actividad_legajo ON tiempos_actividad(legajo_mecanico)`,
+            `CREATE INDEX IF NOT EXISTS idx_actividad_mecanicos_legajo ON actividad_mecanicos(legajo_mecanico)`,
             `CREATE INDEX IF NOT EXISTS idx_ordenes_fecha_apertura ON ordenes(fecha_apertura)`,
             `CREATE INDEX IF NOT EXISTS idx_ordenes_fecha_cierre ON ordenes(fecha_cierre)`,
             `CREATE INDEX IF NOT EXISTS idx_ordenes_estado_actual ON ordenes(estado_actual)`,
@@ -158,7 +212,23 @@ db.serialize(async () => {
     db.run(`CREATE TABLE IF NOT EXISTS explicaciones (id INTEGER PRIMARY KEY AUTOINCREMENT, ot TEXT NOT NULL UNIQUE, causa TEXT, FOREIGN KEY(ot) REFERENCES ordenes(ot) ON DELETE CASCADE ON UPDATE CASCADE)`);
     db.run(`CREATE TABLE IF NOT EXISTS aportes (id INTEGER PRIMARY KEY AUTOINCREMENT, ot TEXT NOT NULL, legajo TEXT NOT NULL, actividades TEXT NOT NULL, horas REAL DEFAULT 0, fecha_aporte DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(ot) REFERENCES ordenes(ot) ON DELETE CASCADE ON UPDATE CASCADE, FOREIGN KEY(legajo) REFERENCES legajos(legajo) ON DELETE RESTRICT ON UPDATE CASCADE)`);
     db.run(`CREATE TABLE IF NOT EXISTS actividades (id INTEGER PRIMARY KEY AUTOINCREMENT, ot TEXT NOT NULL, descripcion TEXT NOT NULL, tiempo_estimado REAL NOT NULL, tiempo_real REAL DEFAULT 0, estado TEXT DEFAULT 'Asignada' CHECK(estado IN ('Pendiente', 'Asignada', 'En Curso', 'Pausada', 'Finalizada', 'Cerrada por Jefe')), legajo_mecanico TEXT NOT NULL, auto_pausa INTEGER DEFAULT 0, fecha_inicio DATETIME, fecha_fin DATETIME, FOREIGN KEY(ot) REFERENCES ordenes(ot) ON DELETE CASCADE ON UPDATE CASCADE, FOREIGN KEY(legajo_mecanico) REFERENCES legajos(legajo) ON DELETE RESTRICT ON UPDATE CASCADE)`);
-    db.run(`CREATE TABLE IF NOT EXISTS tiempos_actividad (id INTEGER PRIMARY KEY AUTOINCREMENT, actividad_id INTEGER NOT NULL, inicio DATETIME NOT NULL, fin DATETIME, FOREIGN KEY(actividad_id) REFERENCES actividades(id) ON DELETE CASCADE ON UPDATE CASCADE)`);
+    db.run(`CREATE TABLE IF NOT EXISTS tiempos_actividad (id INTEGER PRIMARY KEY AUTOINCREMENT, actividad_id INTEGER NOT NULL, legajo_mecanico TEXT, inicio DATETIME NOT NULL, fin DATETIME, FOREIGN KEY(actividad_id) REFERENCES actividades(id) ON DELETE CASCADE ON UPDATE CASCADE)`);
+    db.run(`CREATE TABLE IF NOT EXISTS actividad_mecanicos (
+    actividad_id INTEGER NOT NULL, 
+    legajo_mecanico TEXT NOT NULL, 
+    estado TEXT NOT NULL DEFAULT 'Asignada' CHECK(estado IN ('Asignada','En Curso','Pausada','Finalizada')),
+    tiempo_real REAL NOT NULL DEFAULT 0,
+    informe TEXT,
+    PRIMARY KEY(actividad_id, legajo_mecanico),
+    FOREIGN KEY(actividad_id) REFERENCES actividades(id) ON DELETE CASCADE, 
+    FOREIGN KEY(legajo_mecanico) REFERENCES legajos(legajo) ON DELETE RESTRICT
+)`);
+
+    // NUEVO: Esta línea rescata las actividades históricas y las inserta en la nueva tabla
+    db.run(`INSERT OR IGNORE INTO actividad_mecanicos (actividad_id, legajo_mecanico) 
+            SELECT id, legajo_mecanico FROM actividades 
+            WHERE legajo_mecanico IS NOT NULL AND legajo_mecanico != 'EQUIPO'`);
+
     db.run(`CREATE TABLE IF NOT EXISTS excepciones_mecanicos (id INTEGER PRIMARY KEY AUTOINCREMENT, legajo TEXT NOT NULL, fecha DATE NOT NULL, motivo TEXT NOT NULL, horas_descontadas REAL DEFAULT 10, FOREIGN KEY(legajo) REFERENCES legajos(legajo) ON DELETE CASCADE ON UPDATE CASCADE)`);
     db.run(`CREATE TABLE IF NOT EXISTS feriados (fecha DATE PRIMARY KEY, descripcion TEXT DEFAULT '')`);
     db.run(`CREATE TABLE IF NOT EXISTS usuarios (
@@ -199,7 +269,13 @@ db.serialize(async () => {
         hora_cierre INTEGER DEFAULT 18, 
         hora_almuerzo_inicio INTEGER DEFAULT 13, 
         hora_almuerzo_fin INTEGER DEFAULT 14, 
-        trabaja_corrido INTEGER DEFAULT 0
+        trabaja_corrido INTEGER DEFAULT 0,
+        puerto_servidor INTEGER DEFAULT 5881,
+        slogan TEXT DEFAULT 'tu slogan aqui',
+        direccion TEXT DEFAULT 'tu dirección aqui',
+        cuit TEXT DEFAULT '',
+        telefono TEXT DEFAULT '134-123456',
+        email TEXT DEFAULT 'taller@taller.com'
     )`);
     
     db.run(`ALTER TABLE usuarios ADD COLUMN rol_id TEXT REFERENCES roles(id) ON DELETE SET NULL`, (err) => { /* Ignorar si ya existe */ });
@@ -215,23 +291,26 @@ db.serialize(async () => {
 
 async function inicializarTallerInterno() {
     try {
-        // 1. Asegurar Cliente gitaller
-        let cli = await get(`SELECT id FROM clientes WHERE nombre = 'IVEMAR'`);
+        // 1. Obtener el nombre del taller desde la configuración
+        const config = await get(`SELECT nombre_taller FROM configuracion WHERE id = 1`);
+        const nombreTaller = (config && config.nombre_taller) ? config.nombre_taller.toUpperCase() : 'TALLER INTERNO';
+
+        // 2. Asegurar Cliente dinámico
+        let cli = await get(`SELECT id FROM clientes WHERE nombre = ?`, [nombreTaller]);
         if (!cli) {
-            await run(`INSERT INTO clientes (nombre) VALUES ('IVEMAR')`);
-            cli = await get(`SELECT id FROM clientes WHERE nombre = 'IVEMAR'`);
+            await run(`INSERT INTO clientes (nombre) VALUES (?)`, [nombreTaller]);
+            cli = await get(`SELECT id FROM clientes WHERE nombre = ?`, [nombreTaller]);
         }
 
-        // 2. Asegurar Unidad Interna
+        // 3. Asegurar Unidad Interna
         let uni = await get(`SELECT id FROM unidades WHERE patente = 'INT000'`);
         if (!uni) {
             await run(`INSERT INTO unidades (patente, cliente_id, unidad) VALUES ('INT000', ?, 'TALLER INTERNO')`, [cli.id]);
         }
 
-        // 3. Asegurar OT 0000
+        // 4. Asegurar OT 0000
         let ot = await get(`SELECT ot FROM ordenes WHERE ot = '0000'`);
         if (!ot) {
-            // Buscamos cualquier asesor para cumplir el constraint, o creamos un comodín
             let asesor = await get(`SELECT legajo FROM legajos WHERE rol = 'asesor' LIMIT 1`);
             let legajo_asesor = asesor ? asesor.legajo : 'ADMIN';
             if(!asesor) await run(`INSERT OR IGNORE INTO legajos (legajo, nombre, rol) VALUES ('ADMIN', 'Sistema', 'asesor')`);
@@ -273,6 +352,48 @@ async function sincronizarEstadoOT(ot) {
     }
 
     if (estadoCalculado !== orden.estado_actual) await cambiarEstado(ot, estadoCalculado);
+}
+
+// Recalcula el estado y el tiempo_real "de la actividad" (agregado) a partir del
+// estado individual de cada mecánico del equipo (actividad_mecanicos). La actividad
+// ya NO es la fuente de verdad del estado/tiempo: es un resumen calculado.
+//
+// Reglas (ver flujos de trabajo reales que las motivan):
+// - Si alguien está "En Curso" -> la actividad se ve "En Curso" (aunque otro ya haya terminado su parte).
+// - Si nadie está "En Curso", nadie quedó "Asignada" sin arrancar, y al menos uno "Finalizada"
+//   -> la actividad se considera Finalizada (el resto que quedó "Pausada" sin cerrar formalmente
+//      no bloquea el cierre: son compañeros que entregaron la posta o no volvieron a loguearse,
+//      y siguen viendo la tarea para reanudarla o completar su informe).
+// - Si el Jefe la cerró manualmente ("Cerrada por Jefe"), esa cerradura manda salvo que alguien
+//   la reabra activamente poniéndose "En Curso".
+// - Cualquier otro caso intermedio -> "Pausada".
+async function sincronizarEstadoActividad(actividadId) {
+    const miembros = await all(`SELECT estado, tiempo_real FROM actividad_mecanicos WHERE actividad_id = ?`, [actividadId]);
+    if (miembros.length === 0) return; // no debería pasar tras la migración, pero por las dudas
+
+    const actividad = await get(`SELECT ot, estado AS estado_actual FROM actividades WHERE id = ?`, [actividadId]);
+    if (!actividad) return;
+
+    const tiempoTotal = miembros.reduce((acc, m) => acc + (m.tiempo_real || 0), 0);
+    const hayEnCurso = miembros.some(m => m.estado === 'En Curso');
+    const haySinArrancar = miembros.some(m => m.estado === 'Asignada');
+    const hayFinalizada = miembros.some(m => m.estado === 'Finalizada');
+
+    let estadoCalc;
+    if (hayEnCurso) {
+        estadoCalc = 'En Curso';
+    } else if (hayFinalizada && !haySinArrancar) {
+        estadoCalc = 'Finalizada';
+    } else if (actividad.estado_actual === 'Cerrada por Jefe') {
+        estadoCalc = 'Cerrada por Jefe';
+    } else if (miembros.every(m => m.estado === 'Asignada')) {
+        estadoCalc = 'Asignada';
+    } else {
+        estadoCalc = 'Pausada';
+    }
+
+    await run(`UPDATE actividades SET estado = ?, tiempo_real = ? WHERE id = ?`, [estadoCalc, tiempoTotal, actividadId]);
+    await sincronizarEstadoOT(actividad.ot);
 }
 
 async function recalcularTiempoEmpleado(ot) {
@@ -340,4 +461,4 @@ async function inicializarRolesYPermisos() {
     }
 }
 
-module.exports = { db, run, all, get, cambiarEstado, sincronizarEstadoOT, recalcularTiempoEmpleado, DB_PATH, withTransaction };
+module.exports = { db, run, all, get, cambiarEstado, sincronizarEstadoOT, sincronizarEstadoActividad, recalcularTiempoEmpleado, DB_PATH, withTransaction };

@@ -71,6 +71,8 @@ app.get('/status', (req, res) => {
 
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/sala', limiterSala, require('./routes/sala')); // Sala blindada con su propio limitador
+app.use('/api/configuracion', require('./routes/configuracion'));
+
 
 // ─── RUTAS PROTEGIDAS (Requieren sesión válida y permisos específicos) ───
 
@@ -99,8 +101,23 @@ app.use('/api/roles', requireAuth(['rol_gestionar']), require('./routes/roles'))
 // ─── INICIAR TAREAS PROGRAMADAS ────────────────────────────────────
 iniciarCron();
 
-// ─── ARRANQUE ──────────────────────────────────────────────────────
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 API IVEMAR Segura activa en http://0.0.0.0:${PORT}`);
-    console.log(`📁 Firmas: ${FIRMAS_DIR}`);
-});
+// ─── ARRANQUE DINÁMICO ─────────────────────────────────────────────
+const { get } = require('./config/database');
+
+// Esperamos 1.5s para que database.js termine de crear/migrar las tablas
+setTimeout(async () => {
+    try {
+        const conf = await get(`SELECT puerto_servidor FROM configuracion WHERE id = 1`);
+        const PORT_FINAL = (conf && conf.puerto_servidor) ? conf.puerto_servidor : PORT;
+        
+        app.listen(PORT_FINAL, '0.0.0.0', () => {
+            console.log(`🚀 API Taller Segura activa en http://0.0.0.0:${PORT_FINAL}`);
+            console.log(`📁 Firmas y Logos: ${FIRMAS_DIR}`);
+        });
+    } catch (error) {
+        // Fallback de emergencia
+        app.listen(PORT, '0.0.0.0', () => {
+            console.log(`🚀 API activa en puerto: ${PORT}`);
+        });
+    }
+}, 1500);
