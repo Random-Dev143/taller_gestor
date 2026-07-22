@@ -1,18 +1,18 @@
-// ivemar-backend/routes/auth.js
+// gitaller-backend/routes/auth.js
 const express = require('express');
 const router = express.Router();
 const { run, get, all } = require('../config/database');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 const { JWT_SECRET } = require('../middlewares/auth');
 
 //CREAR ADMIN POR DEFECTO
 async function asegurarAdmin() {
     try {
-        const adminExiste = await get(`SELECT id FROM usuarios WHERE email = 'admin@ivemar.com'`);
+        const adminExiste = await get(`SELECT id FROM usuarios WHERE email = 'admin@gitaller.com'`);
         if (!adminExiste) {
-            const hash = bcrypt.hashSync('ivemar123', 10);
+            const hash = bcrypt.hashSync('gitaller123', 10);
             
             // Buscamos el ID del nuevo rol Administrador maestro
             const rol = await get(`SELECT id FROM roles WHERE nombre = 'Administrador'`);
@@ -21,7 +21,7 @@ async function asegurarAdmin() {
             await run(
                 `INSERT INTO usuarios (id, email, password_hash, nombre_completo, estado, rol, rol_id) 
                  VALUES (?, ?, ?, ?, ?, ?, ?)`,
-                [uuidv4(), 'admin@ivemar.com', hash, 'Administrador', 'aprobado', 'admin', rolId]
+                [crypto.randomUUID(), 'admin@gitaller.com', hash, 'Administrador', 'aprobado', 'admin', rolId]
             );
             console.log('✅ Admin por defecto creado y vinculado a permisos granulares.');
         }
@@ -45,7 +45,7 @@ router.post('/register', async (req, res) => {
         if (existente) return res.status(400).json({ error: 'El email ya está registrado' });
 
         const hash = bcrypt.hashSync(password, 10);
-        const nuevoId = uuidv4();
+        const nuevoId = crypto.randomUUID();
 
         await run(
             `INSERT INTO usuarios (id, email, password_hash, nombre_completo) VALUES (?, ?, ?, ?)`,
@@ -101,10 +101,17 @@ router.post('/login', async (req, res) => {
         };
         const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '12h' });
 
+        // SOLUCIÓN CORS TAURI:
+        // Para que la cookie de sesión funcione entre dominios distintos (ej: tauri://localhost
+        // y http://127.0.0.1), es OBLIGATORIO usar SameSite=None.
+        // `None` normalmente requiere que la cookie sea `Secure` (HTTPS), pero en un entorno de 
+        // desarrollo local con Tauri sobre HTTP, debemos mantener `secure: false`.
+        // Los webviews de Tauri suelen ser más permisivos con esta combinación que los navegadores estándar.
+        // Para producción, lo ideal es servir frontend y backend desde el mismo dominio o usar HTTPS.
         res.cookie('auth_token', token, {
             httpOnly: true,
-            sameSite: 'Lax',
-            secure: false,
+            sameSite: 'None',
+            secure: false, // Debe ser false para desarrollo en HTTP
             maxAge: 12 * 60 * 60 * 1000 
         });
 

@@ -1,15 +1,15 @@
 export function useApi() {
-    // El backend escucha en 0.0.0.0:5881, pensado para accederse desde
-    // otros equipos en la red (mecánicos con tablet, TV de sala de espera).
-    // Antes la URL base era un literal 'http://localhost:5881/api': eso
-    // funciona en la misma PC del desarrollador, pero se rompe apenas se
-    // abre la app desde cualquier otro dispositivo de la red, porque
-    // "localhost" en ese dispositivo apunta a sí mismo, no al servidor.
-    // Se deriva el host dinámicamente desde la URL con la que se accedió
-    // al frontend, y se permite sobreescribir con una variable de entorno
-    // (VITE_API_BASE) para despliegues donde el puerto/host difiera.
+    // Detectamos si estamos corriendo dentro de la ventana de Tauri
+    const isTauri = window.__TAURI_INTERNALS__ !== undefined;
+
+    // El puerto de la API ahora se puede configurar a través de una variable de entorno
+    // en el frontend para que coincida con la configuración del backend.
+    const port = import.meta.env.VITE_API_PORT || 5881;
+
     const API_BASE = import.meta.env.VITE_API_BASE
-        || `${window.location.protocol}//${window.location.hostname}:5881/api`
+        || (isTauri 
+            ? `http://127.0.0.1:${port}/api` 
+            : `${window.location.protocol}//${window.location.hostname}:${port}/api`);
 
     const parseBody = async (res) => {
         const text = await res.text()

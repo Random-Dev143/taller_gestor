@@ -7,13 +7,9 @@
 </template>
 
 <script setup>
-import { onMounted } from 'vue'
-import ToastContainer from './components/common/ToastContainer.vue'
-import { useConfigStore } from './stores/useConfigStore'
+// 1. Importamos el contenedor de alertas para que puedas ver los errores de login
+import ToastContainer from './components/common/ToastContainer.vue';
 
-const configStore = useConfigStore()
-
-onMounted(() => {
-  configStore.cargarConfig()
-})
+// 2. ¡ELIMINAMOS EL CÓDIGO DEL SIDECAR AQUÍ! 
+// Dejamos que Rust (lib.rs) se encargue de encender y apagar el backend.
 </script>

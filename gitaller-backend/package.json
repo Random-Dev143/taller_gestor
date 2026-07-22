@@ -1,15 +1,18 @@
 {
-  "name": "ivemar-backend",
+  "name": "gitaller-backend",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "server.js",
+  "bin": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build:exe": "pkg . --targets node18-win-x64 --output gitaller-server.exe"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
+  "pkg": {
+    "assets": [
+      "node_modules/sqlite3/lib/binding/**/*.node"
+    ]
+  },
   "dependencies": {
     "bcryptjs": "^3.0.3",
     "cookie-parser": "^1.4.7",
@@ -19,7 +22,9 @@
     "express-rate-limit": "^8.5.2",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.2.0",
-    "sqlite3": "^6.0.1",
-    "uuid": "^14.0.1"
+    "sqlite3": "^6.0.1"
+  },
+  "devDependencies": {
+    "pkg": "^5.8.1"
   }
 }

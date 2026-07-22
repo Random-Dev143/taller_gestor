@@ -1,6 +1,7 @@
 'use strict';
 require('dotenv').config(); // 1. Cargar variables de entorno
 
+const os = require('os');
 const express = require('express');
 const cors = require('cors');
 const cookieParser = require('cookie-parser'); // 2. Manejador de cookies
@@ -13,7 +14,8 @@ const { requireAuth } = require('./middlewares/auth'); // 4. Middleware de segur
 
 const app = express();
 const PORT = process.env.PORT || 5881;
-const FIRMAS_DIR = path.join(__dirname, 'firmas');
+const appDataPath = process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
+const FIRMAS_DIR = path.join(appDataPath, 'GITaller', 'firmas');
 
 if (!fs.existsSync(FIRMAS_DIR)) {
     fs.mkdirSync(FIRMAS_DIR, { recursive: true });
@@ -45,17 +47,18 @@ app.use(limiterGeneral); // Aplicamos el límite general a todo el servidor
 // Configuración estricta de CORS para red local
 const corsOptions = {
     origin: function (origin, callback) {
-        // Permitir peticiones sin origen (ej. herramientas de terminal) o desde la red local
         if (!origin) return callback(null, true);
-        
-        // Expresión regular que acepta localhost, 127.0.0.1, y cualquier IP de red local 192.168.x.x o 10.x.x.x
-        if (/^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+)(:\d+)?$/.test(origin)) {
+
+        // Se añaden los esquemas nativos de Tauri (Mac/Linux y Windows)
+        const allowedOrigins = /^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+)(:\d+)?$|^tauri:\/\/localhost$|^http:\/\/tauri\.localhost$/;
+
+        if (allowedOrigins.test(origin)) {
             callback(null, true);
         } else {
             callback(new Error('Acceso denegado por políticas de CORS. Origen no autorizado.'));
         }
     },
-    credentials: true, // ¡CRÍTICO! Sin esto, el navegador rechazará la cookie HttpOnly
+    credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
 };
