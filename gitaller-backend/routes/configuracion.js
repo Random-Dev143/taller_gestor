@@ -14,16 +14,28 @@ router.get('/', async (req, res) => {
 
 // PUT PROTEGIDO (Solo Admin)
 router.put('/', requireAuth(['usuario_gestionar']), async (req, res) => {
-    const { nombre_taller, hora_apertura, hora_cierre, hora_almuerzo_inicio, hora_almuerzo_fin, trabaja_corrido, puerto_servidor } = req.body;
+    const { 
+        nombre_taller, hora_apertura, hora_cierre, hora_almuerzo_inicio, 
+        hora_almuerzo_fin, trabaja_corrido, puerto_servidor,
+        slogan, direccion, cuit, telefono, email 
+    } = req.body;
+    
     try {
         await run(`
             UPDATE configuracion SET 
             nombre_taller = ?, hora_apertura = ?, hora_cierre = ?, 
-            hora_almuerzo_inicio = ?, hora_almuerzo_fin = ?, trabaja_corrido = ?, puerto_servidor = ?
+            hora_almuerzo_inicio = ?, hora_almuerzo_fin = ?, trabaja_corrido = ?, puerto_servidor = ?,
+            slogan = ?, direccion = ?, cuit = ?, telefono = ?, email = ?
             WHERE id = 1
-        `, [nombre_taller, hora_apertura, hora_cierre, hora_almuerzo_inicio, hora_almuerzo_fin, trabaja_corrido ? 1 : 0, puerto_servidor || 5881]);
+        `, [
+            nombre_taller, hora_apertura, hora_cierre, hora_almuerzo_inicio, 
+            hora_almuerzo_fin, trabaja_corrido ? 1 : 0, puerto_servidor || 5881,
+            slogan, direccion, cuit, telefono, email
+        ]);
         res.json({ status: 'Configuración actualizada' });
-    } catch (error) { res.status(500).json({ error: error.message }); }
+    } catch (error) { 
+        res.status(500).json({ error: error.message }); 
+    }
 });
 
 // POST LOGO (Aprovechamos el middleware de firmas, guardándolo como "logo_taller.png")

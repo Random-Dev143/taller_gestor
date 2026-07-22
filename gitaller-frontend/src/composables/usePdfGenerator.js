@@ -1,9 +1,11 @@
 import { useApi } from './useApi'
 import { useToast, errMsg } from './useToast'
+import { useConfigStore } from '../stores/useConfigStore'
 
 export function usePdfGenerator() {
   const { fetchJSON, API_BASE } = useApi()
   const toast = useToast()
+  const configStore = useConfigStore()
 
   const generarExplicacionPDF = async (ot) => {
     try {
@@ -76,21 +78,18 @@ export function usePdfGenerator() {
         return new Date(utcStr).toLocaleDateString('es-AR');
       };
 
-    const div = document.createElement('div')
+    
+      const div = document.createElement('div')
       div.style.cssText = 'width: 800px; padding: 30px; font-family: Arial, sans-serif; background: white; color: black;'
+      const conf = configStore.config || {};
       div.innerHTML = `
-        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px;">
-            <div style="font-size: 11px; line-height: 1.4;">
-                <strong style="font-size: 14px;">IVEMAR SAN LUIS</strong><br>
-                Concesionario Oficial IVECO en San Luis<br>
-                Av. Santos Ortiz 1540, San Luis, Argentina 5700<br>
-                CUIT: 30-71220161-0<br>
-                Taller: 2664 - 302335<br>
-                <span style="color: blue;">postventa@grupomartin.com.ar</span>
-            </div>
-            <div style="text-align: right;">
-                <img src="/img/logo-1.png" alt="Grupo Martin IVECO" style="max-width: 250px; max-height: 60px;">
-            </div>
+        <div style="font-size: 11px; line-height: 1.4;">
+                <strong style="font-size: 14px;">${conf.nombre_taller || 'TALLER OFICIAL'}</strong><br>
+                ${conf.slogan ? `${conf.slogan}<br>` : ''}
+                ${conf.direccion ? `${conf.direccion}<br>` : ''}
+                ${conf.cuit ? `CUIT: ${conf.cuit}<br>` : ''}
+                ${conf.telefono ? `Taller: ${conf.telefono}<br>` : ''}
+                ${conf.email ? `<span style="color: blue;">${conf.email}</span>` : ''}
         </div>
         <h2 style="text-align: right; color: #7f7f7f; font-weight: normal; margin-bottom: 5px;">DATOS DE ORDEN DE TRABAJO</h2>
         <table style="width: 100%; border-collapse: collapse; text-transform: uppercase; font-size: 11px;">

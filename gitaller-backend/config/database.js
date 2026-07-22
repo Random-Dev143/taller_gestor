@@ -157,6 +157,23 @@ async function migrarEstructura() {
             console.log('✅ Migración de sesiones de tiempo por mecánico (tiempos_actividad.legajo_mecanico) completada.');
         }
 
+        const configCols = (await all(`PRAGMA table_info(configuracion)`)).map(c => c.name);
+        
+        // Agregar puerto_servidor si no existía (como vimos antes)
+        if (!configCols.includes('puerto_servidor')) {
+            await run(`ALTER TABLE configuracion ADD COLUMN puerto_servidor INTEGER DEFAULT 5881`);
+        }
+        
+        // NUEVOS CAMPOS DE MEMBRETE
+        if (!configCols.includes('slogan')) {
+            await run(`ALTER TABLE configuracion ADD COLUMN slogan TEXT DEFAULT ''`);
+            await run(`ALTER TABLE configuracion ADD COLUMN direccion TEXT DEFAULT ''`);
+            await run(`ALTER TABLE configuracion ADD COLUMN cuit TEXT DEFAULT ''`);
+            await run(`ALTER TABLE configuracion ADD COLUMN telefono TEXT DEFAULT ''`);
+            await run(`ALTER TABLE configuracion ADD COLUMN email TEXT DEFAULT ''`);
+            console.log('✅ Migración de configuración (datos de membrete) completada.');
+        }
+
         await run(`UPDATE actividades SET estado = 'Asignada' WHERE estado = 'Pendiente'`);
         await run(`UPDATE actividades SET tiempo_real = 0 WHERE tiempo_real < 0`);
         await run(`UPDATE ordenes SET tiempo_empleado_horas = 0 WHERE tiempo_empleado_horas < 0`);
@@ -252,7 +269,13 @@ db.serialize(async () => {
         hora_cierre INTEGER DEFAULT 18, 
         hora_almuerzo_inicio INTEGER DEFAULT 13, 
         hora_almuerzo_fin INTEGER DEFAULT 14, 
-        trabaja_corrido INTEGER DEFAULT 0
+        trabaja_corrido INTEGER DEFAULT 0,
+        puerto_servidor INTEGER DEFAULT 5881,
+        slogan TEXT DEFAULT 'tu slogan aqui',
+        direccion TEXT DEFAULT 'tu dirección aqui',
+        cuit TEXT DEFAULT '',
+        telefono TEXT DEFAULT '134-123456',
+        email TEXT DEFAULT 'taller@taller.com'
     )`);
     
     db.run(`ALTER TABLE usuarios ADD COLUMN rol_id TEXT REFERENCES roles(id) ON DELETE SET NULL`, (err) => { /* Ignorar si ya existe */ });
@@ -268,23 +291,26 @@ db.serialize(async () => {
 
 async function inicializarTallerInterno() {
     try {
-        // 1. Asegurar Cliente gitaller
-        let cli = await get(`SELECT id FROM clientes WHERE nombre = 'IVEMAR'`);
+        // 1. Obtener el nombre del taller desde la configuración
+        const config = await get(`SELECT nombre_taller FROM configuracion WHERE id = 1`);
+        const nombreTaller = (config && config.nombre_taller) ? config.nombre_taller.toUpperCase() : 'TALLER INTERNO';
+
+        // 2. Asegurar Cliente dinámico
+        let cli = await get(`SELECT id FROM clientes WHERE nombre = ?`, [nombreTaller]);
         if (!cli) {
-            await run(`INSERT INTO clientes (nombre) VALUES ('IVEMAR')`);
-            cli = await get(`SELECT id FROM clientes WHERE nombre = 'IVEMAR'`);
+            await run(`INSERT INTO clientes (nombre) VALUES (?)`, [nombreTaller]);
+            cli = await get(`SELECT id FROM clientes WHERE nombre = ?`, [nombreTaller]);
         }
 
-        // 2. Asegurar Unidad Interna
+        // 3. Asegurar Unidad Interna
         let uni = await get(`SELECT id FROM unidades WHERE patente = 'INT000'`);
         if (!uni) {
             await run(`INSERT INTO unidades (patente, cliente_id, unidad) VALUES ('INT000', ?, 'TALLER INTERNO')`, [cli.id]);
         }
 
-        // 3. Asegurar OT 0000
+        // 4. Asegurar OT 0000
         let ot = await get(`SELECT ot FROM ordenes WHERE ot = '0000'`);
         if (!ot) {
-            // Buscamos cualquier asesor para cumplir el constraint, o creamos un comodín
             let asesor = await get(`SELECT legajo FROM legajos WHERE rol = 'asesor' LIMIT 1`);
             let legajo_asesor = asesor ? asesor.legajo : 'ADMIN';
             if(!asesor) await run(`INSERT OR IGNORE INTO legajos (legajo, nombre, rol) VALUES ('ADMIN', 'Sistema', 'asesor')`);
