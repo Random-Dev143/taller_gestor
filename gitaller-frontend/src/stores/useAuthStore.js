@@ -3,13 +3,13 @@ import { ref } from 'vue'
 import { useApi } from '../composables/useApi'
 
 export const useAuthStore = defineStore('auth', () => {
-  const { fetchJSON } = useApi()
-  
+  const { fetchJSON, setToken, clearToken } = useApi()
+
   const usuario = ref(null)
   const isAuthenticated = ref(false)
   const isReady = ref(false) // Indica si ya verificamos la sesión al cargar la app
 
-  // Consulta al backend si la cookie actual es válida
+  // Consulta al backend si el token guardado es válido
   const checkSession = async () => {
     try {
       const res = await fetchJSON('/auth/me')
@@ -33,6 +33,9 @@ export const useAuthStore = defineStore('auth', () => {
       method: 'POST',
       body: JSON.stringify({ email, password })
     })
+    if (res.token) {
+      setToken(res.token) // Guarda el token para reenviarlo en cada request
+    }
     await checkSession() // Refresca el estado tras un login exitoso
     return res
   }
@@ -45,18 +48,22 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   const logout = async () => {
-    await fetchJSON('/auth/logout', { method: 'POST' })
-    usuario.value = null
-    isAuthenticated.value = false
+    try {
+      await fetchJSON('/auth/logout', { method: 'POST' })
+    } finally {
+      clearToken()
+      usuario.value = null
+      isAuthenticated.value = false
+    }
   }
 
-  return { 
-    usuario, 
-    isAuthenticated, 
-    isReady, 
-    checkSession, 
-    login, 
-    register, 
-    logout 
+  return {
+    usuario,
+    isAuthenticated,
+    isReady,
+    checkSession,
+    login,
+    register,
+    logout
   }
 })

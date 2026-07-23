@@ -1,11 +1,10 @@
-// gitaller-backend/routes/auth.js
 const express = require('express');
 const router = express.Router();
 const { run, get, all } = require('../config/database');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
-const { JWT_SECRET } = require('../middlewares/auth');
+const { JWT_SECRET, extraerToken } = require('../middlewares/auth');
 
 //CREAR ADMIN POR DEFECTO
 async function asegurarAdmin() {
@@ -13,7 +12,7 @@ async function asegurarAdmin() {
         const adminExiste = await get(`SELECT id FROM usuarios WHERE email = 'admin@gitaller.com'`);
         if (!adminExiste) {
             const hash = bcrypt.hashSync('gitaller123', 10);
-            
+
             // Buscamos el ID del nuevo rol Administrador maestro
             const rol = await get(`SELECT id FROM roles WHERE nombre = 'Administrador'`);
             const rolId = rol ? rol.id : null;
@@ -30,7 +29,7 @@ async function asegurarAdmin() {
     }
 }
 // Llamamos a la función al cargar el módulo
-setTimeout(asegurarAdmin, 1000); 
+setTimeout(asegurarAdmin, 1000);
 
 
 // --- REGISTRO (Cualquiera puede registrarse) ---
@@ -71,7 +70,7 @@ router.post('/login', async (req, res) => {
             LEFT JOIN roles r ON u.rol_id = r.id 
             WHERE u.email = ?
         `, [email]);
-        
+
         if (!usuario) return res.status(401).json({ error: 'Credenciales inválidas' });
 
         const passwordValido = bcrypt.compareSync(password, usuario.password_hash);
@@ -93,31 +92,28 @@ router.post('/login', async (req, res) => {
             id: usuario.id,
             email: usuario.email,
             nombre: usuario.nombre_completo,
-            rol: usuario.rol_nombre, 
+            rol: usuario.rol_nombre,
             rol_id: usuario.rol_id,
             legajo: usuario.legajo,
             estado: usuario.estado,
-            permisos: permisosArreglo   
+            permisos: permisosArreglo
         };
         const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '12h' });
 
-        // SOLUCIÓN CORS TAURI:
-        // Para que la cookie de sesión funcione entre dominios distintos (ej: tauri://localhost
-        // y http://127.0.0.1), es OBLIGATORIO usar SameSite=None.
-        // `None` normalmente requiere que la cookie sea `Secure` (HTTPS), pero en un entorno de 
-        // desarrollo local con Tauri sobre HTTP, debemos mantener `secure: false`.
-        // Los webviews de Tauri suelen ser más permisivos con esta combinación que los navegadores estándar.
-        // Para producción, lo ideal es servir frontend y backend desde el mismo dominio o usar HTTPS.
-        res.cookie('auth_token', token, {
-            httpOnly: true,
-            sameSite: 'None',
-            secure: false, // Debe ser false para desarrollo en HTTP
-            maxAge: 12 * 60 * 60 * 1000 
-        });
-
-        res.json({ 
-            status: 'Login exitoso', 
-            usuario: payload 
+        // AUTENTICACIÓN VÍA BEARER TOKEN:
+        // Se abandona el uso de cookies de sesión porque la app se usa desde
+        // múltiples dispositivos en la red (PC con Tauri, celulares y TV vía
+        // navegador), cada uno accediendo por una IP/origen distinto. Las
+        // cookies con SameSite=None requieren HTTPS real (Secure) para que
+        // los navegadores/webviews modernos las acepten, lo cual es
+        // inviable de gestionar en varios dispositivos dentro de una LAN.
+        // En su lugar, el token se devuelve en el body y el frontend lo
+        // guarda y lo reenvía en el header "Authorization: Bearer <token>"
+        // en cada request.
+        res.json({
+            status: 'Login exitoso',
+            token,
+            usuario: payload
         });
 
     } catch (error) {
@@ -127,7 +123,7 @@ router.post('/login', async (req, res) => {
 
 // --- VERIFICAR SESIÓN (Útil para que el frontend sepa si está logueado al recargar la página) ---
 router.get('/me', async (req, res) => {
-    const token = req.cookies.auth_token;
+    const token = extraerToken(req);
     if (!token) return res.json({ loggedIn: false });
 
     try {
@@ -139,8 +135,10 @@ router.get('/me', async (req, res) => {
 });
 
 // --- LOGOUT ---
+// Con Bearer token el "logout" es responsabilidad del cliente (borrar el
+// token guardado localmente). Se deja la ruta por compatibilidad, pero ya
+// no hay cookie que limpiar.
 router.post('/logout', (req, res) => {
-    res.clearCookie('auth_token');
     res.json({ status: 'Sesión cerrada' });
 });
 

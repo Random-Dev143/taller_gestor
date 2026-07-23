@@ -7,14 +7,18 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init()) // 1. Inicializar el plugin
         .setup(|app| {
             // 2. Apuntar al nombre base declarado en tauri.conf.json (sin la extensión ni el target)
-            let sidecar_command = app.shell().sidecar("bin/gitaller-server").unwrap();
+            let sidecar_command = app.shell().sidecar("gitaller-server").unwrap();
+            println!("LLEGUE AL SETUP");
+            println!("VOY A LEVANTAR EL BACKEND");
             let (mut rx, mut _child) = sidecar_command.spawn().expect("Fallo al iniciar el backend Node.js");
-
+            println!("BACKEND LANZADO");
             // 3. (Opcional) Derivar los logs del backend a la consola de Rust para depurar
             tauri::async_runtime::spawn(async move {
                 while let Some(event) = rx.recv().await {
-                    if let CommandEvent::Stdout(line) = event {
-                        println!("Backend: {}", String::from_utf8_lossy(&line));
+                    if let CommandEvent::Stdout(line) = &event {
+                        println!("Backend: {}", String::from_utf8_lossy(line));
+                    } else if let CommandEvent::Stderr(line) = &event {
+                        eprintln!("Backend Error: {}", String::from_utf8_lossy(line));
                     }
                 }
             });

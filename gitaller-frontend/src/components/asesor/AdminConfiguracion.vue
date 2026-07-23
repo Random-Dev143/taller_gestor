@@ -91,7 +91,7 @@ import { useApi } from '../../composables/useApi'
 import { useToast, errMsg } from '../../composables/useToast'
 import { useConfigStore } from '../../stores/useConfigStore'
 
-const { fetchJSON, API_BASE } = useApi()
+const { fetchJSON, API_BASE, getToken } = useApi()
 const toast = useToast()
 const configStore = useConfigStore()
 
@@ -142,11 +142,10 @@ const subirLogo = () => {
     formData.append('logo', file)
     try {
       const response = await fetch(`${API_BASE}/configuracion/logo`, {
-        method: 'POST',
-        // ESTO ES CLAVE: Le dice al navegador que envíe tu cookie de sesión
-        credentials: 'include', 
-        body: formData
-      })
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${getToken()}` },
+      body: formData
+    })
       
       const data = await response.json() // Parseamos la respuesta para ver el error real si lo hay
       if (!response.ok) throw new Error(data.error || 'Error al subir logo')

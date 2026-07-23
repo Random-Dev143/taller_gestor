@@ -7,9 +7,20 @@ export function useApi() {
     const port = import.meta.env.VITE_API_PORT || 5881;
 
     const API_BASE = import.meta.env.VITE_API_BASE
-        || (isTauri 
-            ? `http://127.0.0.1:${port}/api` 
+        || (isTauri
+            ? `http://127.0.0.1:${port}/api`
             : `${window.location.protocol}//${window.location.hostname}:${port}/api`);
+
+    // AUTENTICACIÓN VÍA BEARER TOKEN:
+    // Se reemplazaron las cookies de sesión por un token guardado en
+    // localStorage, ya que la app se usa desde múltiples dispositivos en la
+    // red (PC/Tauri, celulares, TV) y cada uno accede por una IP/origen
+    // distinto. Con cookies, SameSite=None exige HTTPS real (Secure), lo
+    // cual no es viable de sostener en varios dispositivos dentro de una LAN.
+    const TOKEN_KEY = 'gitaller_token';
+    const getToken = () => localStorage.getItem(TOKEN_KEY);
+    const setToken = (token) => localStorage.setItem(TOKEN_KEY, token);
+    const clearToken = () => localStorage.removeItem(TOKEN_KEY);
 
     const parseBody = async (res) => {
         const text = await res.text()
@@ -25,13 +36,19 @@ export function useApi() {
     const fetchJSON = async (endpoint, options = {}) => {
         const url = endpoint.startsWith('http') ? endpoint : `${API_BASE}${endpoint}`
 
+        const token = getToken()
+        const headers = {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+            ...(options.headers || {}),
+        }
+
         let res
         try {
             res = await fetch(url, {
-                headers: { 'Content-Type': 'application/json' },
                 cache: 'no-cache',
-                credentials: 'include',
                 ...options,
+                headers,
             })
         } catch (networkErr) {
             // fetch lanza TypeError cuando no hay conexión con el servidor
@@ -49,6 +66,9 @@ export function useApi() {
 
     return {
         fetchJSON,
-        API_BASE
+        API_BASE,
+        getToken,
+        setToken,
+        clearToken,
     }
 }
