@@ -66,6 +66,19 @@ app.use(cors(corsOptions));
 
 // ─── ARCHIVOS ESTÁTICOS ───────────────────────────────────────────
 app.use('/firmas', express.static(FIRMAS_DIR));
+// --- SERVIR EL FRONTEND A LA RED LOCAL (TV, Celulares) ---
+const distPath = path.join(__dirname, 'dist');
+if (fs.existsSync(distPath)) {
+    // 1. Sirve los archivos estáticos compilados (JS, CSS, imágenes)
+    app.use(express.static(distPath));
+
+    // 2. Redirige cualquier otra ruta de la red al index.html para que funcione Vue Router
+    app.get('*', (req, res) => {
+        if (!req.path.startsWith('/api') && !req.path.startsWith('/firmas')) {
+            res.sendFile(path.join(distPath, 'index.html'));
+        }
+    });
+}
 
 // ─── RUTAS PÚBLICAS (No requieren token) ──────────────────────────
 app.get('/status', (req, res) => {

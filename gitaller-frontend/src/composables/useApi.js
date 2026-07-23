@@ -6,10 +6,24 @@ export function useApi() {
     // en el frontend para que coincida con la configuración del backend.
     const port = import.meta.env.VITE_API_PORT || 5881;
 
-    const API_BASE = import.meta.env.VITE_API_BASE
-        || (isTauri
-            ? `http://127.0.0.1:${port}/api`
-            : `${window.location.protocol}//${window.location.hostname}:${port}/api`);
+    let defaultBase = '';
+    
+    if (isTauri) {
+        // Es un ejecutable .exe (PC Servidor o PC Cliente)
+        const modo = localStorage.getItem('app_modo');
+        const ip = localStorage.getItem('server_ip');
+        
+        if (modo === 'cliente' && ip) {
+            defaultBase = `http://${ip}:${port}/api`;
+        } else {
+            defaultBase = `http://127.0.0.1:${port}/api`;
+        }
+    } else {
+        // Es un Navegador Web (TV o Celular entrando por red)
+        defaultBase = `${window.location.protocol}//${window.location.hostname}:${port}/api`;
+    }
+
+    const API_BASE = import.meta.env.VITE_API_BASE || defaultBase;
 
     // AUTENTICACIÓN VÍA BEARER TOKEN:
     // Se reemplazaron las cookies de sesión por un token guardado en

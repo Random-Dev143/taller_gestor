@@ -103,8 +103,11 @@ const form = ref({
   slogan: '', direccion: '', cuit: '', telefono: '', email: '' 
 })
 
-onMounted(() => {
-  const c = configStore.config
+onMounted(async () => {
+  // Obligamos a la vista a esperar la respuesta del backend
+  await configStore.cargarConfig(); 
+  
+  const c = configStore.config;
   form.value = {
     nombre_taller: c.nombre_taller,
     hora_apertura: c.hora_apertura,

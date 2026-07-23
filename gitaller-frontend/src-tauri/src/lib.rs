@@ -1,30 +1,38 @@
 use tauri_plugin_shell::ShellExt;
 use tauri_plugin_shell::process::CommandEvent;
 
+// 1. Creamos un comando que el Frontend puede invocar
+#[tauri::command]
+async fn start_server(app: tauri::AppHandle) -> Result<(), String> {
+    println!("Recibida orden del Frontend: Levantando Backend...");
+    
+    let sidecar_command = app.shell().sidecar("gitaller-server").map_err(|e| e.to_string())?;
+    let (mut rx, child) = sidecar_command.spawn().map_err(|e| e.to_string())?;
+
+    tauri::async_runtime::spawn(async move {
+        // Mantenemos el proceso vivo
+        let _mantener_vivo = child; 
+        
+        while let Some(event) = rx.recv().await {
+            match event {
+                CommandEvent::Stdout(line) => println!("Backend: {}", String::from_utf8_lossy(&line)),
+                CommandEvent::Stderr(line) => eprintln!("Backend Error: {}", String::from_utf8_lossy(&line)),
+                CommandEvent::Terminated(payload) => println!("⚠️ Backend cerrado con código: {:?}", payload.code),
+                CommandEvent::Error(err) => eprintln!("❌ Error del proceso: {}", err),
+                _ => {}
+            }
+        }
+    });
+
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_shell::init()) // 1. Inicializar el plugin
-        .setup(|app| {
-            // 2. Apuntar al nombre base declarado en tauri.conf.json (sin la extensión ni el target)
-            let sidecar_command = app.shell().sidecar("gitaller-server").unwrap();
-            println!("LLEGUE AL SETUP");
-            println!("VOY A LEVANTAR EL BACKEND");
-            let (mut rx, mut _child) = sidecar_command.spawn().expect("Fallo al iniciar el backend Node.js");
-            println!("BACKEND LANZADO");
-            // 3. (Opcional) Derivar los logs del backend a la consola de Rust para depurar
-            tauri::async_runtime::spawn(async move {
-                while let Some(event) = rx.recv().await {
-                    if let CommandEvent::Stdout(line) = &event {
-                        println!("Backend: {}", String::from_utf8_lossy(line));
-                    } else if let CommandEvent::Stderr(line) = &event {
-                        eprintln!("Backend Error: {}", String::from_utf8_lossy(line));
-                    }
-                }
-            });
-
-            Ok(())
-        })
+        .plugin(tauri_plugin_shell::init())
+        // 2. Registramos el comando para que Vue tenga permiso de usarlo
+        .invoke_handler(tauri::generate_handler![start_server])
         .run(tauri::generate_context!())
         .expect("Error al ejecutar la aplicación Tauri");
 }
