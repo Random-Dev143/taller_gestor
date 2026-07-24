@@ -135,6 +135,7 @@ gitaller-frontend/
       LoginView.vue
       MecanicoView.vue
       SalaEsperaView.vue
+      SetupView.vue
     App.vue
     main.js
     style.css
@@ -180,37 +181,6 @@ README.md
 
 <files>
 This section contains the contents of the repository's files.
-
-<file path="gitaller-backend/middlewares/upload.js">
-const multer = require('multer');
-const path = require('path');
-
-const FIRMAS_DIR = path.join(__dirname, '..', 'firmas');
-
-// Defensa en profundidad: aunque legajos.js ya valida el formato al crear
-// un legajo nuevo, esto protege también a legajos viejos que se hayan
-// creado antes de esa validación, evitando que un ":legajo" con "../" en
-// la URL escriba fuera de la carpeta de firmas.
-const sanitizarLegajo = (legajo) => String(legajo).replace(/[^a-zA-Z0-9_-]/g, '');
-
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => cb(null, FIRMAS_DIR),
-    filename: (req, file, cb) => cb(null, `${sanitizarLegajo(req.params.legajo)}.png`)
-});
-
-const upload = multer({
-    storage,
-    limits: { fileSize: 2 * 1024 * 1024 }, // 2MB es más que suficiente para una firma en PNG
-    fileFilter: (req, file, cb) => {
-        if (file.mimetype !== 'image/png') {
-            return cb(new Error('Solo se aceptan archivos PNG'));
-        }
-        cb(null, true);
-    }
-});
-
-module.exports = upload;
-</file>
 
 <file path="gitaller-backend/routes/informes.js">
 const express = require('express');
@@ -2190,113 +2160,6 @@ export function useChartConfig() {
 }
 </file>
 
-<file path="gitaller-frontend/src/router/index.js">
-import { createRouter, createWebHistory } from 'vue-router'
-import { useAuthStore } from '../stores/useAuthStore'
-
-const routes = [
-  {
-    path: '/login',
-    name: 'login',
-    component: () => import('../views/LoginView.vue'),
-    meta: { requiresAuth: false }
-  },
-  {
-    path: '/',
-    name: 'home',
-    component: () => import('../views/HomeView.vue'),
-    // El menú principal es el concentrador. Solo exige estar logueado, sin permiso específico.
-    meta: { requiresAuth: true } 
-  },
-  {
-    path: '/admin',
-    name: 'admin',
-    component: () => import('../views/AdminView.vue'),
-    meta: { requiresAuth: true, requiredPermission: 'usuario_gestionar' } 
-  },
-  {
-    path: '/asesor',
-    name: 'asesor',
-    component: () => import('../views/AsesorView.vue'),
-    meta: { requiresAuth: true, requiredPermission: 'ot_ver_lista' }
-  },
-  {
-    path: '/jefe',
-    name: 'jefe',
-    component: () => import('../views/JefeView.vue'),
-    meta: { requiresAuth: true, requiredPermission: 'tarea_gestionar_todas' }
-  },
-  {
-    path: '/mecanico',
-    name: 'mecanico',
-    // Evalúa si hay un tablero seleccionado en memoria, si no, va al buscador
-    redirect: () => (localStorage.getItem('legajoMecanico') ? '/mecanico/tareas' : '/mecanico/login')
-  },
-  {
-    path: '/mecanico/login',
-    name: 'mecanico-login',
-    component: () => import('../views/LoginMecanico.vue'),
-    meta: { requiresAuth: true, requiredPermission: 'tarea_ver_propias' }
-  },
-  {
-    path: '/mecanico/tareas',
-    name: 'mecanico-tareas',
-    component: () => import('../views/MecanicoView.vue'),
-    meta: { requiresAuth: true, requiredPermission: 'tarea_ver_propias' }
-  },
-  {
-    path: '/sala',
-    name: 'sala',
-    component: () => import('../views/SalaEsperaView.vue'),
-    // Usualmente la sala de espera es pública para abrirla en las pantallas/TVs del taller
-    meta: { requiresAuth: false } 
-  },
-  {
-    // Ruta comodín: Si tipean cualquier URL inexistente, los mandamos al inicio
-    path: '/:pathMatch(.*)*',
-    redirect: '/'
-  }
-]
-
-const router = createRouter({
-  history: createWebHistory(import.meta.env.BASE_URL),
-  routes
-})
-
-// --- GUARDIA DE NAVEGACIÓN GLOBAL ---
-router.beforeEach(async (to, from, next) => {
-  const authStore = useAuthStore();
-  
-  // 1. Validar que el estado de sesión esté cargado en la memoria de Pinia
-  if (!authStore.isVerified) {
-      await authStore.checkSession();
-  }
-
-  // 2. Control principal: ¿La ruta exige estar dentro del sistema?
-  if (to.meta.requiresAuth) {
-      if (!authStore.isAuthenticated) {
-          return next({ name: 'login' });
-      }
-
-      // 3. Control granular: ¿La ruta exige una llave/permiso particular?
-      if (to.meta.requiredPermission) {
-          const permisosUsuario = authStore.usuario?.permisos || [];
-          const tienePermiso = permisosUsuario.includes(to.meta.requiredPermission);
-          
-          if (!tienePermiso) {
-              console.warn(`🔒 Acceso bloqueado. Permiso faltante: ${to.meta.requiredPermission}`);
-              return next({ name: 'home' }); // Expulsado al menú central
-          }
-      }
-  }
-
-  // Si pasa todos los filtros, o la ruta es pública, avanza
-  next();
-});
-
-export default router
-</file>
-
 <file path="gitaller-frontend/src/stores/useConfigStore.js">
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
@@ -2905,6 +2768,88 @@ onUnmounted(() => {
 </style>
 </file>
 
+<file path="gitaller-frontend/src/views/SetupView.vue">
+<template>
+  <div class="login-container">
+    <div class="card login-box" style="max-width: 500px;">
+      <div class="brand-header">
+        <h1>⚙️ Configuración Inicial</h1>
+        <p class="subtitle">Define el rol de esta computadora en el taller.</p>
+      </div>
+
+      <div v-if="!modoSeleccionado">
+        <button class="btn btn-primary w-100 mb-15" @click="seleccionarServidor" :disabled="iniciando">
+          <span style="font-size: 1.2rem;">🖥️</span> 
+          {{ iniciando ? 'Iniciando servidor...' : 'Esta PC es el Servidor Principal' }}
+        </button>
+        <button class="btn btn-secondary w-100" @click="modoSeleccionado = 'cliente'" :disabled="iniciando">
+          <span style="font-size: 1.2rem;">💻</span> Esta PC es una Terminal Cliente
+        </button>
+      </div>
+
+      <div v-else-if="modoSeleccionado === 'cliente'">
+        <div class="form-group mb-15 text-left">
+          <label>Ingresa la IP de la PC Servidor:</label>
+          <input type="text" v-model="ipServidor" class="form-control" placeholder="Ej: 192.168.1.50" autofocus />
+        </div>
+        <button class="btn btn-success w-100 mb-10" @click="guardarCliente" :disabled="!ipServidor">
+          Conectar y Guardar
+        </button>
+        <button class="btn btn-outline w-100" @click="modoSeleccionado = null">
+          Volver
+        </button>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { invoke } from '@tauri-apps/api/core'
+import { useToast } from '../composables/useToast'
+
+const router = useRouter()
+const toast = useToast()
+const modoSeleccionado = ref(null)
+const ipServidor = ref('')
+const iniciando = ref(false)
+
+const seleccionarServidor = async () => {
+    iniciando.value = true
+    try {
+        // Le damos la orden a Rust de levantar Node.js
+        await invoke('start_server')
+        localStorage.setItem('app_modo', 'servidor')
+        toast.success('Servidor configurado e iniciado correctamente')
+        router.push('/login')
+    } catch (error) {
+        toast.error('Error al iniciar el servidor: ' + error)
+        iniciando.value = false
+    }
+}
+
+const guardarCliente = () => {
+    localStorage.setItem('app_modo', 'cliente')
+    localStorage.setItem('server_ip', ipServidor.value.trim())
+    toast.success('Modo Cliente configurado')
+    
+    // Forzamos la recarga para que useApi.js tome la nueva IP
+    window.location.href = '/login'
+}
+</script>
+
+<style scoped>
+.login-container { display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: -20px; background: linear-gradient(135deg, #0056a7 0%, #003f7d 100%); }
+.login-box { width: 100%; text-align: center; padding: 40px 30px; }
+.brand-header h1 { color: var(--primary); margin-bottom: 5px; }
+.subtitle { color: var(--muted); font-size: 0.95rem; margin-bottom: 25px; }
+.mb-10 { margin-bottom: 10px; }
+.mb-15 { margin-bottom: 15px; }
+.text-left { text-align: left; }
+</style>
+</file>
+
 <file path="gitaller-frontend/src/main.js">
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
@@ -3101,6 +3046,37 @@ const requireAuth = (permisosRequeridos = []) => {
 };
 
 module.exports = { requireAuth, JWT_SECRET, extraerToken };
+</file>
+
+<file path="gitaller-backend/middlewares/upload.js">
+const multer = require('multer');
+const path = require('path');
+const os = require('os');
+
+// Redirigimos la ruta a AppData, igual que en server.js
+const appDataPath = process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
+const FIRMAS_DIR = path.join(appDataPath, 'GITaller', 'firmas');
+
+const sanitizarLegajo = (legajo) => String(legajo).replace(/[^a-zA-Z0-9_-]/g, '');
+
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => cb(null, FIRMAS_DIR),
+    filename: (req, file, cb) => cb(null, `${sanitizarLegajo(req.params.legajo)}.png`)
+});
+
+const upload = multer({
+    storage,
+    limits: { fileSize: 5 * 1024 * 1024 }, // Aumentado a 5MB por si el logo tiene alta resolución
+    fileFilter: (req, file, cb) => {
+        // Aceptamos cualquier formato de imagen para evitar bloqueos del navegador
+        if (!file.mimetype.startsWith('image/')) {
+            return cb(new Error('Formato no válido. Sube un archivo de imagen.'));
+        }
+        cb(null, true);
+    }
+});
+
+module.exports = upload;
 </file>
 
 <file path="gitaller-backend/routes/feriados.js">
@@ -4826,12 +4802,18 @@ th { background: #f8fafc; font-weight: 600; color: #1a2a3a; }
     <!-- Espacio para inyectar elementos extra -->
     <slot name="extra"></slot>
     
-    <!-- Botón de Inicio -->
-    <button class="home-btn" @click="goHome" title="Volver al menú principal">🏠</button>
+    <!-- Controles de la derecha -->
+    <div style="display: flex; gap: 10px;">
+      <button class="theme-toggle-btn" @click="toggleTheme" :title="isDark ? 'Cambiar a Modo Claro' : 'Cambiar a Modo Oscuro'">
+        {{ isDark ? '☀️' : '🌙' }}
+      </button>
+      <button class="home-btn" @click="goHome" title="Volver al menú principal">🏠</button>
+    </div>
   </div>
 </template>
 
 <script setup>
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../../stores/useAuthStore'
 import { useConfigStore } from '../../stores/useConfigStore'
@@ -4839,6 +4821,25 @@ import { useConfigStore } from '../../stores/useConfigStore'
 const router = useRouter()
 const authStore = useAuthStore()
 const configStore = useConfigStore()
+
+// --- LÓGICA DE MODO OSCURO ---
+const isDark = ref(false)
+
+onMounted(() => {
+  isDark.value = document.documentElement.classList.contains('dark-theme');
+})
+
+const toggleTheme = () => {
+  isDark.value = !isDark.value;
+  if (isDark.value) {
+    document.documentElement.classList.add('dark-theme');
+    localStorage.setItem('theme', 'dark');
+  } else {
+    document.documentElement.classList.remove('dark-theme');
+    localStorage.setItem('theme', 'light');
+  }
+}
+// -----------------------------
 
 const props = defineProps({
   brand: { type: String, required: true },
@@ -4901,6 +4902,37 @@ const handleLogout = async () => {
     transform: scale(1.05);
 }
 
+/* Estilos del botón de tema */
+.navbar .theme-toggle-btn {
+    background: #f4f7fc;
+    border: 1px solid #eef3f9;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 1.2rem;
+    cursor: pointer;
+    color: #333;
+    transition: background 0.2s, transform 0.1s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.navbar .theme-toggle-btn:hover {
+    background: #e9edf4;
+    transform: scale(1.05);
+}
+
+/* Regla especial para que los botones se adapten si está oscuro */
+:global(.dark-theme) .navbar .home-btn,
+:global(.dark-theme) .navbar .theme-toggle-btn {
+    background: var(--surface);
+    border-color: var(--border);
+}
+:global(.dark-theme) .navbar .home-btn:hover,
+:global(.dark-theme) .navbar .theme-toggle-btn:hover {
+    background: var(--bg);
+}
+
 .navbar .brand {
     font-weight: 700;
     font-size: 1.3rem;
@@ -4908,7 +4940,7 @@ const handleLogout = async () => {
     margin-right: auto;
 }
 
-.navbar button:not(.home-btn):not(.logout) {
+.navbar button:not(.home-btn):not(.theme-toggle-btn):not(.logout) {
     background: transparent;
     border: none;
     padding: 8px 16px;
@@ -4919,7 +4951,7 @@ const handleLogout = async () => {
     transition: background 0.2s;
 }
 
-.navbar button:not(.home-btn):not(.logout):hover {
+.navbar button:not(.home-btn):not(.theme-toggle-btn):not(.logout):hover {
     background: #e9edf4;
 }
 
@@ -4958,7 +4990,7 @@ const handleLogout = async () => {
         text-align: center;
         padding: 10px;
     }
-    .navbar .home-btn {
+    .navbar .home-btn, .navbar .theme-toggle-btn {
         align-self: center;
     }
 }
@@ -5722,6 +5754,126 @@ export function errMsg(err) {
 }
 </file>
 
+<file path="gitaller-frontend/src/router/index.js">
+import { createRouter, createWebHistory } from 'vue-router'
+import { useAuthStore } from '../stores/useAuthStore'
+
+const routes = [
+  {
+    path: '/setup',
+    name: 'setup',
+    component: () => import('../views/SetupView.vue'),
+    meta: { requiresAuth: false }
+  },
+  {
+    path: '/login',
+    name: 'login',
+    component: () => import('../views/LoginView.vue'),
+    meta: { requiresAuth: false }
+  },
+  {
+    path: '/',
+    name: 'home',
+    component: () => import('../views/HomeView.vue'),
+    // El menú principal es el concentrador. Solo exige estar logueado, sin permiso específico.
+    meta: { requiresAuth: true } 
+  },
+  {
+    path: '/admin',
+    name: 'admin',
+    component: () => import('../views/AdminView.vue'),
+    meta: { requiresAuth: true, requiredPermission: 'usuario_gestionar' } 
+  },
+  {
+    path: '/asesor',
+    name: 'asesor',
+    component: () => import('../views/AsesorView.vue'),
+    meta: { requiresAuth: true, requiredPermission: 'ot_ver_lista' }
+  },
+  {
+    path: '/jefe',
+    name: 'jefe',
+    component: () => import('../views/JefeView.vue'),
+    meta: { requiresAuth: true, requiredPermission: 'tarea_gestionar_todas' }
+  },
+  {
+    path: '/mecanico',
+    name: 'mecanico',
+    // Evalúa si hay un tablero seleccionado en memoria, si no, va al buscador
+    redirect: () => (localStorage.getItem('legajoMecanico') ? '/mecanico/tareas' : '/mecanico/login')
+  },
+  {
+    path: '/mecanico/login',
+    name: 'mecanico-login',
+    component: () => import('../views/LoginMecanico.vue'),
+    meta: { requiresAuth: true, requiredPermission: 'tarea_ver_propias' }
+  },
+  {
+    path: '/mecanico/tareas',
+    name: 'mecanico-tareas',
+    component: () => import('../views/MecanicoView.vue'),
+    meta: { requiresAuth: true, requiredPermission: 'tarea_ver_propias' }
+  },
+  {
+    path: '/sala',
+    name: 'sala',
+    component: () => import('../views/SalaEsperaView.vue'),
+    // Usualmente la sala de espera es pública para abrirla en las pantallas/TVs del taller
+    meta: { requiresAuth: false } 
+  },
+  {
+    // Ruta comodín: Si tipean cualquier URL inexistente, los mandamos al inicio
+    path: '/:pathMatch(.*)*',
+    redirect: '/'
+  }
+]
+
+const router = createRouter({
+  history: createWebHistory(import.meta.env.BASE_URL),
+  routes
+})
+
+// --- GUARDIA DE NAVEGACIÓN GLOBAL ---
+router.beforeEach(async (to, from, next) => {
+  const authStore = useAuthStore();
+  
+  // 1. Validar que el estado de sesión esté cargado en la memoria de Pinia
+  if (!authStore.isVerified) {
+      await authStore.checkSession();
+  }
+
+  // 2. Control principal: ¿La ruta exige estar dentro del sistema?
+  if (to.meta.requiresAuth) {
+      if (!authStore.isAuthenticated) {
+          return next({ name: 'login' });
+      }
+
+      // 3. Control granular: ¿La ruta exige una llave/permiso particular?
+      if (to.meta.requiredPermission) {
+          const permisosUsuario = authStore.usuario?.permisos || [];
+          const tienePermiso = permisosUsuario.includes(to.meta.requiredPermission);
+          
+          if (!tienePermiso) {
+              console.warn(`🔒 Acceso bloqueado. Permiso faltante: ${to.meta.requiredPermission}`);
+              return next({ name: 'home' }); // Expulsado al menú central
+          }
+      }
+  }
+
+  // --- CONTROL DE CONFIGURACIÓN INICIAL (TAURI) ---
+  const isTauri = window.__TAURI_INTERNALS__ !== undefined;
+  const appModo = localStorage.getItem('app_modo');
+
+  if (isTauri && !appModo && to.name !== 'setup') {
+      return next({ name: 'setup' });
+  }
+  // Si pasa todos los filtros, o la ruta es pública, avanza
+  next();
+});
+
+export default router
+</file>
+
 <file path="gitaller-frontend/src/stores/useAuthStore.js">
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
@@ -6465,7 +6617,7 @@ const ejecutarRegistro = async () => {
 
 <file path="gitaller-frontend/src/style.css">
 /* ────────────────────────────────────────────────────────────────
-   IVEMAR · Sistema de diseño global
+   GiTaller · Sistema de diseño global
    Antes este archivo no se importaba desde ningún lugar de la app,
    por eso clases usadas en casi todos los componentes (.card, .btn,
    .btn-primary, .btn-warning, .form-control, .badge, .alert, etc.)
@@ -6499,6 +6651,44 @@ const ejecutarRegistro = async () => {
 
   font-family: 'Segoe UI', Roboto, Tahoma, Geneva, Verdana, sans-serif;
   color-scheme: light;
+}
+
+/* ─── Variables de Modo Oscuro ─────────────────────────────── */
+:root.dark-theme {
+  --primary: #4b9ee5; /* Azul más brillante para contrastar en fondo oscuro */
+  --primary-dark: #2c7ac9;
+  --primary-light: #162a3f;
+  
+  --success: #27ae60;
+  --success-light: #143d26;
+  
+  --danger: #e65a68;
+  --danger-light: #4a1c22;
+  
+  --warning: #d4a017;
+  --warning-light: #4d3a08;
+  
+  --muted: #8ba0b8;
+
+  /* Fondos y textos invertidos */
+  --text: #e2e8f0;
+  --text-soft: #94a3b8;
+  --border: #334155;
+  --border-soft: #1e293b;
+  --bg: #0f172a;
+  --surface: #1e293b;
+
+  color-scheme: dark;
+}
+
+/* Ajuste específico para tablas en modo oscuro */
+:root.dark-theme tr:hover td {
+  background: #2a374a;
+}
+:root.dark-theme input:disabled,
+:root.dark-theme .form-group input:disabled {
+  background: #162a3f;
+  color: var(--muted);
 }
 
 * {
@@ -6726,39 +6916,6 @@ tr:hover td { background: #fafcfe; }
       ]
     }
   ]
-}
-</file>
-
-<file path="gitaller-frontend/src-tauri/src/lib.rs">
-use tauri_plugin_shell::ShellExt;
-use tauri_plugin_shell::process::CommandEvent;
-
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_shell::init()) // 1. Inicializar el plugin
-        .setup(|app| {
-            // 2. Apuntar al nombre base declarado en tauri.conf.json (sin la extensión ni el target)
-            let sidecar_command = app.shell().sidecar("gitaller-server").unwrap();
-            println!("LLEGUE AL SETUP");
-            println!("VOY A LEVANTAR EL BACKEND");
-            let (mut rx, mut _child) = sidecar_command.spawn().expect("Fallo al iniciar el backend Node.js");
-            println!("BACKEND LANZADO");
-            // 3. (Opcional) Derivar los logs del backend a la consola de Rust para depurar
-            tauri::async_runtime::spawn(async move {
-                while let Some(event) = rx.recv().await {
-                    if let CommandEvent::Stdout(line) = &event {
-                        println!("Backend: {}", String::from_utf8_lossy(line));
-                    } else if let CommandEvent::Stderr(line) = &event {
-                        eprintln!("Backend Error: {}", String::from_utf8_lossy(line));
-                    }
-                }
-            });
-
-            Ok(())
-        })
-        .run(tauri::generate_context!())
-        .expect("Error al ejecutar la aplicación Tauri");
 }
 </file>
 
@@ -8119,135 +8276,6 @@ npm-debug.log*
 }
 </file>
 
-<file path="gitaller-backend/server.js">
-'use strict';
-require('dotenv').config(); // 1. Cargar variables de entorno
-
-const os = require('os');
-const express = require('express');
-const cors = require('cors');
-const cookieParser = require('cookie-parser'); // 2. Manejador de cookies
-const rateLimit = require('express-rate-limit'); // 3. Límite de peticiones
-const path = require('path');
-const fs = require('fs');
-
-const iniciarCron = require('./utils/cron');
-const { requireAuth } = require('./middlewares/auth'); // 4. Middleware de seguridad
-
-const app = express();
-const PORT = process.env.PORT || 5881;
-const appDataPath = process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
-const FIRMAS_DIR = path.join(appDataPath, 'GITaller', 'firmas');
-
-if (!fs.existsSync(FIRMAS_DIR)) {
-    fs.mkdirSync(FIRMAS_DIR, { recursive: true });
-}
-
-// ─── SEGURIDAD: LIMITADORES DE PETICIONES (RATE LIMIT) ─────────────
-// Límite general: Máximo 100 peticiones por minuto por IP
-const limiterGeneral = rateLimit({
-    windowMs: 1 * 60 * 1000, 
-    max: 100,
-    message: { error: 'Demasiadas peticiones. Por favor, espere un momento.' },
-    standardHeaders: true,
-    legacyHeaders: false,
-});
-
-// Límite estricto para Sala de Espera: Máximo 15 peticiones por minuto por IP
-// (El frontend actualiza cada 30 segundos, por lo que 2 peticiones/minuto es lo normal)
-const limiterSala = rateLimit({
-    windowMs: 1 * 60 * 1000,
-    max: 15,
-    message: { error: 'Límite de recargas excedido para la sala de espera.' }
-});
-
-// ─── MIDDLEWARES BASE ─────────────────────────────────────────────
-app.use(express.json());
-app.use(cookieParser());
-app.use(limiterGeneral); // Aplicamos el límite general a todo el servidor
-
-// Configuración estricta de CORS para red local
-const corsOptions = {
-    origin: function (origin, callback) {
-        if (!origin) return callback(null, true);
-
-        // Se añaden los esquemas nativos de Tauri (Mac/Linux y Windows)
-        const allowedOrigins = /^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+)(:\d+)?$|^tauri:\/\/localhost$|^http:\/\/tauri\.localhost$/;
-
-        if (allowedOrigins.test(origin)) {
-            callback(null, true);
-        } else {
-            callback(new Error('Acceso denegado por políticas de CORS. Origen no autorizado.'));
-        }
-    },
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
-};
-app.use(cors(corsOptions));
-
-// ─── ARCHIVOS ESTÁTICOS ───────────────────────────────────────────
-app.use('/firmas', express.static(FIRMAS_DIR));
-
-// ─── RUTAS PÚBLICAS (No requieren token) ──────────────────────────
-app.get('/status', (req, res) => {
-    res.json({ status: 'API IVEMAR activa', version: '3.0 - Segura' });
-});
-
-app.use('/api/auth', require('./routes/auth'));
-app.use('/api/sala', limiterSala, require('./routes/sala')); // Sala blindada con su propio limitador
-app.use('/api/configuracion', require('./routes/configuracion'));
-
-
-// ─── RUTAS PROTEGIDAS (Requieren sesión válida y permisos específicos) ───
-
-// Agenda y Contactos
-app.use('/api/unidades', requireAuth(['agenda_ver', 'agenda_gestionar']), require('./routes/unidades'));
-
-// RRHH y Legajos
-app.use('/api/legajos', requireAuth(['legajo_ver', 'legajo_gestionar']), require('./routes/legajos'));
-
-// Órdenes de Trabajo (Si tiene al menos uno de estos permisos, pasa)
-app.use('/api/ordenes', requireAuth(['ot_ver_lista', 'ot_crear', 'ot_editar']), require('./routes/ordenes'));
-
-// Tareas Operativas
-app.use('/api/actividades', requireAuth(['tarea_ver_propias', 'tarea_gestionar_todas']), require('./routes/actividades'));
-
-// Feriados y Excepciones
-app.use('/api/feriados', requireAuth(['ausencia_justificar', 'rol_gestionar']), require('./routes/feriados'));
-
-// Informes y Estadísticas
-app.use('/api/informes', requireAuth(['informe_financiero', 'informe_operativo', 'informe_taller']), require('./routes/informes'));
-
-// Configuración y Administración del Sistema
-app.use('/api/usuarios', requireAuth(['usuario_gestionar']), require('./routes/usuarios'));
-app.use('/api/roles', requireAuth(['rol_gestionar']), require('./routes/roles')); // <-- NUEVA RUTA PARA ROLES
-
-// ─── INICIAR TAREAS PROGRAMADAS ────────────────────────────────────
-iniciarCron();
-
-// ─── ARRANQUE DINÁMICO ─────────────────────────────────────────────
-const { get } = require('./config/database');
-
-// Esperamos 1.5s para que database.js termine de crear/migrar las tablas
-setTimeout(async () => {
-    try {
-        const conf = await get(`SELECT puerto_servidor FROM configuracion WHERE id = 1`);
-        const PORT_FINAL = (conf && conf.puerto_servidor) ? conf.puerto_servidor : PORT;
-        
-        app.listen(PORT_FINAL, '0.0.0.0', () => {
-            console.log(`🚀 API Taller Segura activa en http://0.0.0.0:${PORT_FINAL}`);
-            console.log(`📁 Firmas y Logos: ${FIRMAS_DIR}`);
-        });
-    } catch (error) {
-        // Fallback de emergencia
-        app.listen(PORT, '0.0.0.0', () => {
-            console.log(`🚀 API activa en puerto: ${PORT}`);
-        });
-    }
-}, 1500);
-</file>
-
 <file path="gitaller-frontend/src/components/asesor/AdminLegajos.vue">
 <template>
   <div class="card">
@@ -8738,6 +8766,47 @@ onMounted(async () => {
 <style scoped> .mb-15 { margin-bottom: 15px; } </style>
 </file>
 
+<file path="gitaller-frontend/src-tauri/src/lib.rs">
+use tauri_plugin_shell::ShellExt;
+use tauri_plugin_shell::process::CommandEvent;
+
+// 1. Creamos un comando que el Frontend puede invocar
+#[tauri::command]
+async fn start_server(app: tauri::AppHandle) -> Result<(), String> {
+    println!("Recibida orden del Frontend: Levantando Backend...");
+    
+    let sidecar_command = app.shell().sidecar("gitaller-server").map_err(|e| e.to_string())?;
+    let (mut rx, child) = sidecar_command.spawn().map_err(|e| e.to_string())?;
+
+    tauri::async_runtime::spawn(async move {
+        // Mantenemos el proceso vivo
+        let _mantener_vivo = child; 
+        
+        while let Some(event) = rx.recv().await {
+            match event {
+                CommandEvent::Stdout(line) => println!("Backend: {}", String::from_utf8_lossy(&line)),
+                CommandEvent::Stderr(line) => eprintln!("Backend Error: {}", String::from_utf8_lossy(&line)),
+                CommandEvent::Terminated(payload) => println!("⚠️ Backend cerrado con código: {:?}", payload.code),
+                CommandEvent::Error(err) => eprintln!("❌ Error del proceso: {}", err),
+                _ => {}
+            }
+        }
+    });
+
+    Ok(())
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    tauri::Builder::default()
+        .plugin(tauri_plugin_shell::init())
+        // 2. Registramos el comando para que Vue tenga permiso de usarlo
+        .invoke_handler(tauri::generate_handler![start_server])
+        .run(tauri::generate_context!())
+        .expect("Error al ejecutar la aplicación Tauri");
+}
+</file>
+
 <file path=".gitignore">
 # Este proyecto tiene dos sub-carpetas (ivemar-backend/ e
 # ivemar-frontend/), cada una con su propio .gitignore específico.
@@ -9082,245 +9151,146 @@ router.put('/aportes/:id', async (req, res) => {
 module.exports = router;
 </file>
 
-<file path="gitaller-frontend/src/components/asesor/AdminConfiguracion.vue">
-<template>
-  <div class="card">
-    <h2>Configuración General del Taller</h2>
-    <hr style="margin-bottom: 20px;">
+<file path="gitaller-backend/server.js">
+'use strict';
+require('dotenv').config(); // 1. Cargar variables de entorno
 
-    <form @submit.prevent="guardarConfig">
-      <div class="form-grid">
-        <div class="form-group" style="grid-column: span 2;">
-          <label>Nombre del Taller / Empresa</label>
-          <input type="text" v-model="form.nombre_taller" required />
-        </div>
-        <div class="form-group" style="grid-column: span 2;">
-          <label>Slogan o Descripción Corta</label>
-          <input type="text" v-model="form.slogan" placeholder="Ej: Concesionario Oficial..." />
-        </div>
-        <div class="form-group" style="grid-column: span 2;">
-          <label>Dirección del Taller</label>
-          <input type="text" v-model="form.direccion" placeholder="Ej: Av. Principal 123, Ciudad" />
-        </div>
-        <div class="form-group">
-          <label>CUIT / RUT</label>
-          <input type="text" v-model="form.cuit" placeholder="Ej: 30-12345678-9" />
-        </div>
-        <div class="form-group">
-          <label>Teléfono(s)</label>
-          <input type="text" v-model="form.telefono" placeholder="Ej: 0800-123-4567" />
-        </div>
-        <div class="form-group" style="grid-column: span 2;">
-          <label>Correo Electrónico (Contacto)</label>
-          <input type="email" v-model="form.email" placeholder="Ej: info@mitaller.com" />
-        </div>
-        <!-- Agrega este bloque debajo del div de nombre_taller -->
-        <div class="form-group">
-          <label>Puerto del Servidor</label>
-          <input type="number" v-model="form.puerto_servidor" required />
-          <small style="color: #b22234; display:block; margin-top:4px;">
-            ⚠️ Si modificas este valor, debes reiniciar manualmente la consola del backend.
-          </small>
-        </div>
+const os = require('os');
+const express = require('express');
+const cors = require('cors');
+const cookieParser = require('cookie-parser'); // 2. Manejador de cookies
+const rateLimit = require('express-rate-limit'); // 3. Límite de peticiones
+const path = require('path');
+const fs = require('fs');
 
-        <div class="form-group">
-          <label>Hora de Apertura (0-23)</label>
-          <input type="number" v-model="form.hora_apertura" min="0" max="23" required />
-        </div>
-        <div class="form-group">
-          <label>Hora de Cierre (0-23)</label>
-          <input type="number" v-model="form.hora_cierre" min="0" max="23" required />
-        </div>
+const iniciarCron = require('./utils/cron');
+const { requireAuth } = require('./middlewares/auth'); // 4. Middleware de seguridad
 
-        <div class="form-group" style="grid-column: span 2;">
-          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin-top: 10px;">
-            <input type="checkbox" v-model="form.trabaja_corrido" style="width: 20px; height: 20px;" />
-            <span style="font-size: 1rem; color: #0056a7; font-weight: bold;">El taller trabaja de corrido (Sin pausa de almuerzo)</span>
-          </label>
-        </div>
+const app = express();
+const PORT = process.env.PORT || 5881;
+const appDataPath = process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
+const FIRMAS_DIR = path.join(appDataPath, 'GITaller', 'firmas');
 
-        <template v-if="!form.trabaja_corrido">
-          <div class="form-group">
-            <label>Inicio de Almuerzo (0-23)</label>
-            <input type="number" v-model="form.hora_almuerzo_inicio" min="0" max="23" />
-          </div>
-          <div class="form-group">
-            <label>Fin de Almuerzo (Reanudación)</label>
-            <input type="number" v-model="form.hora_almuerzo_fin" min="0" max="23" />
-          </div>
-        </template>
-      </div>
-
-      <button type="submit" class="btn btn-success" :disabled="guardando">Guardar Configuración</button>
-    </form>
-
-    <hr style="margin: 30px 0;">
-
-    <h3>Logotipo del Taller</h3>
-    <div style="display: flex; align-items: center; gap: 20px; margin-top: 15px;">
-      <div style="width: 150px; height: 80px; border: 1px dashed #ccc; display: flex; align-items: center; justify-content: center; background: #f8fafc; border-radius: 8px;">
-        <img v-if="configStore.config.logo_path" :src="configStore.getLogoUrl()" style="max-width: 100%; max-height: 100%;" />
-        <span v-else style="color: #999; font-size: 0.8rem;">Sin logo</span>
-      </div>
-      <div>
-        <p style="font-size: 0.85rem; color: #666; margin-top: 0;">Suba una imagen en formato PNG (Fondo transparente recomendado).</p>
-        <button class="btn btn-sm btn-secondary" @click="subirLogo">Examinar y Subir Logo</button>
-      </div>
-    </div>
-  </div>
-</template>
-
-<script setup>
-import { ref, onMounted, watch } from 'vue'
-import { useApi } from '../../composables/useApi'
-import { useToast, errMsg } from '../../composables/useToast'
-import { useConfigStore } from '../../stores/useConfigStore'
-
-const { fetchJSON, API_BASE, getToken } = useApi()
-const toast = useToast()
-const configStore = useConfigStore()
-
-const guardando = ref(false)
-const form = ref({
-  nombre_taller: '', hora_apertura: 8, hora_cierre: 18, 
-  hora_almuerzo_inicio: 13, hora_almuerzo_fin: 14, trabaja_corrido: false,
-  puerto_servidor: 5881,
-  slogan: '', direccion: '', cuit: '', telefono: '', email: '' 
-})
-
-onMounted(() => {
-  const c = configStore.config
-  form.value = {
-    nombre_taller: c.nombre_taller,
-    hora_apertura: c.hora_apertura,
-    hora_cierre: c.hora_cierre,
-    hora_almuerzo_inicio: c.hora_almuerzo_inicio,
-    hora_almuerzo_fin: c.hora_almuerzo_fin,
-    trabaja_corrido: c.trabaja_corrido === 1,
-    puerto_servidor: c.puerto_servidor || 5881,
-    slogan: c.slogan || '',         
-    direccion: c.direccion || '',   
-    cuit: c.cuit || '',             
-    telefono: c.telefono || '',     
-    email: c.email || ''            
-  }
-})
-
-const guardarConfig = async () => {
-  guardando.value = true
-  try {
-    await fetchJSON('/configuracion', { method: 'PUT', body: JSON.stringify(form.value) })
-    toast.success('Configuración guardada')
-    await configStore.cargarConfig() // Recarga global
-  } catch (err) { toast.error(errMsg(err)) }
-  finally { guardando.value = false }
+if (!fs.existsSync(FIRMAS_DIR)) {
+    fs.mkdirSync(FIRMAS_DIR, { recursive: true });
 }
 
-const subirLogo = () => {
-  const input = document.createElement('input')
-  input.type = 'file'
-  input.accept = 'image/png'
-  input.onchange = async () => {
-    const file = input.files[0]
-    if (!file) return
-    const formData = new FormData()
-    formData.append('logo', file)
+// ─── SEGURIDAD: LIMITADORES DE PETICIONES (RATE LIMIT) ─────────────
+// Límite general: Máximo 100 peticiones por minuto por IP
+const limiterGeneral = rateLimit({
+    windowMs: 1 * 60 * 1000, 
+    max: 100,
+    message: { error: 'Demasiadas peticiones. Por favor, espere un momento.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
+// Límite estricto para Sala de Espera: Máximo 15 peticiones por minuto por IP
+// (El frontend actualiza cada 30 segundos, por lo que 2 peticiones/minuto es lo normal)
+const limiterSala = rateLimit({
+    windowMs: 1 * 60 * 1000,
+    max: 15,
+    message: { error: 'Límite de recargas excedido para la sala de espera.' }
+});
+
+// ─── MIDDLEWARES BASE ─────────────────────────────────────────────
+app.use(express.json());
+app.use(cookieParser());
+app.use(limiterGeneral); // Aplicamos el límite general a todo el servidor
+
+// Configuración estricta de CORS para red local
+const corsOptions = {
+    origin: function (origin, callback) {
+        if (!origin) return callback(null, true);
+
+        // Se añaden los esquemas nativos de Tauri (Mac/Linux y Windows)
+        const allowedOrigins = /^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+)(:\d+)?$|^tauri:\/\/localhost$|^http:\/\/tauri\.localhost$/;
+
+        if (allowedOrigins.test(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('Acceso denegado por políticas de CORS. Origen no autorizado.'));
+        }
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+};
+app.use(cors(corsOptions));
+
+// ─── ARCHIVOS ESTÁTICOS ───────────────────────────────────────────
+app.use('/firmas', express.static(FIRMAS_DIR));
+// --- SERVIR EL FRONTEND A LA RED LOCAL (TV, Celulares) ---
+const distPath = path.join(__dirname, 'dist');
+if (fs.existsSync(distPath)) {
+    // 1. Sirve los archivos estáticos compilados (JS, CSS, imágenes)
+    app.use(express.static(distPath));
+
+    // 2. Redirige cualquier otra ruta de la red al index.html para que funcione Vue Router
+    app.get('*', (req, res) => {
+        if (!req.path.startsWith('/api') && !req.path.startsWith('/firmas')) {
+            res.sendFile(path.join(distPath, 'index.html'));
+        }
+    });
+}
+
+// ─── RUTAS PÚBLICAS (No requieren token) ──────────────────────────
+app.get('/status', (req, res) => {
+    res.json({ status: 'API IVEMAR activa', version: '3.0 - Segura' });
+});
+
+app.use('/api/auth', require('./routes/auth'));
+app.use('/api/sala', limiterSala, require('./routes/sala')); // Sala blindada con su propio limitador
+app.use('/api/configuracion', require('./routes/configuracion'));
+
+
+// ─── RUTAS PROTEGIDAS (Requieren sesión válida y permisos específicos) ───
+
+// Agenda y Contactos
+app.use('/api/unidades', requireAuth(['agenda_ver', 'agenda_gestionar']), require('./routes/unidades'));
+
+// RRHH y Legajos
+app.use('/api/legajos', requireAuth(['legajo_ver', 'legajo_gestionar']), require('./routes/legajos'));
+
+// Órdenes de Trabajo (Si tiene al menos uno de estos permisos, pasa)
+app.use('/api/ordenes', requireAuth(['ot_ver_lista', 'ot_crear', 'ot_editar']), require('./routes/ordenes'));
+
+// Tareas Operativas
+app.use('/api/actividades', requireAuth(['tarea_ver_propias', 'tarea_gestionar_todas']), require('./routes/actividades'));
+
+// Feriados y Excepciones
+app.use('/api/feriados', requireAuth(['ausencia_justificar', 'rol_gestionar']), require('./routes/feriados'));
+
+// Informes y Estadísticas
+app.use('/api/informes', requireAuth(['informe_financiero', 'informe_operativo', 'informe_taller']), require('./routes/informes'));
+
+// Configuración y Administración del Sistema
+app.use('/api/usuarios', requireAuth(['usuario_gestionar']), require('./routes/usuarios'));
+app.use('/api/roles', requireAuth(['rol_gestionar']), require('./routes/roles')); // <-- NUEVA RUTA PARA ROLES
+
+// ─── INICIAR TAREAS PROGRAMADAS ────────────────────────────────────
+iniciarCron();
+
+// ─── ARRANQUE DINÁMICO ─────────────────────────────────────────────
+const { get } = require('./config/database');
+
+// Esperamos 1.5s para que database.js termine de crear/migrar las tablas
+setTimeout(async () => {
     try {
-      const response = await fetch(`${API_BASE}/configuracion/logo`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${getToken()}` },
-      body: formData
-    })
-      
-      const data = await response.json() // Parseamos la respuesta para ver el error real si lo hay
-      if (!response.ok) throw new Error(data.error || 'Error al subir logo')
-      
-      toast.success('Logotipo actualizado')
-      await configStore.cargarConfig()
-    } catch (err) { 
-      toast.error(err.message) 
+        const conf = await get(`SELECT puerto_servidor FROM configuracion WHERE id = 1`);
+        const PORT_FINAL = (conf && conf.puerto_servidor) ? conf.puerto_servidor : PORT;
+        
+        app.listen(PORT_FINAL, '0.0.0.0', () => {
+            console.log(`🚀 API Taller Segura activa en http://0.0.0.0:${PORT_FINAL}`);
+            console.log(`📁 Firmas y Logos: ${FIRMAS_DIR}`);
+        });
+    } catch (error) {
+        // Fallback de emergencia
+        app.listen(PORT, '0.0.0.0', () => {
+            console.log(`🚀 API activa en puerto: ${PORT}`);
+        });
     }
-  }
-  input.click()
-}
-</script>
-</file>
-
-<file path="gitaller-frontend/src/composables/useApi.js">
-export function useApi() {
-    // Detectamos si estamos corriendo dentro de la ventana de Tauri
-    const isTauri = window.__TAURI_INTERNALS__ !== undefined;
-
-    // El puerto de la API ahora se puede configurar a través de una variable de entorno
-    // en el frontend para que coincida con la configuración del backend.
-    const port = import.meta.env.VITE_API_PORT || 5881;
-
-    const API_BASE = import.meta.env.VITE_API_BASE
-        || (isTauri
-            ? `http://127.0.0.1:${port}/api`
-            : `${window.location.protocol}//${window.location.hostname}:${port}/api`);
-
-    // AUTENTICACIÓN VÍA BEARER TOKEN:
-    // Se reemplazaron las cookies de sesión por un token guardado en
-    // localStorage, ya que la app se usa desde múltiples dispositivos en la
-    // red (PC/Tauri, celulares, TV) y cada uno accede por una IP/origen
-    // distinto. Con cookies, SameSite=None exige HTTPS real (Secure), lo
-    // cual no es viable de sostener en varios dispositivos dentro de una LAN.
-    const TOKEN_KEY = 'gitaller_token';
-    const getToken = () => localStorage.getItem(TOKEN_KEY);
-    const setToken = (token) => localStorage.setItem(TOKEN_KEY, token);
-    const clearToken = () => localStorage.removeItem(TOKEN_KEY);
-
-    const parseBody = async (res) => {
-        const text = await res.text()
-        if (!text) return null
-        try {
-            return JSON.parse(text)
-        } catch {
-            // El backend puede devolver HTML/texto plano en errores no controlados
-            return { message: text }
-        }
-    }
-
-    const fetchJSON = async (endpoint, options = {}) => {
-        const url = endpoint.startsWith('http') ? endpoint : `${API_BASE}${endpoint}`
-
-        const token = getToken()
-        const headers = {
-            'Content-Type': 'application/json',
-            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-            ...(options.headers || {}),
-        }
-
-        let res
-        try {
-            res = await fetch(url, {
-                cache: 'no-cache',
-                ...options,
-                headers,
-            })
-        } catch (networkErr) {
-            // fetch lanza TypeError cuando no hay conexión con el servidor
-            return Promise.reject({ error: 'No se pudo conectar con el servidor. Verifique la red o que el backend esté activo.' })
-        }
-
-        const body = await parseBody(res)
-
-        if (!res.ok) {
-            return Promise.reject(body || { error: `Error ${res.status}` })
-        }
-
-        return body
-    }
-
-    return {
-        fetchJSON,
-        API_BASE,
-        getToken,
-        setToken,
-        clearToken,
-    }
-}
+}, 1500);
 </file>
 
 <file path="gitaller-frontend/src/views/MecanicoView.vue">
@@ -9800,6 +9770,264 @@ onUnmounted(() => {
 </style>
 </file>
 
+<file path="gitaller-frontend/src/components/asesor/AdminConfiguracion.vue">
+<template>
+  <div class="card">
+    <h2>Configuración General del Taller</h2>
+    <hr style="margin-bottom: 20px;">
+
+    <form @submit.prevent="guardarConfig">
+      <div class="form-grid">
+        <div class="form-group" style="grid-column: span 2;">
+          <label>Nombre del Taller / Empresa</label>
+          <input type="text" v-model="form.nombre_taller" required />
+        </div>
+        <div class="form-group" style="grid-column: span 2;">
+          <label>Slogan o Descripción Corta</label>
+          <input type="text" v-model="form.slogan" placeholder="Ej: Concesionario Oficial..." />
+        </div>
+        <div class="form-group" style="grid-column: span 2;">
+          <label>Dirección del Taller</label>
+          <input type="text" v-model="form.direccion" placeholder="Ej: Av. Principal 123, Ciudad" />
+        </div>
+        <div class="form-group">
+          <label>CUIT / RUT</label>
+          <input type="text" v-model="form.cuit" placeholder="Ej: 30-12345678-9" />
+        </div>
+        <div class="form-group">
+          <label>Teléfono(s)</label>
+          <input type="text" v-model="form.telefono" placeholder="Ej: 0800-123-4567" />
+        </div>
+        <div class="form-group" style="grid-column: span 2;">
+          <label>Correo Electrónico (Contacto)</label>
+          <input type="email" v-model="form.email" placeholder="Ej: info@mitaller.com" />
+        </div>
+        <!-- Agrega este bloque debajo del div de nombre_taller -->
+        <div class="form-group">
+          <label>Puerto del Servidor</label>
+          <input type="number" v-model="form.puerto_servidor" required />
+          <small style="color: #b22234; display:block; margin-top:4px;">
+            ⚠️ Si modificas este valor, debes reiniciar manualmente la consola del backend.
+          </small>
+        </div>
+
+        <div class="form-group">
+          <label>Hora de Apertura (0-23)</label>
+          <input type="number" v-model="form.hora_apertura" min="0" max="23" required />
+        </div>
+        <div class="form-group">
+          <label>Hora de Cierre (0-23)</label>
+          <input type="number" v-model="form.hora_cierre" min="0" max="23" required />
+        </div>
+
+        <div class="form-group" style="grid-column: span 2;">
+          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin-top: 10px;">
+            <input type="checkbox" v-model="form.trabaja_corrido" style="width: 20px; height: 20px;" />
+            <span style="font-size: 1rem; color: #0056a7; font-weight: bold;">El taller trabaja de corrido (Sin pausa de almuerzo)</span>
+          </label>
+        </div>
+
+        <template v-if="!form.trabaja_corrido">
+          <div class="form-group">
+            <label>Inicio de Almuerzo (0-23)</label>
+            <input type="number" v-model="form.hora_almuerzo_inicio" min="0" max="23" />
+          </div>
+          <div class="form-group">
+            <label>Fin de Almuerzo (Reanudación)</label>
+            <input type="number" v-model="form.hora_almuerzo_fin" min="0" max="23" />
+          </div>
+        </template>
+      </div>
+
+      <button type="submit" class="btn btn-success" :disabled="guardando">Guardar Configuración</button>
+    </form>
+
+    <hr style="margin: 30px 0;">
+
+    <h3>Logotipo del Taller</h3>
+    <div style="display: flex; align-items: center; gap: 20px; margin-top: 15px;">
+      <div style="width: 150px; height: 80px; border: 1px dashed #ccc; display: flex; align-items: center; justify-content: center; background: #f8fafc; border-radius: 8px;">
+        <img v-if="configStore.config.logo_path" :src="configStore.getLogoUrl()" style="max-width: 100%; max-height: 100%;" />
+        <span v-else style="color: #999; font-size: 0.8rem;">Sin logo</span>
+      </div>
+      <div>
+        <p style="font-size: 0.85rem; color: #666; margin-top: 0;">Suba una imagen en formato PNG (Fondo transparente recomendado).</p>
+        <button class="btn btn-sm btn-secondary" @click="subirLogo">Examinar y Subir Logo</button>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref, onMounted, watch } from 'vue'
+import { useApi } from '../../composables/useApi'
+import { useToast, errMsg } from '../../composables/useToast'
+import { useConfigStore } from '../../stores/useConfigStore'
+
+const { fetchJSON, API_BASE, getToken } = useApi()
+const toast = useToast()
+const configStore = useConfigStore()
+
+const guardando = ref(false)
+const form = ref({
+  nombre_taller: '', hora_apertura: 8, hora_cierre: 18, 
+  hora_almuerzo_inicio: 13, hora_almuerzo_fin: 14, trabaja_corrido: false,
+  puerto_servidor: 5881,
+  slogan: '', direccion: '', cuit: '', telefono: '', email: '' 
+})
+
+onMounted(async () => {
+  // Obligamos a la vista a esperar la respuesta del backend
+  await configStore.cargarConfig(); 
+  
+  const c = configStore.config;
+  form.value = {
+    nombre_taller: c.nombre_taller,
+    hora_apertura: c.hora_apertura,
+    hora_cierre: c.hora_cierre,
+    hora_almuerzo_inicio: c.hora_almuerzo_inicio,
+    hora_almuerzo_fin: c.hora_almuerzo_fin,
+    trabaja_corrido: c.trabaja_corrido === 1,
+    puerto_servidor: c.puerto_servidor || 5881,
+    slogan: c.slogan || '',         
+    direccion: c.direccion || '',   
+    cuit: c.cuit || '',             
+    telefono: c.telefono || '',     
+    email: c.email || ''            
+  }
+})
+
+const guardarConfig = async () => {
+  guardando.value = true
+  try {
+    await fetchJSON('/configuracion', { method: 'PUT', body: JSON.stringify(form.value) })
+    toast.success('Configuración guardada')
+    await configStore.cargarConfig() // Recarga global
+  } catch (err) { toast.error(errMsg(err)) }
+  finally { guardando.value = false }
+}
+
+const subirLogo = () => {
+  const input = document.createElement('input')
+  input.type = 'file'
+  input.accept = 'image/png'
+  input.onchange = async () => {
+    const file = input.files[0]
+    if (!file) return
+    const formData = new FormData()
+    formData.append('logo', file)
+    try {
+      const response = await fetch(`${API_BASE}/configuracion/logo`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${getToken()}` },
+      body: formData
+    })
+      
+      const data = await response.json() // Parseamos la respuesta para ver el error real si lo hay
+      if (!response.ok) throw new Error(data.error || 'Error al subir logo')
+      
+      toast.success('Logotipo actualizado')
+      await configStore.cargarConfig()
+    } catch (err) { 
+      toast.error(err.message) 
+    }
+  }
+  input.click()
+}
+</script>
+</file>
+
+<file path="gitaller-frontend/src/composables/useApi.js">
+export function useApi() {
+    // Detectamos si estamos corriendo dentro de la ventana de Tauri
+    const isTauri = window.__TAURI_INTERNALS__ !== undefined;
+
+    // El puerto de la API ahora se puede configurar a través de una variable de entorno
+    // en el frontend para que coincida con la configuración del backend.
+    const port = import.meta.env.VITE_API_PORT || 5881;
+
+    let defaultBase = '';
+    
+    if (isTauri) {
+        // Es un ejecutable .exe (PC Servidor o PC Cliente)
+        const modo = localStorage.getItem('app_modo');
+        const ip = localStorage.getItem('server_ip');
+        
+        if (modo === 'cliente' && ip) {
+            defaultBase = `http://${ip}:${port}/api`;
+        } else {
+            defaultBase = `http://127.0.0.1:${port}/api`;
+        }
+    } else {
+        // Es un Navegador Web (TV o Celular entrando por red)
+        defaultBase = `${window.location.protocol}//${window.location.hostname}:${port}/api`;
+    }
+
+    const API_BASE = import.meta.env.VITE_API_BASE || defaultBase;
+
+    // AUTENTICACIÓN VÍA BEARER TOKEN:
+    // Se reemplazaron las cookies de sesión por un token guardado en
+    // localStorage, ya que la app se usa desde múltiples dispositivos en la
+    // red (PC/Tauri, celulares, TV) y cada uno accede por una IP/origen
+    // distinto. Con cookies, SameSite=None exige HTTPS real (Secure), lo
+    // cual no es viable de sostener en varios dispositivos dentro de una LAN.
+    const TOKEN_KEY = 'gitaller_token';
+    const getToken = () => localStorage.getItem(TOKEN_KEY);
+    const setToken = (token) => localStorage.setItem(TOKEN_KEY, token);
+    const clearToken = () => localStorage.removeItem(TOKEN_KEY);
+
+    const parseBody = async (res) => {
+        const text = await res.text()
+        if (!text) return null
+        try {
+            return JSON.parse(text)
+        } catch {
+            // El backend puede devolver HTML/texto plano en errores no controlados
+            return { message: text }
+        }
+    }
+
+    const fetchJSON = async (endpoint, options = {}) => {
+        const url = endpoint.startsWith('http') ? endpoint : `${API_BASE}${endpoint}`
+
+        const token = getToken()
+        const headers = {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+            ...(options.headers || {}),
+        }
+
+        let res
+        try {
+            res = await fetch(url, {
+                cache: 'no-cache',
+                ...options,
+                headers,
+            })
+        } catch (networkErr) {
+            // fetch lanza TypeError cuando no hay conexión con el servidor
+            return Promise.reject({ error: 'No se pudo conectar con el servidor. Verifique la red o que el backend esté activo.' })
+        }
+
+        const body = await parseBody(res)
+
+        if (!res.ok) {
+            return Promise.reject(body || { error: `Error ${res.status}` })
+        }
+
+        return body
+    }
+
+    return {
+        fetchJSON,
+        API_BASE,
+        getToken,
+        setToken,
+        clearToken,
+    }
+}
+</file>
+
 <file path="gitaller-frontend/src/App.vue">
 <template>
   <div class="container" id="app">
@@ -9812,9 +10040,48 @@ onUnmounted(() => {
 <script setup>
 // 1. Importamos el contenedor de alertas para que puedas ver los errores de login
 import ToastContainer from './components/common/ToastContainer.vue';
+import { onMounted } from 'vue';
+import { invoke } from '@tauri-apps/api/core';
+import { useConfigStore } from './stores/useConfigStore';
 
-// 2. ¡ELIMINAMOS EL CÓDIGO DEL SIDECAR AQUÍ! 
-// Dejamos que Rust (lib.rs) se encargue de encender y apagar el backend.
+const configStore = useConfigStore();
+
+onMounted(async () => {
+  // --- APLICAR MODO OSCURO GUARDADO ---
+  const temaGuardado = localStorage.getItem('theme');
+  if (temaGuardado === 'dark') {
+    document.documentElement.classList.add('dark-theme');
+  }
+  // ------------------------------------
+
+  const isTauri = window.__TAURI_INTERNALS__ !== undefined;
+  const modo = localStorage.getItem('app_modo');
+
+  // Si es el ejecutable y es la PC servidor, levantamos el backend silenciosamente
+  if (isTauri && modo === 'servidor') {
+    try {
+      await invoke('start_server');
+    } catch (e) {
+      console.error('Error al iniciar el servidor de fondo:', e);
+    }
+  }
+
+  // 2. Bucle de reintento para cargar la configuración global
+  // El backend tarda ~1.5 seg en estar listo, así que insistimos hasta que responda
+  let intentos = 0;
+  const intentarCargar = async () => {
+    await configStore.cargarConfig();
+    
+    // Si sigue diciendo 'Cargando...' es porque la petición falló. Reintentamos en 500ms.
+    if (configStore.config.nombre_taller === 'Cargando...' && intentos < 10) {
+      intentos++;
+      setTimeout(intentarCargar, 500);
+    }
+  };
+  
+  // Iniciamos el intento de carga (aplica para todos los dispositivos de la red)
+  intentarCargar();
+});
 </script>
 </file>
 

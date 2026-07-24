@@ -1,10 +1,19 @@
 /* ────────────────────────────────────────────────────────────────
-   IVEMAR · Sistema de diseño global
+   GiTaller · Sistema de diseño global
    Antes este archivo no se importaba desde ningún lugar de la app,
    por eso clases usadas en casi todos los componentes (.card, .btn,
    .btn-primary, .btn-warning, .form-control, .badge, .alert, etc.)
    no tenían ninguna definición real. Se reescribe como un sistema
    de diseño coherente y se importa desde main.js.
+
+   [PATCH modo oscuro] Antes había colores "pastel" (fondos de fila,
+   status-tags, chips de mecánico, modales, inputs) escritos a fuego
+   en hexadecimales de modo claro. Al activar --dark-theme esos
+   colores no cambiaban, así que quedaban parches celestes/verdes/
+   rosados muy claros flotando sobre un fondo oscuro: se veía roto.
+   Ahora todos esos colores salen de variables (--row-ready-bg,
+   --status-*-bg, --chip-bg, etc.) que se redefinen en el bloque
+   :root.dark-theme, igual que ya se hacía con --primary/--surface/etc.
    ──────────────────────────────────────────────────────────────── */
 
 :root {
@@ -25,14 +34,101 @@
   --border-soft: #eef3f9;
   --bg: #f4f7fc;
   --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --overlay: rgba(15, 23, 42, 0.55);
+  --hover-row: #fafcfe;
+  --scrollbar-thumb: #c7d0dc;
 
   --radius: 10px;
   --radius-sm: 6px;
   --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.06);
   --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.1);
 
+  /* Fondos suaves para filas / chips que antes estaban hardcodeados */
+  --chip-bg: #f0f4f8;
+  --row-ready-bg: #e6f9ec;
+  --row-ready-border: var(--success);
+  --row-stale-bg: #fdf1f1;
+  --row-stale-border: var(--danger);
+
+  /* Status tags (píldoras de estado) */
+  --status-progress-bg: #d4edda; --status-progress-text: #155724;
+  --status-wait-bg: #e9edf4;     --status-wait-text: #445566;
+  --status-warn-bg: #fff3cd;     --status-warn-text: #7a5c00;
+  --status-danger-bg: #f8d7da;   --status-danger-text: #842029;
+  --status-done-bg: #cfe2ff;     --status-done-text: #084298;
+  --status-urgente-bg: #fff3cd;  --status-urgente-text: #856404; --status-urgente-border: #ffeeba;
+
+  --alert-danger-text: #721c24;
+  --alert-danger-border: #f5c6cb;
+  --alert-success-text: #155724;
+  --alert-success-border: #c3e6cb;
+
   font-family: 'Segoe UI', Roboto, Tahoma, Geneva, Verdana, sans-serif;
   color-scheme: light;
+}
+
+/* ─── Variables de Modo Oscuro ─────────────────────────────── */
+:root.dark-theme {
+  --primary: #4b9ee5; /* Azul más brillante para contrastar en fondo oscuro */
+  --primary-dark: #2c7ac9;
+  --primary-light: #162a3f;
+
+  --success: #27ae60;
+  --success-light: #143d26;
+
+  --danger: #e65a68;
+  --danger-light: #4a1c22;
+
+  --warning: #d4a017;
+  --warning-light: #4d3a08;
+
+  --muted: #8ba0b8;
+
+  /* Fondos y textos invertidos */
+  --text: #e2e8f0;
+  --text-soft: #94a3b8;
+  --border: #334155;
+  --border-soft: #1e293b;
+  --bg: #0f172a;
+  --surface: #1e293b;
+  --surface-raised: #26374d;
+  --overlay: rgba(2, 6, 15, 0.7);
+  --hover-row: #26374d;
+  --scrollbar-thumb: #475569;
+
+  /* Chips y filas resaltadas: en vez de pasteles sólidos, tintes
+     translúcidos sobre el color base para que se integren al fondo
+     oscuro en lugar de "flotar" encima. */
+  --chip-bg: #26374d;
+  --row-ready-bg: rgba(39, 174, 96, 0.14);
+  --row-ready-border: var(--success);
+  --row-stale-bg: rgba(230, 90, 104, 0.14);
+  --row-stale-border: var(--danger);
+
+  --status-progress-bg: rgba(39, 174, 96, 0.2);  --status-progress-text: #8ee6ad;
+  --status-wait-bg: rgba(148, 163, 184, 0.18);   --status-wait-text: #cbd5e1;
+  --status-warn-bg: rgba(212, 160, 23, 0.2);     --status-warn-text: #f0cf6b;
+  --status-danger-bg: rgba(230, 90, 104, 0.2);   --status-danger-text: #f5a9b0;
+  --status-done-bg: rgba(75, 158, 229, 0.2);     --status-done-text: #a9d3fa;
+  --status-urgente-bg: rgba(212, 160, 23, 0.22); --status-urgente-text: #f0cf6b; --status-urgente-border: rgba(212, 160, 23, 0.5);
+
+  --alert-danger-text: #f5a9b0;
+  --alert-danger-border: rgba(230, 90, 104, 0.35);
+  --alert-success-text: #8ee6ad;
+  --alert-success-border: rgba(39, 174, 96, 0.35);
+
+  color-scheme: dark;
+}
+
+/* Ajuste específico para tablas en modo oscuro */
+:root.dark-theme tr:hover td {
+  background: var(--hover-row);
+}
+:root.dark-theme input:disabled,
+:root.dark-theme .form-group input:disabled {
+  background: var(--border-soft);
+  color: var(--muted);
 }
 
 * {
@@ -138,7 +234,7 @@ textarea {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   font-size: 0.95rem;
-  background: white;
+  background: var(--surface);
   color: var(--text);
   width: 100%;
   font-family: inherit;
@@ -154,7 +250,8 @@ textarea:focus {
 }
 input:disabled,
 .form-group input:disabled {
-  background: #f0f0f0;
+  background: var(--border-soft);
+  color: var(--muted);
   cursor: not-allowed;
 }
 
@@ -163,7 +260,7 @@ input:disabled,
 table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
 th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border-soft); }
 th { background: var(--border-soft); font-weight: 700; color: var(--text); }
-tr:hover td { background: #fafcfe; }
+tr:hover td { background: var(--hover-row); }
 .empty-state, .text-center { text-align: center; color: var(--muted); padding: 24px; }
 
 /* ─── Badges / estados ─────────────────────────────────────── */
@@ -185,24 +282,25 @@ tr:hover td { background: #fafcfe; }
   border-radius: var(--radius-sm);
   margin-top: 15px;
   background: var(--danger-light);
-  color: #721c24;
-  border: 1px solid #f5c6cb;
+  color: var(--alert-danger-text);
+  border: 1px solid var(--alert-danger-border);
   font-size: 0.9rem;
 }
-.alert-success { background: var(--success-light); color: #155724; border-color: #c3e6cb; }
+.alert-success { background: var(--success-light); color: var(--alert-success-text); border-color: var(--alert-success-border); }
 .mt-10 { margin-top: 10px; }
 .mt-15 { margin-top: 15px; }
 
 /* ─── Modales (base compartida) ────────────────────────────── */
 .modal-overlay {
   position: fixed; inset: 0;
-  background: rgba(15, 23, 42, 0.55);
+  background: var(--overlay);
   z-index: 1000;
   display: flex; justify-content: center; align-items: center;
   padding: 20px;
 }
 .modal-content {
-  background: white;
+  background: var(--surface-raised);
+  color: var(--text);
   width: 100%;
   max-width: 600px;
   border-radius: var(--radius);
@@ -233,7 +331,7 @@ tr:hover td { background: #fafcfe; }
 
 /* ─── Scrollbars discretos ─────────────────────────────────── */
 ::-webkit-scrollbar { height: 8px; width: 8px; }
-::-webkit-scrollbar-thumb { background: #c7d0dc; border-radius: 4px; }
+::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 4px; }
 
 @media (max-width: 640px) {
   .container { padding: 12px; }

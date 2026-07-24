@@ -43,7 +43,7 @@ onMounted(() => {
 .header-row { display: flex; align-items: center; flex-wrap: wrap; gap: 15px; margin-bottom: 15px; }
 .header-row h2 { margin: 0; margin-right: auto; }
 
-.dashboard-controls { display: flex; flex-wrap: wrap; gap: 15px; align-items: end; background: #f8fafc; padding: 15px; border-radius: var(--radius); border: 1px solid var(--border-soft); margin-bottom: 20px; }
+.dashboard-controls { display: flex; flex-wrap: wrap; gap: 15px; align-items: end; background: var(--border-soft); padding: 15px; border-radius: var(--radius); border: 1px solid var(--border); margin-bottom: 20px; }
 .date-group { display: flex; flex-direction: column; gap: 4px; }
 .date-group label { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; color: var(--muted); }
 .date-input { width: auto; }

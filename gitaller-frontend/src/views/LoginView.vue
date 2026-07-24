@@ -168,5 +168,5 @@ const ejecutarRegistro = async () => {
   position: absolute; right: 6px; background: none; border: none; cursor: pointer;
   font-size: 1.1rem; line-height: 1; padding: 4px 6px;
 }
-.alerta-mayus { display: block; margin-top: 6px; font-size: 0.8rem; color: #b8860b; font-weight: 600; }
+.alerta-mayus { display: block; margin-top: 6px; font-size: 0.8rem; color: var(--warning); font-weight: 600; }
 </style>

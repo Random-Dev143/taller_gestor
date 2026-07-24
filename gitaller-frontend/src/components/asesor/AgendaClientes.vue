@@ -216,25 +216,25 @@ onMounted(cargarAgenda)
   margin-bottom: 12px;
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-sm);
-  background: white;
+  background: var(--surface);
   overflow: hidden;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+  box-shadow: var(--shadow-sm);
 }
 .client-header {
   padding: 14px 16px;
-  background: #f8fafc;
+  background: var(--border-soft);
   cursor: pointer;
   transition: background 0.2s;
   user-select: none;
 }
-.client-header:hover { background: #e9edf4; }
+.client-header:hover { background: var(--primary-light); }
 .client-title { display: flex; align-items: center; gap: 12px; }
 .client-name { font-weight: 700; font-size: 1.05rem; color: var(--primary-dark); flex: 1; text-transform: uppercase; }
 .expand-icon { font-size: 0.8rem; color: var(--muted); width: 16px; text-align: center; }
 
 .client-body { border-top: 1px solid var(--border-soft); padding: 0; }
 .client-body table { margin: 0; }
-.client-body th { background: white; border-bottom: 2px solid var(--border-soft); }
+.client-body th { background: var(--surface); border-bottom: 2px solid var(--border-soft); }
 
 .edit-group { display: flex; flex-direction: column; gap: 2px; }
 .edit-label { font-size: 0.75rem; color: var(--muted); font-weight: 600; margin-top: 4px; }

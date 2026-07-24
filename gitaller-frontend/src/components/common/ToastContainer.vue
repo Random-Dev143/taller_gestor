@@ -35,19 +35,20 @@ const icon = (type) => ({ success: '✅', error: '⚠️', info: 'ℹ️' }[type
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  background: white;
+  background: var(--surface);
+  color: var(--text);
   border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--shadow-md);
   padding: 12px 14px;
   font-size: 0.9rem;
-  border-left: 4px solid #0056a7;
+  border-left: 4px solid var(--primary);
 }
-.toast-success { border-left-color: #1d8a4f; }
-.toast-error { border-left-color: #b22234; }
-.toast-info { border-left-color: #0056a7; }
+.toast-success { border-left-color: var(--success); }
+.toast-error { border-left-color: var(--danger); }
+.toast-info { border-left-color: var(--primary); }
 .toast-msg { flex: 1; line-height: 1.35; }
-.toast-close { background: none; border: none; cursor: pointer; font-size: 1.1rem; color: #999; line-height: 1; }
-.toast-close:hover { color: #333; }
+.toast-close { background: none; border: none; cursor: pointer; font-size: 1.1rem; color: var(--muted); line-height: 1; }
+.toast-close:hover { color: var(--text); }
 
 .toast-enter-active, .toast-leave-active { transition: all 0.25s ease; }
 .toast-enter-from { opacity: 0; transform: translateX(30px); }

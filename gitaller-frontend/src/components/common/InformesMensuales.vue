@@ -44,17 +44,17 @@
           <DeltaBadge :valor="deltaOts" invertido />
         </div>
         <div class="stat-card"><strong>Ciclo Promedio</strong><br>{{ store.taller.ciclo_promedio }} días</div>
-        <div class="stat-card" style="border-left: 4px solid #b22234;">
-          <strong style="color: #b22234;">Pérdida por Bonificaciones</strong><br>
-          <span style="color: #b22234;">− {{ formatCurrency(store.financiero.resumen.total_descuentos) }}</span>
-          <div style="font-size: 0.75rem; color: #666; margin-top: 2px;">
+        <div class="stat-card" style="border-left: 4px solid var(--danger);">
+          <strong style="color: var(--danger);">Pérdida por Bonificaciones</strong><br>
+          <span style="color: var(--danger);">− {{ formatCurrency(store.financiero.resumen.total_descuentos) }}</span>
+          <div style="font-size: 0.75rem; color: var(--text-soft); margin-top: 2px;">
             {{ store.financiero.resumen.cantidad_descuentos || 0 }} OT{{ (store.financiero.resumen.cantidad_descuentos || 0) === 1 ? '' : 's' }} autorizada{{ (store.financiero.resumen.cantidad_descuentos || 0) === 1 ? '' : 's' }}
           </div>
         </div>
-        <div class="stat-card" v-if="store.financiero.resumen.total_descuentos_pendientes > 0" style="border-left: 4px solid #b8860b;">
-          <strong style="color: #b8860b;">Bonificaciones Pendientes de Autorizar</strong><br>
-          <span style="color: #b8860b;">{{ formatCurrency(store.financiero.resumen.total_descuentos_pendientes) }}</span>
-          <div style="font-size: 0.75rem; color: #666; margin-top: 2px;">
+        <div class="stat-card" v-if="store.financiero.resumen.total_descuentos_pendientes > 0" style="border-left: 4px solid var(--warning);">
+          <strong style="color: var(--warning);">Bonificaciones Pendientes de Autorizar</strong><br>
+          <span style="color: var(--warning);">{{ formatCurrency(store.financiero.resumen.total_descuentos_pendientes) }}</span>
+          <div style="font-size: 0.75rem; color: var(--text-soft); margin-top: 2px;">
             {{ store.financiero.resumen.cantidad_descuentos_pendientes }} OT{{ store.financiero.resumen.cantidad_descuentos_pendientes === 1 ? '' : 's' }} esperando aprobación del admin
           </div>
         </div>
@@ -503,12 +503,12 @@ onMounted(() => { store.cargarInformes() })
 .header-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
 .header-row h2 { margin: 0; }
 .pdf-actions { display: flex; gap: 8px; }
-.dashboard-controls { display: flex; flex-wrap: wrap; gap: 15px; align-items: center; background: #f8fafc; padding: 15px; border-radius: var(--radius); border: 1px solid var(--border-soft); margin: 15px 0 20px; }
+.dashboard-controls { display: flex; flex-wrap: wrap; gap: 15px; align-items: center; background: var(--border-soft); padding: 15px; border-radius: var(--radius); border: 1px solid var(--border); margin: 15px 0 20px; }
 .date-group { display: flex; align-items: center; gap: 8px; }
 .date-input { width: auto; }
 .divider { border: 0; border-top: 1px dashed var(--border); margin: 30px 0; }
 .section-block {
-  background: white;
+  background: var(--surface);
   padding: 20px;
   border-radius: var(--radius);
   border: 1px solid var(--border-soft);
@@ -542,7 +542,7 @@ onMounted(() => { store.cargarInformes() })
   align-items: start;
 }
 .stat-card {
-  background: white;
+  background: var(--surface);
   border: 1px solid var(--border-soft);
   border-radius: 8px;
   padding: 15px;
@@ -553,7 +553,7 @@ onMounted(() => { store.cargarInformes() })
   z-index: 0;
   min-width: 0;
 }
-.highlight-card { background: #0056a7; color: white; border: none; font-size: 1.15rem; }
+.highlight-card { background: var(--primary); color: white; border: none; font-size: 1.15rem; }
 
 .chart-box {
   height: 280px;
@@ -567,8 +567,8 @@ onMounted(() => { store.cargarInformes() })
 .table-wrapper { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
 th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border-soft); }
-th { background: #f8fafc; font-weight: 600; color: #1a2a3a; }
-.highlight { color: #0056a7; font-weight: bold; }
+th { background: var(--border-soft); font-weight: 600; color: var(--text); }
+.highlight { color: var(--primary); font-weight: bold; }
 
 .charts-grid {
   display: grid;

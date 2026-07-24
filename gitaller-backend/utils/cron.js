@@ -2,7 +2,13 @@ const fs = require('fs');
 const path = require('path');
 const { all, get, run, recalcularTiempoEmpleado, sincronizarEstadoOT, sincronizarEstadoActividad, DB_PATH } = require('../config/database');
 
-const BACKUPS_DIR = path.join(__dirname, '..', 'backups');
+// [FIX] Antes esto era path.join(__dirname, '..', 'backups'). __dirname, cuando
+// el backend corre empaquetado como .exe con `pkg`, apunta adentro del
+// "snapshot" virtual de solo lectura que pkg mete dentro del ejecutable
+// (por eso el error "Cannot mkdir in a snapshot. Try mountpoints instead.").
+// La base de datos ya vive en una carpeta real y escribible (%APPDATA%\GITaller),
+// así que los backups van al lado de ella, no al lado del código empaquetado.
+const BACKUPS_DIR = path.join(path.dirname(DB_PATH), 'backups');
 const MAX_BACKUPS = 14;
 
 let ultimaAccionAutomatica = null;
