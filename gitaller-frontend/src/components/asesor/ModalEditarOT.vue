@@ -45,7 +45,7 @@
           </div>
           <div class="form-group">
             <label>Horas Empleadas (Reales)</label>
-            <input type="number" step="0.1" v-model="form.tiempo_empleado_horas" readonly style="background: #f0f0f0; cursor: not-allowed;" title="Dato gestionado automáticamente por las sesiones mecánicas." />
+            <input type="number" step="0.1" v-model="form.tiempo_empleado_horas" readonly style="background: var(--border-soft); cursor: not-allowed;" title="Dato gestionado automáticamente por las sesiones mecánicas." />
           </div>
 
           <div class="form-group">
@@ -58,17 +58,17 @@
           </div>
 
           <template v-if="form.es_garantia === 1">
-            <div class="form-group" style="border-left: 3px solid #b8860b; padding-left: 10px;">
-              <label style="color: #b8860b;">Repuestos en Garantía ($)</label>
+            <div class="form-group" style="border-left: 3px solid var(--warning); padding-left: 10px;">
+              <label style="color: var(--warning);">Repuestos en Garantía ($)</label>
               <input type="number" step="0.01" min="0" v-model="form.monto_repuestos_garantia" />
             </div>
-            <div class="form-group" style="border-left: 3px solid #b8860b; padding-left: 10px;">
-              <label style="color: #b8860b;">Mano Obra Garantía ($)</label>
+            <div class="form-group" style="border-left: 3px solid var(--warning); padding-left: 10px;">
+              <label style="color: var(--warning);">Mano Obra Garantía ($)</label>
               <input type="number" step="0.01" min="0" v-model="form.monto_mano_obra_garantia" />
             </div>
           </template>
 
-          <div class="form-group" style="grid-column: span 2; background: #f5f7fa; padding: 10px; border-radius: 6px; border: 1px solid var(--border);">
+          <div class="form-group" style="grid-column: span 2; background: var(--border-soft); padding: 10px; border-radius: 6px; border: 1px solid var(--border);">
             <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
               <input type="checkbox" v-model="tieneBonificacion" style="width: 18px; height: 18px;" />
               <strong>Aplicar bonificación / descuento al cliente</strong>
@@ -81,7 +81,7 @@
               </div>
               <div style="flex: 1; min-width: 140px;">
                 <label>Monto a descontar ($)</label>
-                <input type="text" :value="formatCurrency(montoDescuentoCalculado)" readonly style="background: #eef3f9;" />
+                <input type="text" :value="formatCurrency(montoDescuentoCalculado)" readonly style="background: var(--border-soft);" />
               </div>
               <div style="flex: 2; min-width: 220px;">
                 <label>Motivo del descuento *</label>
@@ -91,21 +91,21 @@
 
             <div v-if="tieneBonificacion" style="margin-top: 10px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
               <span class="badge-descuento" :class="'estado-' + descuentoEstadoOriginal">{{ etiquetaEstadoDescuento }}</span>
-              <span v-if="descuentoAutorizadoPor" style="font-size: 0.85rem; color: #666;">por {{ descuentoAutorizadoPor }}</span>
+              <span v-if="descuentoAutorizadoPor" style="font-size: 0.85rem; color: var(--text-soft);">por {{ descuentoAutorizadoPor }}</span>
 
               <template v-if="puedeAutorizarDescuento && descuentoEstadoOriginal === 'pendiente'">
                 <button type="button" class="btn btn-success" style="padding: 4px 10px; font-size: 0.85rem;" :disabled="autorizando" @click="autorizarDescuento(true)">Aprobar</button>
                 <button type="button" class="btn btn-danger" style="padding: 4px 10px; font-size: 0.85rem;" :disabled="autorizando" @click="autorizarDescuento(false)">Rechazar</button>
               </template>
             </div>
-            <p v-if="tieneBonificacion && descuentoEstadoOriginal !== 'autorizado'" style="margin: 8px 0 0; font-size: 0.85rem; color: #666;">
+            <p v-if="tieneBonificacion && descuentoEstadoOriginal !== 'autorizado'" style="margin: 8px 0 0; font-size: 0.85rem; color: var(--text-soft);">
               Este descuento no se resta de la facturación de los informes hasta que un administrador lo autorice.
             </p>
           </div>
 
           <div class="form-group" style="grid-column: span 2;">
             <label>Total OT (Cliente + Garantía{{ tieneBonificacion ? ' − Bonificación' : '' }})</label>
-            <input type="text" :value="formatCurrency((form.monto_repuestos || 0) + (form.monto_mano_obra || 0) + (form.monto_repuestos_garantia || 0) + (form.monto_mano_obra_garantia || 0) - (tieneBonificacion ? montoDescuentoCalculado : 0))" readonly style="background: #eef3f9; font-weight: bold; font-size: 1.1rem; color: #0056a7;" />
+            <input type="text" :value="formatCurrency((form.monto_repuestos || 0) + (form.monto_mano_obra || 0) + (form.monto_repuestos_garantia || 0) + (form.monto_mano_obra_garantia || 0) - (tieneBonificacion ? montoDescuentoCalculado : 0))" readonly style="background: var(--border-soft); font-weight: bold; font-size: 1.1rem; color: var(--primary);" />
           </div>
         </div>
         <button type="submit" class="btn btn-success mt-15 w-100" :disabled="guardando">
@@ -253,8 +253,8 @@ const autorizarDescuento = async (aprobado) => {
   display: inline-block; padding: 2px 10px; border-radius: 12px;
   font-size: 0.8rem; font-weight: 600;
 }
-.badge-descuento.estado-pendiente { background: #fff3cd; color: #856404; }
-.badge-descuento.estado-autorizado { background: #d4edda; color: #155724; }
-.badge-descuento.estado-rechazado { background: #f8d7da; color: #721c24; }
-.badge-descuento.estado-ninguno { background: #e2e3e5; color: #383d41; }
+.badge-descuento.estado-pendiente { background: var(--status-urgente-bg); color: var(--status-urgente-text); }
+.badge-descuento.estado-autorizado { background: var(--status-progress-bg); color: var(--status-progress-text); }
+.badge-descuento.estado-rechazado { background: var(--status-danger-bg); color: var(--status-danger-text); }
+.badge-descuento.estado-ninguno { background: var(--border-soft); color: var(--text-soft); }
 </style>

@@ -70,7 +70,7 @@ const goTo = (routeName) => {
     flex-direction: column;
     align-items: center;
     gap: 8px;
-    background: white;
+    background: var(--surface);
     border: 2px solid var(--primary);
     padding: 24px 36px;
     border-radius: 14px;

@@ -204,19 +204,19 @@ onMounted(cargarDatos)
   justify-content: space-between;
   align-items: center;
   padding: 12px 15px;
-  background: #f8f9fa;
-  border: 1px solid #eef3f9;
+  background: var(--border-soft);
+  border: 1px solid var(--border-soft);
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.2s;
 }
-.list-item:hover { background: #e9edf4; }
+.list-item:hover { background: var(--primary-light); }
 .list-item.active {
-  background: #0056a7;
+  background: var(--primary);
   color: white;
-  border-color: #0056a7;
+  border-color: var(--primary);
 }
-.list-item.active .badge-warn { background: #ffc107; color: #333; }
+.list-item.active .badge-warn { background: var(--warning); color: var(--text); }
 .btn-icon {
   background: none; border: none; font-size: 1.1rem; cursor: pointer; opacity: 0.7;
 }
@@ -227,23 +227,23 @@ onMounted(cargarDatos)
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 20px;
-  background: #f8f9fa;
+  background: var(--border-soft);
   padding: 20px;
   border-radius: 8px;
-  border: 1px solid #eef3f9;
+  border: 1px solid var(--border-soft);
 }
 .modulo-title {
-  margin-top: 0; margin-bottom: 12px; color: #0056a7; border-bottom: 2px solid #eef3f9; padding-bottom: 5px;
+  margin-top: 0; margin-bottom: 12px; color: var(--primary); border-bottom: 2px solid var(--border-soft); padding-bottom: 5px;
 }
 .checkbox-label {
   display: flex; align-items: flex-start; gap: 10px; margin-bottom: 10px; cursor: pointer;
 }
 .checkbox-label input[type="checkbox"] {
-  margin-top: 4px; accent-color: #0056a7; transform: scale(1.1);
+  margin-top: 4px; accent-color: var(--primary); transform: scale(1.1);
 }
 .checkbox-text { display: flex; flex-direction: column; }
-.checkbox-text .clave { font-size: 0.9rem; font-weight: bold; color: #333; }
-.checkbox-text .desc { font-size: 0.8rem; color: #666; line-height: 1.3; }
+.checkbox-text .clave { font-size: 0.9rem; font-weight: bold; color: var(--text); }
+.checkbox-text .desc { font-size: 0.8rem; color: var(--text-soft); line-height: 1.3; }
 
 .block { display: block; }
 .text-right { text-align: right; }

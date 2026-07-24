@@ -1,7 +1,16 @@
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
+const os = require('os');
+const fs = require('fs');
 
-const DB_PATH = path.join(__dirname, '..', 'taller.db');
+const appDataPath = process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
+const appFolder = path.join(appDataPath, 'GITaller');
+
+if (!fs.existsSync(appFolder)) {
+    fs.mkdirSync(appFolder, { recursive: true });
+}
+
+const DB_PATH = path.join(appFolder, 'taller.db');
 const db = new sqlite3.Database(DB_PATH);
 
 const run = (sql, params = []) => new Promise((resolve, reject) => {
@@ -400,7 +409,7 @@ async function recalcularTiempoEmpleado(ot) {
     await run(`UPDATE ordenes SET tiempo_empleado_horas = ROUND(COALESCE((SELECT SUM(tiempo_real) FROM actividades WHERE ot = ?), 0) + COALESCE((SELECT SUM(horas) FROM aportes WHERE ot = ?), 0), 1) WHERE ot = ?`, [ot, ot, ot]);
 }
 
-const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 
 async function inicializarRolesYPermisos() {
     const permisosBase = [
@@ -442,7 +451,7 @@ async function inicializarRolesYPermisos() {
         // 2. Asegurar que exista el Rol "Administrador" (es_sistema = 1)
         let adminRol = await get(`SELECT id FROM roles WHERE nombre = 'Administrador'`);
         if (!adminRol) {
-            const nuevoId = uuidv4();
+            const nuevoId = crypto.randomUUID();
             await run(`INSERT INTO roles (id, nombre, es_sistema) VALUES (?, 'Administrador', 1)`, [nuevoId]);
             adminRol = { id: nuevoId };
         }

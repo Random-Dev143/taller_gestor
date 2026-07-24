@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { run, all, get, withTransaction } = require('../config/database');
-const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 
 // 1. OBTENER CATÁLOGO DE PERMISOS (Para armar la UI de checkboxes)
 router.get('/permisos', async (req, res) => {
@@ -41,7 +41,7 @@ router.post('/', async (req, res) => {
 
     try {
         await withTransaction(async () => {
-            const nuevoId = uuidv4();
+            const nuevoId = crypto.randomUUID();
             await run(`INSERT INTO roles (id, nombre) VALUES (?, ?)`, [nuevoId, nombre]);
             
             if (permisos && permisos.length > 0) {

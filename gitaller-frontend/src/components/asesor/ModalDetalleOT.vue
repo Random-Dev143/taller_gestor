@@ -233,35 +233,35 @@ const guardarTiempo = async (t, actId) => {
 </script>
 
 <style scoped>
-.modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; display: flex; justify-content: center; align-items: center; padding: 20px; }
-.modal-content { background: white; width: 100%; border-radius: 12px; padding: 25px; position: relative; max-height: 90vh; overflow-y: auto; }
+.modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--overlay); z-index: 1000; display: flex; justify-content: center; align-items: center; padding: 20px; }
+.modal-content { background: var(--surface-raised); color: var(--text); width: 100%; border-radius: 12px; padding: 25px; position: relative; max-height: 90vh; overflow-y: auto; }
 .modal-large { max-width: 900px; }
 .close-btn { position: absolute; top: 10px; right: 20px; font-size: 1.8rem; background: none; border: none; cursor: pointer; }
 .header-section { display: flex; align-items: center; gap: 15px; margin-bottom: 20px; }
 .header-section h2 { margin: 0; }
 .info-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin-bottom: 15px; }
 .info-grid p { margin: 0; font-size: 0.95rem; }
-.highlight { color: #0056a7; }
+.highlight { color: var(--primary); }
 .bold { font-weight: bold; }
-hr { border: 0; border-top: 1px solid #eee; margin: 20px 0; }
-h3 { color: #0056a7; font-size: 1.1rem; margin-bottom: 10px; }
-.box-text { background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #eef3f9; }
+hr { border: 0; border-top: 1px solid var(--border-soft); margin: 20px 0; }
+h3 { color: var(--primary); font-size: 1.1rem; margin-bottom: 10px; }
+.box-text { background: var(--border-soft); padding: 10px; border-radius: 8px; border: 1px solid var(--border); }
 .table-wrapper { overflow-x: auto; margin-bottom: 15px; }
 table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
-th, td { padding: 8px; text-align: left; border-bottom: 1px solid #eee; }
-th { background: #f8fafc; }
-.badge { background: #0056a7; color: white; padding: 4px 10px; border-radius: 20px; font-size: 0.85rem; font-weight: bold; }
-.badge-sm { background: #6c7a8a; color: white; padding: 2px 8px; border-radius: 10px; font-size: 0.75rem; }
+th, td { padding: 8px; text-align: left; border-bottom: 1px solid var(--border-soft); }
+th { background: var(--border-soft); }
+.badge { background: var(--primary); color: white; padding: 4px 10px; border-radius: 20px; font-size: 0.85rem; font-weight: bold; }
+.badge-sm { background: var(--muted); color: white; padding: 2px 8px; border-radius: 10px; font-size: 0.75rem; }
 .equipo-mini { display: flex; flex-direction: column; gap: 4px; }
 .mini-pill { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.78rem; color: white; white-space: nowrap; }
 .mini-pill small { opacity: 0.85; }
-.pill-info { background: #0056a7; }
-.pill-progress { background: #1d8a4f; }
-.pill-warn { background: #b8860b; }
-.pill-done { background: #6c7a8a; }
+.pill-info { background: var(--primary); }
+.pill-progress { background: var(--success); }
+.pill-warn { background: var(--warning); }
+.pill-done { background: var(--muted); }
 .aportes-list { list-style: none; padding: 0; margin: 0; }
-.aportes-list li { border-bottom: 1px solid #eee; padding: 10px 0; font-size: 0.95rem; }
+.aportes-list li { border-bottom: 1px solid var(--border-soft); padding: 10px 0; font-size: 0.95rem; }
 .btn { margin-right: 4px; }
-.tiempos-edit { background: #f8fafc; }
+.tiempos-edit { background: var(--border-soft); }
 .tiempo-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
 </style>

@@ -33,7 +33,7 @@
         <div class="form-group">
           <label>Puerto del Servidor</label>
           <input type="number" v-model="form.puerto_servidor" required />
-          <small style="color: #b22234; display:block; margin-top:4px;">
+          <small style="color: var(--danger); display:block; margin-top:4px;">
             ⚠️ Si modificas este valor, debes reiniciar manualmente la consola del backend.
           </small>
         </div>
@@ -50,7 +50,7 @@
         <div class="form-group" style="grid-column: span 2;">
           <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin-top: 10px;">
             <input type="checkbox" v-model="form.trabaja_corrido" style="width: 20px; height: 20px;" />
-            <span style="font-size: 1rem; color: #0056a7; font-weight: bold;">El taller trabaja de corrido (Sin pausa de almuerzo)</span>
+            <span style="font-size: 1rem; color: var(--primary); font-weight: bold;">El taller trabaja de corrido (Sin pausa de almuerzo)</span>
           </label>
         </div>
 
@@ -73,12 +73,12 @@
 
     <h3>Logotipo del Taller</h3>
     <div style="display: flex; align-items: center; gap: 20px; margin-top: 15px;">
-      <div style="width: 150px; height: 80px; border: 1px dashed #ccc; display: flex; align-items: center; justify-content: center; background: #f8fafc; border-radius: 8px;">
+      <div style="width: 150px; height: 80px; border: 1px dashed var(--border); display: flex; align-items: center; justify-content: center; background: var(--border-soft); border-radius: 8px;">
         <img v-if="configStore.config.logo_path" :src="configStore.getLogoUrl()" style="max-width: 100%; max-height: 100%;" />
-        <span v-else style="color: #999; font-size: 0.8rem;">Sin logo</span>
+        <span v-else style="color: var(--muted); font-size: 0.8rem;">Sin logo</span>
       </div>
       <div>
-        <p style="font-size: 0.85rem; color: #666; margin-top: 0;">Suba una imagen en formato PNG (Fondo transparente recomendado).</p>
+        <p style="font-size: 0.85rem; color: var(--text-soft); margin-top: 0;">Suba una imagen en formato PNG (Fondo transparente recomendado).</p>
         <button class="btn btn-sm btn-secondary" @click="subirLogo">Examinar y Subir Logo</button>
       </div>
     </div>
@@ -91,7 +91,7 @@ import { useApi } from '../../composables/useApi'
 import { useToast, errMsg } from '../../composables/useToast'
 import { useConfigStore } from '../../stores/useConfigStore'
 
-const { fetchJSON, API_BASE } = useApi()
+const { fetchJSON, API_BASE, getToken } = useApi()
 const toast = useToast()
 const configStore = useConfigStore()
 
@@ -103,8 +103,11 @@ const form = ref({
   slogan: '', direccion: '', cuit: '', telefono: '', email: '' 
 })
 
-onMounted(() => {
-  const c = configStore.config
+onMounted(async () => {
+  // Obligamos a la vista a esperar la respuesta del backend
+  await configStore.cargarConfig(); 
+  
+  const c = configStore.config;
   form.value = {
     nombre_taller: c.nombre_taller,
     hora_apertura: c.hora_apertura,
@@ -142,11 +145,10 @@ const subirLogo = () => {
     formData.append('logo', file)
     try {
       const response = await fetch(`${API_BASE}/configuracion/logo`, {
-        method: 'POST',
-        // ESTO ES CLAVE: Le dice al navegador que envíe tu cookie de sesión
-        credentials: 'include', 
-        body: formData
-      })
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${getToken()}` },
+      body: formData
+    })
       
       const data = await response.json() // Parseamos la respuesta para ver el error real si lo hay
       if (!response.ok) throw new Error(data.error || 'Error al subir logo')

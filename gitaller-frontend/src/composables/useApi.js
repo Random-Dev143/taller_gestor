@@ -1,15 +1,40 @@
 export function useApi() {
-    // El backend escucha en 0.0.0.0:5881, pensado para accederse desde
-    // otros equipos en la red (mecánicos con tablet, TV de sala de espera).
-    // Antes la URL base era un literal 'http://localhost:5881/api': eso
-    // funciona en la misma PC del desarrollador, pero se rompe apenas se
-    // abre la app desde cualquier otro dispositivo de la red, porque
-    // "localhost" en ese dispositivo apunta a sí mismo, no al servidor.
-    // Se deriva el host dinámicamente desde la URL con la que se accedió
-    // al frontend, y se permite sobreescribir con una variable de entorno
-    // (VITE_API_BASE) para despliegues donde el puerto/host difiera.
-    const API_BASE = import.meta.env.VITE_API_BASE
-        || `${window.location.protocol}//${window.location.hostname}:5881/api`
+    // Detectamos si estamos corriendo dentro de la ventana de Tauri
+    const isTauri = window.__TAURI_INTERNALS__ !== undefined;
+
+    // El puerto de la API ahora se puede configurar a través de una variable de entorno
+    // en el frontend para que coincida con la configuración del backend.
+    const port = import.meta.env.VITE_API_PORT || 5881;
+
+    let defaultBase = '';
+    
+    if (isTauri) {
+        // Es un ejecutable .exe (PC Servidor o PC Cliente)
+        const modo = localStorage.getItem('app_modo');
+        const ip = localStorage.getItem('server_ip');
+        
+        if (modo === 'cliente' && ip) {
+            defaultBase = `http://${ip}:${port}/api`;
+        } else {
+            defaultBase = `http://127.0.0.1:${port}/api`;
+        }
+    } else {
+        // Es un Navegador Web (TV o Celular entrando por red)
+        defaultBase = `${window.location.protocol}//${window.location.hostname}:${port}/api`;
+    }
+
+    const API_BASE = import.meta.env.VITE_API_BASE || defaultBase;
+
+    // AUTENTICACIÓN VÍA BEARER TOKEN:
+    // Se reemplazaron las cookies de sesión por un token guardado en
+    // localStorage, ya que la app se usa desde múltiples dispositivos en la
+    // red (PC/Tauri, celulares, TV) y cada uno accede por una IP/origen
+    // distinto. Con cookies, SameSite=None exige HTTPS real (Secure), lo
+    // cual no es viable de sostener en varios dispositivos dentro de una LAN.
+    const TOKEN_KEY = 'gitaller_token';
+    const getToken = () => localStorage.getItem(TOKEN_KEY);
+    const setToken = (token) => localStorage.setItem(TOKEN_KEY, token);
+    const clearToken = () => localStorage.removeItem(TOKEN_KEY);
 
     const parseBody = async (res) => {
         const text = await res.text()
@@ -25,13 +50,19 @@ export function useApi() {
     const fetchJSON = async (endpoint, options = {}) => {
         const url = endpoint.startsWith('http') ? endpoint : `${API_BASE}${endpoint}`
 
+        const token = getToken()
+        const headers = {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+            ...(options.headers || {}),
+        }
+
         let res
         try {
             res = await fetch(url, {
-                headers: { 'Content-Type': 'application/json' },
                 cache: 'no-cache',
-                credentials: 'include',
                 ...options,
+                headers,
             })
         } catch (networkErr) {
             // fetch lanza TypeError cuando no hay conexión con el servidor
@@ -49,6 +80,9 @@ export function useApi() {
 
     return {
         fetchJSON,
-        API_BASE
+        API_BASE,
+        getToken,
+        setToken,
+        clearToken,
     }
 }
