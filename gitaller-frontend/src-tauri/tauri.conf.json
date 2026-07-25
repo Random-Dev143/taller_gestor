@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "GITaller",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "identifier": "com.RandomDev.GiTaller",
   "build": {
     "frontendDist": "../dist",
@@ -26,6 +26,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -34,10 +35,18 @@
       "icons/icon.ico"
     ],
     "externalBin": [
-    "gitaller-server"
-  ],
+      "gitaller-server"
+    ],
     "android": {
       "debugApplicationIdSuffix": ".debug"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "PEGAR_AQUI_EL_CONTENIDO_DE_gitaller.key.pub",
+      "endpoints": [
+        "https://tu-servidor-o-github/releases/latest/download/latest.json"
+      ]
     }
   }
 }

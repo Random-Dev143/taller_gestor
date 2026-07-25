@@ -1,19 +1,20 @@
 {
   "name": "gitaller-frontend",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.1",
   "type": "module",
   "scripts": {
-  "dev": "vite",
-  "build": "vite build",
-  "preview": "vite preview",
-  "tauri": "tauri",
-  "test": "echo \"Error: no test specified\" && exit 1",
-  "build:exe": "pkg . --targets node18-win-x64 --output ../gitaller-frontend/src-tauri/bin/gitaller-server-x86_64-pc-windows-msvc.exe"
-},
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build:exe": "pkg . --targets node18-win-x64 --output ../gitaller-frontend/src-tauri/bin/gitaller-server-x86_64-pc-windows-msvc.exe"
+  },
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-shell": "^2.3.5",
+    "@tauri-apps/plugin-updater": "^2.10.1",
     "chart.js": "^4.4.9",
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.1",
