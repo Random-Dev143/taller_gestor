@@ -43,9 +43,9 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "PEGAR_AQUI_EL_CONTENIDO_DE_gitaller.key.pub",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDI5RDgxMTg3RTYzREIyMUMKUldRY3NqM21oeEhZS2JuQlZpZi9RMUdFejZWOTFoa2djdUk0dCsxNHdKNm55ZmNaOHZ6ZGVUd2YK",
       "endpoints": [
-        "https://tu-servidor-o-github/releases/latest/download/latest.json"
+        "https://raw.githubusercontent.com/Random-Dev143/taller_gestor_updates/refs/heads/main/update.json"
       ]
     }
   }

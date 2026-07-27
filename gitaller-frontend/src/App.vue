@@ -9,6 +9,8 @@
 import ToastContainer from './components/common/ToastContainer.vue';
 import { onMounted } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
+import { getVersion } from '@tauri-apps/api/app';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { check } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
 import { useConfigStore } from './stores/useConfigStore';
@@ -25,6 +27,19 @@ onMounted(async () => {
 
   const isTauri = window.__TAURI_INTERNALS__ !== undefined;
   const modo = localStorage.getItem('app_modo');
+
+  // --- MOSTRAR VERSIÓN INSTALADA EN EL TÍTULO ---
+  // Útil para verificar a simple vista, sin abrir devtools, que una
+  // actualización automática realmente se instaló (el título cambia solo).
+  if (isTauri) {
+    try {
+      const version = await getVersion();
+      await getCurrentWindow().setTitle(`GITaller v${version}`);
+    } catch (err) {
+      console.error('No se pudo obtener/setear la versión en el título:', err);
+    }
+  }
+  // ------------------------------------------------
 
   // --- CHEQUEO DE ACTUALIZACIONES ---
   // Antes el plugin estaba instalado y configurado pero nunca se invocaba
