@@ -90,7 +90,7 @@
                         </div>
                       </template>
                       <p v-else class="empty-state">Sin registros de tiempo.</p>
-                      <button class="btn btn-sm" v-can="'tiempo_editar_manual'" @click="agregarTiempo(a.id)">➕ Agregar registro</button>
+                      <button class="btn btn-sm" v-can="'tiempo_editar_manual'" @click="agregarTiempo(a.id, a.legajo_mecanico)">➕ Agregar registro</button>
                     </td>
                   </tr>
                 </template>
@@ -188,9 +188,9 @@ const fromLocalInput = (localStr) => {
 
 const nuevosTiempos = ref({});
 
-const agregarTiempo = (actId) => {
+const agregarTiempo = (actId, legajoMecanico) => {
   if (!nuevosTiempos.value[actId]) nuevosTiempos.value[actId] = [];
-  nuevosTiempos.value[actId].push({ tempId: Date.now(), inicio: null, fin: null });
+  nuevosTiempos.value[actId].push({ tempId: Date.now(), inicio: null, fin: null, legajo_mecanico: legajoMecanico || null });
 };
 
 const quitarNuevo = (actId, tempId) => {
@@ -219,7 +219,7 @@ const guardarTiempo = async (t, actId) => {
         } else {
             await fetchJSON(`/actividades/${actId}/tiempos`, {
                 method: 'POST',
-                body: JSON.stringify({ inicio: t.inicio, fin: t.fin })
+                body: JSON.stringify({ inicio: t.inicio, fin: t.fin, legajo_mecanico: t.legajo_mecanico })
             });
             quitarNuevo(actId, t.tempId);
         }
