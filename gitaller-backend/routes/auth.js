@@ -1,19 +1,18 @@
-// ivemar-backend/routes/auth.js
 const express = require('express');
 const router = express.Router();
 const { run, get, all } = require('../config/database');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { v4: uuidv4 } = require('uuid');
-const { JWT_SECRET } = require('../middlewares/auth');
+const crypto = require('crypto');
+const { JWT_SECRET, extraerToken } = require('../middlewares/auth');
 
 //CREAR ADMIN POR DEFECTO
 async function asegurarAdmin() {
     try {
-        const adminExiste = await get(`SELECT id FROM usuarios WHERE email = 'admin@ivemar.com'`);
+        const adminExiste = await get(`SELECT id FROM usuarios WHERE email = 'admin@gitaller.com'`);
         if (!adminExiste) {
-            const hash = bcrypt.hashSync('ivemar123', 10);
-            
+            const hash = bcrypt.hashSync('gitaller123', 10);
+
             // Buscamos el ID del nuevo rol Administrador maestro
             const rol = await get(`SELECT id FROM roles WHERE nombre = 'Administrador'`);
             const rolId = rol ? rol.id : null;
@@ -21,7 +20,7 @@ async function asegurarAdmin() {
             await run(
                 `INSERT INTO usuarios (id, email, password_hash, nombre_completo, estado, rol, rol_id) 
                  VALUES (?, ?, ?, ?, ?, ?, ?)`,
-                [uuidv4(), 'admin@ivemar.com', hash, 'Administrador', 'aprobado', 'admin', rolId]
+                [crypto.randomUUID(), 'admin@gitaller.com', hash, 'Administrador', 'aprobado', 'admin', rolId]
             );
             console.log('✅ Admin por defecto creado y vinculado a permisos granulares.');
         }
@@ -30,7 +29,7 @@ async function asegurarAdmin() {
     }
 }
 // Llamamos a la función al cargar el módulo
-setTimeout(asegurarAdmin, 1000); 
+setTimeout(asegurarAdmin, 1000);
 
 
 // --- REGISTRO (Cualquiera puede registrarse) ---
@@ -45,7 +44,7 @@ router.post('/register', async (req, res) => {
         if (existente) return res.status(400).json({ error: 'El email ya está registrado' });
 
         const hash = bcrypt.hashSync(password, 10);
-        const nuevoId = uuidv4();
+        const nuevoId = crypto.randomUUID();
 
         await run(
             `INSERT INTO usuarios (id, email, password_hash, nombre_completo) VALUES (?, ?, ?, ?)`,
@@ -71,7 +70,7 @@ router.post('/login', async (req, res) => {
             LEFT JOIN roles r ON u.rol_id = r.id 
             WHERE u.email = ?
         `, [email]);
-        
+
         if (!usuario) return res.status(401).json({ error: 'Credenciales inválidas' });
 
         const passwordValido = bcrypt.compareSync(password, usuario.password_hash);
@@ -93,24 +92,28 @@ router.post('/login', async (req, res) => {
             id: usuario.id,
             email: usuario.email,
             nombre: usuario.nombre_completo,
-            rol: usuario.rol_nombre, 
+            rol: usuario.rol_nombre,
             rol_id: usuario.rol_id,
             legajo: usuario.legajo,
             estado: usuario.estado,
-            permisos: permisosArreglo   
+            permisos: permisosArreglo
         };
         const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '12h' });
 
-        res.cookie('auth_token', token, {
-            httpOnly: true,
-            sameSite: 'Lax',
-            secure: false,
-            maxAge: 12 * 60 * 60 * 1000 
-        });
-
-        res.json({ 
-            status: 'Login exitoso', 
-            usuario: payload 
+        // AUTENTICACIÓN VÍA BEARER TOKEN:
+        // Se abandona el uso de cookies de sesión porque la app se usa desde
+        // múltiples dispositivos en la red (PC con Tauri, celulares y TV vía
+        // navegador), cada uno accediendo por una IP/origen distinto. Las
+        // cookies con SameSite=None requieren HTTPS real (Secure) para que
+        // los navegadores/webviews modernos las acepten, lo cual es
+        // inviable de gestionar en varios dispositivos dentro de una LAN.
+        // En su lugar, el token se devuelve en el body y el frontend lo
+        // guarda y lo reenvía en el header "Authorization: Bearer <token>"
+        // en cada request.
+        res.json({
+            status: 'Login exitoso',
+            token,
+            usuario: payload
         });
 
     } catch (error) {
@@ -120,7 +123,7 @@ router.post('/login', async (req, res) => {
 
 // --- VERIFICAR SESIÓN (Útil para que el frontend sepa si está logueado al recargar la página) ---
 router.get('/me', async (req, res) => {
-    const token = req.cookies.auth_token;
+    const token = extraerToken(req);
     if (!token) return res.json({ loggedIn: false });
 
     try {
@@ -132,8 +135,10 @@ router.get('/me', async (req, res) => {
 });
 
 // --- LOGOUT ---
+// Con Bearer token el "logout" es responsabilidad del cliente (borrar el
+// token guardado localmente). Se deja la ruta por compatibilidad, pero ya
+// no hay cookie que limpiar.
 router.post('/logout', (req, res) => {
-    res.clearCookie('auth_token');
     res.json({ status: 'Sesión cerrada' });
 });
 

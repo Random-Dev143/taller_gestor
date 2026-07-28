@@ -74,7 +74,7 @@ onMounted(async () => {
 
 <style scoped>
 .status-tag { font-size: 0.8rem; font-weight: 700; padding: 3px 10px; border-radius: 20px; }
-.status-progress { background: #d4edda; color: #155724; }
-.status-done { background: #cfe2ff; color: #084298; }
+.status-progress { background: var(--status-progress-bg); color: var(--status-progress-text); }
+.status-done { background: var(--status-done-bg); color: var(--status-done-text); }
 .highlight { color: var(--primary); font-weight: bold; }
 </style>

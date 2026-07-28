@@ -70,7 +70,7 @@ import { ref, onMounted } from 'vue'
 import { useApi } from '../../composables/useApi'
 import { useToast, errMsg } from '../../composables/useToast'
 
-const { fetchJSON, API_BASE } = useApi()
+const { fetchJSON, API_BASE, getToken } = useApi()
 const toast = useToast()
 
 const legajos = ref([])
@@ -138,7 +138,8 @@ const subirFirma = (legajo) => {
     try {
       const response = await fetch(`${API_BASE}/legajos/${legajo}/firma`, {
         method: 'POST',
-        body: formData // No le ponemos Content-Type, el navegador lo calcula con el Boundary de FormData
+        headers: { 'Authorization': `Bearer ${getToken()}` },
+        body: formData
       })
       if (!response.ok) throw new Error('Error al subir la firma')
       toast.success('Firma actualizada')

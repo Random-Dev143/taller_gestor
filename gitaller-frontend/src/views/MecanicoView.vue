@@ -26,7 +26,7 @@
         <div v-if="tareasInternas.length > 0" style="margin-bottom: 30px;">
           <h3 style="color: var(--muted); border-bottom: 1px solid var(--border-soft); padding-bottom: 8px;">Rutinas y Tareas Internas</h3>
           <div class="grid-tareas">
-            <div v-for="tarea in tareasInternas" :key="tarea.id" class="card-tarea" style="background-color: #f8fafc; border-left: 4px solid #b8860b;">
+            <div v-for="tarea in tareasInternas" :key="tarea.id" class="card-tarea" style="background-color: var(--status-urgente-bg); border-left: 4px solid var(--warning);">
               <div class="tarea-header">
                 <h3>{{ tarea.descripcion }}</h3>
                 <span :class="['badge-sm', estadoClass(tarea.mi_estado)]">{{ tarea.mi_estado }}</span>
@@ -351,7 +351,7 @@ onUnmounted(() => {
 .ultima-actualizacion { margin: 0 0 10px; font-size: 0.75rem; color: var(--muted); }
 
 .grid-tareas { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 15px; margin-top: 10px; }
-.card-tarea { border: 1px solid var(--border-soft); padding: 16px; border-radius: var(--radius); background: #fff; box-shadow: var(--shadow-sm); }
+.card-tarea { border: 1px solid var(--border-soft); padding: 16px; border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); }
 .tarea-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
 .tarea-header h3 { margin: 0; font-size: 1.05rem; color: var(--primary); }
 .tarea-vehiculo { margin: 2px 0; font-size: 0.9rem; }
@@ -360,23 +360,23 @@ onUnmounted(() => {
 .tarea-horas { font-size: 0.8rem; color: var(--muted); margin-bottom: 12px; }
 .acciones-tarea { display: flex; gap: 8px; flex-wrap: wrap; }
 
-.badge-info { background: #0056a7; color: white; }
-.badge-progress { background: #1d8a4f; color: white; }
-.badge-warn { background: #b8860b; color: white; }
+.badge-info { background: var(--primary); color: white; }
+.badge-progress { background: var(--success); color: white; }
+.badge-warn { background: var(--warning); color: white; }
 
 /* --- Tarjeta de subtarea: legible primero en celular --- */
 .tarea-card {
   padding: 14px;
-  border: 1px solid #d0d7e2;
-  border-left: 5px solid #94a3b8;
+  border: 1px solid var(--border);
+  border-left: 5px solid var(--muted);
   border-radius: 10px;
   margin-bottom: 12px;
-  background: #fafcfe;
+  background: var(--hover-row);
 }
-.tarea-card--info { border-left-color: #0056a7; }
-.tarea-card--progress { border-left-color: #1d8a4f; }
-.tarea-card--warn { border-left-color: #b8860b; }
-.tarea-card--done { border-left-color: #6c7a8a; }
+.tarea-card--info { border-left-color: var(--primary); }
+.tarea-card--progress { border-left-color: var(--success); }
+.tarea-card--warn { border-left-color: var(--warning); }
+.tarea-card--done { border-left-color: var(--muted); }
 
 .tarea-card__top {
   display: flex;
@@ -390,7 +390,7 @@ onUnmounted(() => {
   font-size: 1.05rem;
   line-height: 1.35;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--text);
 }
 .mi-estado-chip {
   flex-shrink: 0;
@@ -411,7 +411,7 @@ onUnmounted(() => {
 }
 .tarea-card__equipo {
   font-size: 0.85rem;
-  color: #0056a7;
+  color: var(--primary);
   margin-bottom: 4px;
 }
 .tarea-card__tarea-general {
@@ -419,16 +419,16 @@ onUnmounted(() => {
   color: var(--muted);
   margin-bottom: 10px;
   padding-bottom: 10px;
-  border-bottom: 1px dashed #d0d7e2;
+  border-bottom: 1px dashed var(--border);
 }
 
 .aviso-compañero {
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  background: #fef6e6;
-  border: 1px solid #f0d79b;
-  color: #8a6100;
+  background: var(--status-urgente-bg);
+  border: 1px solid var(--status-urgente-border);
+  color: var(--status-urgente-text);
   font-size: 0.85rem;
   padding: 10px 12px;
   border-radius: 8px;
@@ -437,7 +437,7 @@ onUnmounted(() => {
 .aviso-compañero__icono { font-size: 1.1rem; line-height: 1.2; flex-shrink: 0; }
 
 .tiempo-vivo {
-  color: #1d8a4f;
+  color: var(--success);
   font-variant-numeric: tabular-nums;
 }
 
@@ -463,7 +463,7 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: flex-start;
   gap: 10px;
-  border-bottom: 2px solid #eef3f9;
+  border-bottom: 2px solid var(--border-soft);
   padding-bottom: 15px;
   margin-bottom: 15px;
 }

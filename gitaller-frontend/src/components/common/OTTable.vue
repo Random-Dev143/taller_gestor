@@ -130,35 +130,41 @@ const esEstancada = (ot) => ot.estado_actual !== 'Finalizada' && diasAbierta(ot)
 </script>
 
 <style scoped>
+/* [PATCH modo oscuro] Todos los colores "pastel" que antes estaban
+   escritos en hex fijo (fondos de fila, chips, status-tags) ahora
+   salen de las variables --row-ready-bg / --status-*-bg / --chip-bg
+   definidas en style.css, que cambian solas al activar .dark-theme.
+   Así se evita el efecto "recuadro clarito flotando sobre fondo
+   oscuro" que se veía en la tabla de OTs. */
 .table-wrapper { overflow-x: auto; width: 100%; }
 .ot-table thead th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
 .ot-table thead th.sortable:hover { color: var(--primary, #0d6efd); }
 .sort-icon { font-size: 0.7rem; margin-left: 4px; opacity: 0.7; }
-.btn-assign { background: #f0f4f8; border: 1px solid var(--border); color: var(--text); width: 100%; text-align: left; }
-.estado-select { padding: 6px; border-radius: 6px; border: 1px solid var(--border); width: 100%; max-width: 150px; }
+.btn-assign { background: var(--chip-bg); border: 1px solid var(--border); color: var(--text); width: 100%; text-align: left; }
+.estado-select { padding: 6px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--text); width: 100%; max-width: 150px; }
 .actions-cell { white-space: nowrap; }
 .patente-badge { background: #111; color: white; font-family: monospace; font-weight: bold; padding: 3px 8px; border-radius: 4px; }
 .text-muted { color: var(--muted); }
 
 .status-tag { font-size: 0.8rem; font-weight: 700; padding: 3px 10px; border-radius: 20px; white-space: nowrap; }
-.status-progress { background: #d4edda; color: #155724; }
-.status-wait { background: #e9edf4; color: #445; }
-.status-warn { background: #fff3cd; color: #7a5c00; }
-.status-danger { background: #f8d7da; color: #842029; }
-.status-done { background: #cfe2ff; color: #084298; }
+.status-progress { background: var(--status-progress-bg); color: var(--status-progress-text); }
+.status-wait { background: var(--status-wait-bg); color: var(--status-wait-text); }
+.status-warn { background: var(--status-warn-bg); color: var(--status-warn-text); }
+.status-danger { background: var(--status-danger-bg); color: var(--status-danger-text); }
+.status-done { background: var(--status-done-bg); color: var(--status-done-text); }
 
-.btn-urgente { background-color: #fff3cd !important; color: #856404 !important; border: 1px solid #ffeeba !important; font-weight: bold; animation: pulse-warn 2s infinite; }
+.btn-urgente { background-color: var(--status-urgente-bg) !important; color: var(--status-urgente-text) !important; border: 1px solid var(--status-urgente-border) !important; font-weight: bold; animation: pulse-warn 2s infinite; }
 @keyframes pulse-warn { 0% { box-shadow: 0 0 0 0 rgba(255, 193, 7, 0.4); } 70% { box-shadow: 0 0 0 6px rgba(255, 193, 7, 0); } 100% { box-shadow: 0 0 0 0 rgba(255, 193, 7, 0); } }
 
-.row-ready { background-color: #e6f9ec !important; border-left: 5px solid #1d8a4f; }
+.row-ready { background-color: var(--row-ready-bg) !important; border-left: 5px solid var(--row-ready-border); }
 .row-ready td { background-color: transparent !important; }
 
 .badge-antiguedad {
   display: inline-block; margin-left: 8px; font-size: 0.72rem; font-weight: 700;
-  background: #f8d7da; color: #842029; padding: 2px 7px; border-radius: 10px;
+  background: var(--status-danger-bg); color: var(--status-danger-text); padding: 2px 7px; border-radius: 10px;
   white-space: nowrap;
 }
-.row-stale { background-color: #fdf1f1 !important; border-left: 5px solid #b22234; }
+.row-stale { background-color: var(--row-stale-bg) !important; border-left: 5px solid var(--row-stale-border); }
 .row-stale td { background-color: transparent !important; }
 
 @media (max-width: 850px) {
@@ -167,7 +173,7 @@ const esEstancada = (ot) => ot.estado_actual !== 'Finalizada' && diasAbierta(ot)
   .ot-table tr {
     border: 1px solid var(--border-soft); border-radius: var(--radius);
     margin-bottom: 16px; padding: 12px; box-shadow: var(--shadow-sm);
-    background: white; position: relative;
+    background: var(--surface); position: relative;
   }
   .ot-table td {
     display: flex; justify-content: space-between; align-items: center;
@@ -180,7 +186,7 @@ const esEstancada = (ot) => ot.estado_actual !== 'Finalizada' && diasAbierta(ot)
   }
   .actions-cell { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
   .estado-select { max-width: 100%; }
-  .row-ready { border-left: none; border-top: 5px solid #1d8a4f; }
-  .row-stale { border-left: none; border-top: 5px solid #b22234; }
+  .row-ready { border-left: none; border-top: 5px solid var(--row-ready-border); }
+  .row-stale { border-left: none; border-top: 5px solid var(--row-stale-border); }
 }
 </style>

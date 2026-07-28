@@ -3,6 +3,12 @@ import { useAuthStore } from '../stores/useAuthStore'
 
 const routes = [
   {
+    path: '/setup',
+    name: 'setup',
+    component: () => import('../views/SetupView.vue'),
+    meta: { requiresAuth: false }
+  },
+  {
     path: '/login',
     name: 'login',
     component: () => import('../views/LoginView.vue'),
@@ -97,6 +103,13 @@ router.beforeEach(async (to, from, next) => {
       }
   }
 
+  // --- CONTROL DE CONFIGURACIÓN INICIAL (TAURI) ---
+  const isTauri = window.__TAURI_INTERNALS__ !== undefined;
+  const appModo = localStorage.getItem('app_modo');
+
+  if (isTauri && !appModo && to.name !== 'setup') {
+      return next({ name: 'setup' });
+  }
   // Si pasa todos los filtros, o la ruta es pública, avanza
   next();
 });

@@ -3,7 +3,7 @@ const express = require('express');
 const router = express.Router();
 const { run, all, get } = require('../config/database');
 const bcrypt = require('bcryptjs');
-const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 
 // GET / - Listar todos los usuarios (se puede filtrar por estado ?estado=pendiente)
 router.get('/', async (req, res) => {
@@ -43,7 +43,7 @@ router.post('/', async (req, res) => {
         if (existente) return res.status(400).json({ error: 'El email ya está registrado' });
 
         const hash = bcrypt.hashSync(password, 10);
-        const nuevoId = uuidv4();
+        const nuevoId = crypto.randomUUID();
 
         await run(
             `INSERT INTO usuarios (id, email, password_hash, nombre_completo, estado, rol, legajo) 

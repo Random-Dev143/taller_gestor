@@ -58,6 +58,6 @@ const truncate = (str) => str.length > 26 ? str.substring(0, 24) + '..' : str
    secciones de abajo. Forzamos que ocupe el 100% del contenedor y
    bloqueamos cualquier desborde como red de seguridad (clave también para
    que la captura a PDF en A4 sea siempre del tamaño esperado). */
-.svg-pie-chart { width: 100%; height: 250px; background: white; border-radius: var(--radius); padding: 10px; border: 1px solid var(--border-soft); overflow: hidden; box-sizing: border-box; }
+.svg-pie-chart { width: 100%; height: 250px; background: var(--surface); border-radius: var(--radius); padding: 10px; border: 1px solid var(--border-soft); overflow: hidden; box-sizing: border-box; }
 .svg-pie-chart svg { display: block; width: 100%; height: 100%; }
 </style>

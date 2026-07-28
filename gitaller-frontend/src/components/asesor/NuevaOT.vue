@@ -18,7 +18,7 @@
           
           <ul v-if="clientesSugeridos.length > 0" class="autocomplete-list">
             <li v-for="c in clientesSugeridos" :key="c.id" @click="seleccionarCliente(c)">
-              <strong>{{ c.nombre }}</strong> <span style="font-size: 0.8rem; color: #666;">{{ c.telefono || '' }}</span>
+              <strong>{{ c.nombre }}</strong> <span style="font-size: 0.8rem; color: var(--text-soft);">{{ c.telefono || '' }}</span>
             </li>
           </ul>
 
@@ -78,17 +78,17 @@
         </div>
 
         <template v-if="form.es_garantia === 1">
-          <div class="form-group" style="border-left: 3px solid #b8860b; padding-left: 10px;">
-            <label style="color: #b8860b;">Repuestos en Garantía ($)</label>
+          <div class="form-group" style="border-left: 3px solid var(--warning); padding-left: 10px;">
+            <label style="color: var(--warning);">Repuestos en Garantía ($)</label>
             <input type="number" step="0.01" min="0" v-model="form.monto_repuestos_garantia" />
           </div>
-          <div class="form-group" style="border-left: 3px solid #b8860b; padding-left: 10px;">
-            <label style="color: #b8860b;">Mano Obra Garantía ($)</label>
+          <div class="form-group" style="border-left: 3px solid var(--warning); padding-left: 10px;">
+            <label style="color: var(--warning);">Mano Obra Garantía ($)</label>
             <input type="number" step="0.01" min="0" v-model="form.monto_mano_obra_garantia" />
           </div>
         </template>
 
-        <div class="form-group" style="grid-column: span 2; background: #f5f7fa; padding: 10px; border-radius: 6px; border: 1px solid var(--border);">
+        <div class="form-group" style="grid-column: span 2; background: var(--border-soft); padding: 10px; border-radius: 6px; border: 1px solid var(--border);">
           <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
             <input type="checkbox" v-model="tieneBonificacion" style="width: 18px; height: 18px;" />
             <strong>Aplicar bonificación / descuento al cliente</strong>
@@ -101,21 +101,21 @@
             </div>
             <div style="flex: 1; min-width: 140px;">
               <label>Monto a descontar ($)</label>
-              <input type="text" :value="formatCurrency(montoDescuentoCalculado)" readonly style="background: #eef3f9;" />
+              <input type="text" :value="formatCurrency(montoDescuentoCalculado)" readonly style="background: var(--border-soft);" />
             </div>
             <div style="flex: 2; min-width: 220px;">
               <label>Motivo del descuento *</label>
               <input type="text" v-model="descuentoMotivo" placeholder="Ej: reclamo, cliente frecuente, acuerdo comercial..." required />
             </div>
           </div>
-          <p v-if="tieneBonificacion" style="margin: 8px 0 0; font-size: 0.85rem; color: #666;">
+          <p v-if="tieneBonificacion" style="margin: 8px 0 0; font-size: 0.85rem; color: var(--text-soft);">
             El descuento queda <strong>pendiente de autorización</strong> del administrador y no se resta de la facturación de los informes hasta que sea aprobado.
           </p>
         </div>
 
         <div class="form-group" style="grid-column: span 2;">
           <label>Total OT (Cliente + Garantía{{ tieneBonificacion ? ' − Bonificación' : '' }})</label>
-          <input type="text" :value="formatCurrency((form.monto_repuestos || 0) + (form.monto_mano_obra || 0) + (form.monto_repuestos_garantia || 0) + (form.monto_mano_obra_garantia || 0) - (tieneBonificacion ? montoDescuentoCalculado : 0))" readonly style="background: #eef3f9; font-weight: bold; font-size: 1.1rem; color: #0056a7;" />
+          <input type="text" :value="formatCurrency((form.monto_repuestos || 0) + (form.monto_mano_obra || 0) + (form.monto_repuestos_garantia || 0) + (form.monto_mano_obra_garantia || 0) - (tieneBonificacion ? montoDescuentoCalculado : 0))" readonly style="background: var(--border-soft); font-weight: bold; font-size: 1.1rem; color: var(--primary);" />
         </div>
       </div>
       <button type="submit" class="btn" :disabled="enviando">{{ enviando ? 'Creando...' : 'Crear OT' }}</button>
@@ -242,7 +242,7 @@ const crearOT = async () => {
 <style scoped>
 .autocomplete-list {
   position: absolute; top: 100%; left: 0; right: 0;
-  background: white; border: 1px solid var(--border); border-radius: 4px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 4px;
   box-shadow: var(--shadow-sm); list-style: none; padding: 0; margin: 4px 0 0 0;
   z-index: 1000; max-height: 180px; overflow-y: auto;
 }
@@ -252,7 +252,7 @@ const crearOT = async () => {
 .unidades-cliente { margin-top: 8px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .unidades-cliente-label { font-size: 0.78rem; color: var(--muted); width: 100%; }
 .btn-unidad-sugerida {
-  border: 1px solid var(--border); background: #eef3f9; color: #0056a7;
+  border: 1px solid var(--border); background: var(--border-soft); color: var(--primary);
   padding: 4px 10px; border-radius: 14px; font-size: 0.8rem; cursor: pointer;
 }
 .btn-unidad-sugerida:hover { background: var(--primary-light); }
