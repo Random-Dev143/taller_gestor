@@ -20,6 +20,10 @@
         <span class="role-icon">🛠️</span>
         Mecánico
       </button>
+      <button class="role-btn" @click="$router.push('/repuestos')" v-can="'repuesto_ver'">
+        <span class="role-icon">📦</span>
+        Pañol e Inventario
+      </button>
       <button class="role-btn" @click="goTo('sala')">
         <span class="role-icon">📺</span>
         Sala de Espera

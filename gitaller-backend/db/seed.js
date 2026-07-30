@@ -69,7 +69,9 @@ async function inicializarRolesYPermisos() {
         { clave: 'ausencia_justificar', modulo: 'Personal', desc: 'Cargar excepciones (Francos, Vacaciones).' },
         // Administración
         { clave: 'usuario_gestionar', modulo: 'Administración', desc: 'Aprobar solicitudes de cuentas y vincular legajos.' },
-        { clave: 'rol_gestionar', modulo: 'Administración', desc: 'Crear nuevos perfiles y asignar permisos.' }
+        { clave: 'rol_gestionar', modulo: 'Administración', desc: 'Crear nuevos perfiles y asignar permisos.' },
+        { clave: 'repuesto_ver', modulo: 'Repuestos', desc: 'Ver el catálogo de repuestos y el stock disponible.' },
+        { clave: 'repuesto_gestionar', modulo: 'Repuestos', desc: 'Crear/editar piezas, cargar facturas y modificar inventario.' }
     ];
 
     try {

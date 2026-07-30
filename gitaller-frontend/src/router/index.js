@@ -68,6 +68,12 @@ const routes = [
     // Ruta comodín: Si tipean cualquier URL inexistente, los mandamos al inicio
     path: '/:pathMatch(.*)*',
     redirect: '/'
+  },
+  {
+    path: '/repuestos',
+    name: 'repuestos',
+    component: () => import('../views/RepuestosView.vue'),
+    meta: { requiresAuth: true, requiredPermission: 'repuesto_ver' }
   }
 ]
 
