@@ -16,6 +16,7 @@ async function up({ run }) {
         precio_venta_actual REAL DEFAULT 0,
         stock_actual REAL DEFAULT 0,
         stock_minimo REAL DEFAULT 0,
+        unidad_medida TEXT DEFAULT 'Unidad',
         ubicacion_fisica TEXT DEFAULT NULL,
         proveedor_habitual TEXT DEFAULT NULL,
         fecha_ultimo_ingreso DATETIME,
