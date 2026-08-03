@@ -81,7 +81,7 @@ router.beforeEach(async (to, from, next) => {
   const authStore = useAuthStore();
   
   // 1. Validar que el estado de sesión esté cargado en la memoria de Pinia
-  if (!authStore.isVerified) {
+  if (!authStore.isReady) {
       await authStore.checkSession();
   }
 

@@ -3,9 +3,9 @@
     <!-- CABECERA Y FILTROS -->
     <header class="header-with-actions mb-25 pb-15 border-bottom">
       <span class="im-eyebrow">Evaluación de Rendimiento Individual</span>
-      
-      <div class="d-flex align-items-center mt-10 gap-20">
-        <select v-model="mecanicoSeleccionado" class="form-control select-sm" style="min-width: 250px z-index= 2 position= relative;">
+
+      <div class="header-controls">
+        <select v-model="mecanicoSeleccionado" class="form-control select-sm">
           <option value="todos">Ver Taller Completo (Consolidado)</option>
           <option v-for="m in tiempos" :key="m.legajo" :value="m.legajo">{{ m.nombre }} ({{ m.legajo }})</option>
         </select>
@@ -57,22 +57,39 @@
       
       <!-- Métricas Principales -->
       <div class="stats-grid mb-20">
-        <div class="stat-card"><strong>Días Asistidos</strong><br>{{ mecanicoFiltrado.dias_asistidos }}</div>
-        <div class="stat-card"><strong>Horas Trabajadas</strong><br>{{ formatHoras(mecanicoFiltrado.hs_empleadas) }} hs</div>
-        <div class="stat-card"><strong>OTs Finalizadas</strong><br>{{ mecanicoFiltrado.ot_trabajadas }}</div>
-        <div class="stat-card highlight-card"><strong>Tiempo Ocioso</strong><br>{{ formatHoras(mecanicoFiltrado.tiempo_muerto) }} hs</div>
+        <div class="stat-card">
+          <span class="stat-label">Días Asistidos</span>
+          <span class="stat-value">{{ mecanicoFiltrado.dias_asistidos }}</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Horas Trabajadas</span>
+          <span class="stat-value">{{ formatHoras(mecanicoFiltrado.hs_empleadas) }} hs</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">OTs Finalizadas</span>
+          <span class="stat-value">{{ mecanicoFiltrado.ot_trabajadas }}</span>
+        </div>
+        <div class="stat-card stat-card--danger">
+          <span class="stat-label">Tiempo Ocioso</span>
+          <span class="stat-value">{{ formatHoras(mecanicoFiltrado.tiempo_muerto) }} hs</span>
+        </div>
       </div>
 
       <!-- Gráficos -->
       <div class="charts-grid mb-20">
         <div class="card p-15">
           <h3 class="chart-title">Distribución del Tiempo</h3>
+          <p class="chart-hint">Cómo se repartieron las horas: trabajo facturable, tareas internas y tiempo sin actividad registrada.</p>
           <div class="chart-wrapper">
             <Doughnut v-if="chartDistribucion" :data="chartDistribucion" :options="opcionesGraficoTorta" />
           </div>
         </div>
         <div class="card p-15">
           <h3 class="chart-title">Eficacia vs Eficiencia</h3>
+          <p class="chart-hint">
+            <strong>Eficacia</strong>: % de las horas presentes que fueron productivas.
+            <strong>Eficiencia</strong>: % del tiempo estimado en presupuesto que realmente se tardó (más de 100% = trabajó más rápido de lo presupuestado).
+          </p>
           <div class="chart-wrapper">
             <Bar v-if="chartEficiencia" :data="chartEficiencia" :options="opcionesGraficoBarras" />
           </div>
@@ -288,6 +305,15 @@ const getHeatColor = (dia, hora) => {
   z-index: 2;
 }
 .im-eyebrow { font-size: 0.85rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--primary); display: block; }
+.header-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.header-controls .select-sm {
+  min-width: 220px;
+}
 .table-wrapper { overflow-x: auto; background: var(--surface); border: 1px solid var(--border-soft); border-radius: var(--radius); box-shadow: var(--shadow-sm); }
 table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
 th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid var(--border-soft); }
@@ -302,10 +328,50 @@ th { background: var(--border-soft); font-weight: 600; color: var(--text); text-
 .mb-15 { margin-bottom: 15px; }
 .mt-15 { margin-top: 15px; }
 .mt-10 { margin-top: 10px; }
-.stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; }
-.stat-card { background: var(--surface); border: 1px solid var(--border-soft); border-radius: 8px; padding: 15px; text-align: center; box-shadow: var(--shadow-sm); font-size: 1.05rem; }
-.highlight-card { background: var(--danger); color: white; border: none; font-size: 1.15rem; }
-.chart-hint { font-size: 0.85rem; color: var(--muted); }
+/* Estas 4 clases las usa el template (header, stats-grid, charts-grid)
+   pero no existían definidas en ningún lado del CSS del proyecto —
+   por eso no había separación real entre el header, las tarjetas y los
+   gráficos, aunque el markup "pedía" el espaciado. */
+.mb-20 { margin-bottom: 20px; }
+.mb-25 { margin-bottom: 25px; }
+.pb-15 { padding-bottom: 15px; }
+.border-bottom { border-bottom: 1px solid var(--border-soft); }
+.stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 16px; }
+.stat-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: var(--surface-raised, var(--surface));
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px 14px;
+  text-align: center;
+  box-shadow: var(--shadow-sm);
+  min-height: 90px;
+}
+.stat-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--text-soft);
+}
+.stat-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text);
+}
+.stat-card--danger {
+  border-color: var(--danger);
+  background: var(--danger-light, var(--surface-raised));
+}
+.stat-card--danger .stat-label,
+.stat-card--danger .stat-value {
+  color: var(--danger);
+}
+.chart-hint { font-size: 0.85rem; color: var(--muted); text-align: center; margin: 0 0 12px; }
 .card {
   background: var(--surface);
   border-radius: 8px;
@@ -328,9 +394,8 @@ th { background: var(--border-soft); font-weight: 600; color: var(--text); text-
   gap: 20px;
   align-items: start;
 }
-.stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; }
 
-/* 
+/*  
   Contenedor envolvente fundamental para Chart.js 
   Evita que vue-chartjs crezca de forma infinita cuando maintainAspectRatio=false
 */

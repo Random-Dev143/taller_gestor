@@ -104,19 +104,11 @@ app.use(cors(corsOptions));
 
 // ─── ARCHIVOS ESTÁTICOS ───────────────────────────────────────────
 app.use('/firmas', express.static(FIRMAS_DIR));
-// --- SERVIR EL FRONTEND A LA RED LOCAL (TV, Celulares) ---
-const distPath = path.join(__dirname, 'dist');
-if (fs.existsSync(distPath)) {
-    // 1. Sirve los archivos estáticos compilados (JS, CSS, imágenes)
-    app.use(express.static(distPath));
-
-    // 2. Redirige cualquier otra ruta de la red al index.html para que funcione Vue Router
-    app.get('*', (req, res) => {
-        if (!req.path.startsWith('/api') && !req.path.startsWith('/firmas')) {
-            res.sendFile(path.join(distPath, 'index.html'));
-        }
-    });
-}
+// (El frontend/dist se registra MÁS ABAJO, después de todas las rutas
+// /api — ver comentario junto a sincronizarDist(). Si se registra acá
+// arriba, su catch-all intercepta también las peticiones GET a /api/*
+// y las deja colgadas sin respuesta, porque el handler no llama a next()
+// cuando el path empieza con /api.)
 
 // ─── RUTAS PÚBLICAS (No requieren token) ──────────────────────────
 app.get('/status', (req, res) => {
@@ -151,6 +143,95 @@ app.use('/api/informes', requireAuth(['informe_financiero', 'informe_operativo',
 // Configuración y Administración del Sistema
 app.use('/api/usuarios', requireAuth(['usuario_gestionar']), require('./routes/usuarios'));
 app.use('/api/roles', requireAuth(['rol_gestionar']), require('./routes/roles')); // <-- NUEVA RUTA PARA ROLES
+
+// --- SERVIR EL FRONTEND A LA RED LOCAL (TV, Celulares) ---
+// IMPORTANTE: este bloque va DESPUÉS de todas las rutas /api. Si se
+// registra antes, su catch-all intercepta también los GET a /api/* y los
+// deja colgados sin respuesta (el handler no llama a next() para esos
+// paths), lo que hace que el frontend nunca reciba respuesta de /auth/me
+// y quede con una pantalla en blanco esperando para siempre.
+//
+// El dist viaja EMBEBIDO dentro del .exe (ver pkg.assets en package.json).
+// __dirname acá apunta al snapshot virtual de pkg, no a disco real —eso
+// está bien, es justo de ahí de donde lo leemos para copiarlo una sola vez
+// a %APPDATA%\GITaller\dist, que es carpeta real y persistente, y queda
+// fuera de la carpeta de instalación (no al lado del .exe).
+const distSourcePath = path.join(__dirname, 'dist');
+const distPath = path.join(APP_DIR, 'dist'); // %APPDATA%\GITaller\dist
+
+// La app corre sin consola visible (sidecar de Tauri), así que dejamos
+// constancia en un archivo de log dentro de APP_DIR. Es la única forma
+// práctica de diagnosticar esto en una instalación real del cliente.
+const DIST_LOG_FILE = path.join(APP_DIR, 'dist-sync.log');
+function logDist(msg) {
+    const linea = `[${new Date().toISOString()}] ${msg}\n`;
+    try { fs.appendFileSync(DIST_LOG_FILE, linea); } catch (_) { /* no-op */ }
+}
+
+// fs.cpSync (y en general las variantes "nativas" de copiado que dependen
+// de lstat con paths largos \\?\...) NO son compatibles con el filesystem
+// virtual que pkg monta para leer el snapshot embebido en el .exe.
+// readdirSync / readFileSync / mkdirSync / writeFileSync sí lo son, así que
+// copiamos a mano recorriendo el árbol con esas.
+function copiarRecursivoDesdeSnapshot(origen, destino) {
+    fs.mkdirSync(destino, { recursive: true });
+    const entradas = fs.readdirSync(origen, { withFileTypes: true });
+    for (const entrada of entradas) {
+        const origenPath = path.join(origen, entrada.name);
+        const destinoPath = path.join(destino, entrada.name);
+        if (entrada.isDirectory()) {
+            copiarRecursivoDesdeSnapshot(origenPath, destinoPath);
+        } else {
+            const contenido = fs.readFileSync(origenPath);
+            fs.writeFileSync(destinoPath, contenido);
+        }
+    }
+}
+
+function sincronizarDist() {
+    logDist(`__dirname = ${__dirname}`);
+    logDist(`distSourcePath = ${distSourcePath}`);
+    logDist(`distPath (destino) = ${distPath}`);
+
+    if (!fs.existsSync(distSourcePath)) {
+        logDist('ERROR: no se encontró dist embebido en el paquete (distSourcePath no existe). La UI de red no estará disponible.');
+        return false;
+    }
+    try {
+        const archivos = fs.readdirSync(distSourcePath);
+        logDist(`dist embebido encontrado con ${archivos.length} entradas: ${archivos.join(', ')}`);
+
+        // Se sobreescribe en cada arranque: así %APPDATA% siempre refleja
+        // la versión del .exe que está corriendo, sin mezclar versiones viejas.
+        fs.rmSync(distPath, { recursive: true, force: true });
+        copiarRecursivoDesdeSnapshot(distSourcePath, distPath);
+        logDist('OK: dist copiado correctamente a APPDATA.');
+        return true;
+    } catch (err) {
+        logDist(`ERROR copiando dist a AppData: ${err.stack || err}`);
+        return false;
+    }
+}
+
+if (sincronizarDist()) {
+    // 1. Sirve los archivos estáticos compilados (JS, CSS, imágenes)
+    app.use(express.static(distPath));
+
+    // 2. Redirige cualquier otra ruta de la red al index.html para que funcione Vue Router
+    // NOTA: Express 5 (path-to-regexp v8) ya no acepta '*' como string suelto,
+    // hay que usar una regex equivalente. Como este bloque ya está DESPUÉS
+    // de todas las rutas /api, cualquier GET a /api/* que no matcheó arriba
+    // ya cayó en un 404 real de Express antes de llegar acá — no hace falta
+    // el chequeo de req.path.startsWith('/api') para "no hacer nada", pero
+    // lo dejamos igual como capa extra de seguridad explícita.
+    app.get(/.*/, (req, res) => {
+        if (!req.path.startsWith('/api') && !req.path.startsWith('/firmas')) {
+            res.sendFile(path.join(distPath, 'index.html'));
+        } else {
+            res.status(404).json({ error: 'Recurso de API no encontrado' });
+        }
+    });
+}
 
 // ─── INICIAR TAREAS PROGRAMADAS ────────────────────────────────────
 iniciarCron();

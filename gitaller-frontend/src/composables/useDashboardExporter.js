@@ -1,4 +1,5 @@
 import { useToast } from './useToast'
+import { usePdfOutput } from './usePdfOutput'
 
 /**
  * Exportador de dashboards a PDF con paginación "consciente de bloques".
@@ -15,6 +16,7 @@ import { useToast } from './useToast'
  */
 export function useDashboardExporter() {
   const toast = useToast()
+  const { previsualizarPDF, descargarPDF } = usePdfOutput()
 
   const PAGE_W = 210   // A4 vertical, en mm
   const PAGE_H = 297
@@ -75,7 +77,15 @@ export function useDashboardExporter() {
         const canvas = await html2canvas(el, {
           scale: 2,
           useCORS: true,
-          backgroundColor: '#ffffff'
+          backgroundColor: '#ffffff',
+          // html2canvas hace una captura del DOM tal como se ve EN PANTALLA;
+          // nunca dispara el media query `@media print`, así que la regla
+          // `.no-print { display: none }` (pensada para Ctrl+P) no aplica
+          // acá. Los filtros/selectores interactivos (buscador de OT,
+          // combos de modo de vista, etc.) tienen la clase `no-print` en el
+          // template — los excluimos explícitamente de la captura para que
+          // no terminen apareciendo dentro del PDF exportado.
+          ignoreElements: (element) => element.classList?.contains('no-print')
         })
         const imgData = canvas.toDataURL('image/png')
 
@@ -107,13 +117,13 @@ export function useDashboardExporter() {
       dibujarPiePagina()
 
       const blob = pdf.output('blob')
-      const blobUrl = URL.createObjectURL(blob)
 
-      // Igual que el resto del sistema: se previsualiza en una pestaña nueva
-      // en vez de forzar la descarga directa.
-      window.open(blobUrl, '_blank')
+      // Previsualiza el PDF. En navegador abre pestaña nueva; en Tauri
+      // (sin soporte de pestañas/descargas del navegador) lo escribe a
+      // disco y lo abre con el lector de PDF del sistema.
+      await previsualizarPDF(blob, filename || 'informe.pdf')
 
-      return { pdf, blobUrl, descargar: () => pdf.save(filename || 'informe.pdf') }
+      return { pdf, blob, descargar: () => descargarPDF(blob, filename || 'informe.pdf') }
     } catch (err) {
       toast.error('Error generando el PDF del dashboard: ' + err.message)
     }
