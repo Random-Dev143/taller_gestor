@@ -30,33 +30,45 @@
     <div v-else>
       <div class="stats-grid mt-15" ref="kpisRef">
         <div class="stat-card highlight-card">
-          <strong>Facturación Total</strong><br>{{ formatCurrency(store.financiero.resumen.total_facturado) }}
+          <span class="stat-label">Facturación Total</span>
+          <span class="stat-value">{{ formatCurrency(store.financiero.resumen.total_facturado) }}</span>
           <DeltaBadge :valor="deltaFacturacion" />
         </div>
         <div class="stat-card">
-          <strong>Ticket Promedio</strong><br>{{ formatCurrency(store.financiero.resumen.facturacion_promedio) }}
+          <span class="stat-label">Ticket Promedio</span>
+          <span class="stat-value">{{ formatCurrency(store.financiero.resumen.facturacion_promedio) }}</span>
           <DeltaBadge :valor="deltaTicket" />
         </div>
-        <div class="stat-card"><strong>Mano de Obra</strong><br>{{ formatCurrency(store.financiero.resumen.total_mano_obra) }}</div>
-        <div class="stat-card"><strong>Repuestos</strong><br>{{ formatCurrency(store.financiero.resumen.total_repuestos) }}</div>
         <div class="stat-card">
-          <strong>Total OTs</strong><br>{{ store.financiero.resumen.total_ot }}
+          <span class="stat-label">Mano de Obra</span>
+          <span class="stat-value">{{ formatCurrency(store.financiero.resumen.total_mano_obra) }}</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Repuestos</span>
+          <span class="stat-value">{{ formatCurrency(store.financiero.resumen.total_repuestos) }}</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Total OTs</span>
+          <span class="stat-value">{{ store.financiero.resumen.total_ot }}</span>
           <DeltaBadge :valor="deltaOts" invertido />
         </div>
-        <div class="stat-card"><strong>Ciclo Promedio</strong><br>{{ store.taller.ciclo_promedio }} días</div>
-        <div class="stat-card" style="border-left: 4px solid var(--danger);">
-          <strong style="color: var(--danger);">Pérdida por Bonificaciones</strong><br>
-          <span style="color: var(--danger);">− {{ formatCurrency(store.financiero.resumen.total_descuentos) }}</span>
-          <div style="font-size: 0.75rem; color: var(--text-soft); margin-top: 2px;">
-            {{ store.financiero.resumen.cantidad_descuentos || 0 }} OT{{ (store.financiero.resumen.cantidad_descuentos || 0) === 1 ? '' : 's' }} autorizada{{ (store.financiero.resumen.cantidad_descuentos || 0) === 1 ? '' : 's' }}
-          </div>
+        <div class="stat-card">
+          <span class="stat-label">Ciclo Promedio</span>
+          <span class="stat-value">{{ store.taller.ciclo_promedio }} días</span>
         </div>
-        <div class="stat-card" v-if="store.financiero.resumen.total_descuentos_pendientes > 0" style="border-left: 4px solid var(--warning);">
-          <strong style="color: var(--warning);">Bonificaciones Pendientes de Autorizar</strong><br>
-          <span style="color: var(--warning);">{{ formatCurrency(store.financiero.resumen.total_descuentos_pendientes) }}</span>
-          <div style="font-size: 0.75rem; color: var(--text-soft); margin-top: 2px;">
+        <div class="stat-card stat-card--danger">
+          <span class="stat-label">Pérdida por Bonificaciones</span>
+          <span class="stat-value">− {{ formatCurrency(store.financiero.resumen.total_descuentos) }}</span>
+          <span class="stat-sub">
+            {{ store.financiero.resumen.cantidad_descuentos || 0 }} OT{{ (store.financiero.resumen.cantidad_descuentos || 0) === 1 ? '' : 's' }} autorizada{{ (store.financiero.resumen.cantidad_descuentos || 0) === 1 ? '' : 's' }}
+          </span>
+        </div>
+        <div class="stat-card stat-card--warning" v-if="store.financiero.resumen.total_descuentos_pendientes > 0">
+          <span class="stat-label">Bonificaciones Pendientes de Autorizar</span>
+          <span class="stat-value">{{ formatCurrency(store.financiero.resumen.total_descuentos_pendientes) }}</span>
+          <span class="stat-sub">
             {{ store.financiero.resumen.cantidad_descuentos_pendientes }} OT{{ store.financiero.resumen.cantidad_descuentos_pendientes === 1 ? '' : 's' }} esperando aprobación del admin
-          </div>
+          </span>
         </div>
       </div>
       <p class="chart-hint" v-if="store.financiero.resumen_anterior">
@@ -81,6 +93,7 @@
             </select>
           </div>
         </div>
+        <p class="chart-hint">Suma facturada por Mano de Obra y Repuestos en cada período elegido.</p>
         <div class="chart-box">
           <Bar v-if="datosFinancierosAgrupados.length" :data="chartFinanciero" :options="opcionesBarraMonedaConfig" />
           <p v-else class="empty-state">No hay facturación registrada en este período.</p>
@@ -135,6 +148,7 @@
               <option value="ordenes">Órdenes Trabajadas</option>
             </select>
           </div>
+          <p class="chart-hint">Cuánto facturó (o cuántas OTs trabajó) cada mecánico en el período.</p>
           <div class="chart-box">
             <Bar v-if="store.operativo.tiempos_mecanicos?.length" :data="chartAporteMecanico" :options="opcionesAporteMecanico" />
             <p v-else class="empty-state">Sin datos en este período.</p>
@@ -150,6 +164,7 @@
               <option v-for="m in store.operativo.tiempos_mecanicos" :key="m.legajo" :value="m.legajo">{{ m.nombre }}</option>
             </select>
           </div>
+          <p class="chart-hint">Compara el tiempo presupuestado contra el tiempo real trabajado por OT.</p>
           <div class="chart-box">
             <Bar v-if="datosTiempos.length" :data="chartTiempos" :options="opcionesBarraHoras" />
             <p v-else class="empty-state">Sin actividades finalizadas en este período.</p>
@@ -185,6 +200,7 @@
               <button class="btn btn-sm" @click="store.cargarInformes">🔍</button>
             </div>
           </div>
+          <p class="chart-hint">Tiempo promedio que pasan las OTs en cada estado del taller (dónde se traban).</p>
           <div class="chart-box">
             <Bar v-if="store.taller.permanencia_estado?.length" :data="chartCuellos" :options="opcionesBarraHorasHorizontal" />
             <p v-else class="empty-state">Sin datos de permanencia por estado.</p>
@@ -193,6 +209,7 @@
         
         <div class="section-block" ref="composicionRef">
           <h3>Composición del Trabajo</h3>
+          <p class="chart-hint">Proporción de OTs por tipo: garantía, particular, siniestro, etc.</p>
           <div class="chart-box chart-box-doughnut">
             <Doughnut v-if="calidadData.datasets[0].data.some(v => v > 0)" :data="calidadData" :options="opcionesDoughnut" />
             <p v-else class="empty-state">Sin OTs en este período.</p>
@@ -205,6 +222,7 @@
       <div class="charts-grid">
         <div class="section-block" ref="repuestosManoObraRef">
           <h3>Distribución: Repuestos vs. Mano de Obra</h3>
+          <p class="chart-hint">Qué parte de lo facturado corresponde a repuestos y qué parte a mano de obra.</p>
           <div class="chart-box chart-box-doughnut">
             <Doughnut v-if="(store.financiero.resumen.total_repuestos + store.financiero.resumen.total_mano_obra) > 0" :data="chartRepuestosManoObra" :options="opcionesDoughnutMoneda" />
             <p v-else class="empty-state">Sin facturación registrada.</p>
@@ -213,6 +231,7 @@
 
         <div class="section-block" ref="garantiaRef">
           <h3>Facturación: Garantía vs. Facturable</h3>
+          <p class="chart-hint">Cuánto de lo trabajado se cobró al cliente y cuánto quedó cubierto por garantía.</p>
           <div class="chart-box chart-box-doughnut">
             <Doughnut v-if="(store.financiero.resumen.monto_garantia + store.financiero.resumen.monto_facturable) > 0" :data="chartGarantia" :options="opcionesDoughnutMoneda" />
             <p v-else class="empty-state">Sin facturación registrada.</p>
@@ -225,6 +244,7 @@
       <div class="charts-grid">
         <div class="section-block" ref="clientesRef" v-if="store.financiero.top_clientes?.length">
           <h3>Clientes Recurrentes (Top 10)</h3>
+          <p class="chart-hint">Clientes que más facturación generaron en el período, ordenados de mayor a menor.</p>
           <div class="table-wrapper">
             <table>
               <thead><tr><th>Cliente</th><th>OTs</th><th>Facturación</th></tr></thead>
@@ -241,6 +261,7 @@
 
         <div class="section-block" ref="rentabilidadRef" v-if="store.financiero.rentabilidad_unidad?.length">
           <h3>Rentabilidad por Tipo de Unidad (Top 10)</h3>
+          <p class="chart-hint">Qué tipos de unidad (auto, camioneta, moto, etc.) generaron más facturación.</p>
           <div class="table-wrapper">
             <table>
               <thead><tr><th>Unidad</th><th>Cantidad OTs</th><th>Facturación Total</th></tr></thead>
@@ -533,27 +554,79 @@ onMounted(() => { store.cargarInformes() })
 }
 .header-with-actions h3 { margin: 0; color: var(--primary); font-size: 1.1rem; }
 .select-sm { width: auto; padding: 4px 8px; font-size: 0.9rem; position: relative; z-index: 2; }
-.chart-hint { font-size: 0.8rem; color: var(--muted); margin: -10px 0 12px; }
+.chart-hint { font-size: 0.8rem; color: var(--muted); margin: 10px 0 12px; }
 
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 15px;
-  align-items: start;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 16px;
+  align-items: stretch;
 }
 .stat-card {
-  background: var(--surface);
-  border: 1px solid var(--border-soft);
-  border-radius: 8px;
-  padding: 15px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  /* --border-soft es idéntico a --surface en el tema oscuro (mismo valor
+     de variable), así que un borde con ese color queda invisible. Usamos
+     --surface-raised (un tono más claro que el fondo) y --border (que sí
+     contrasta) para que la tarjeta se distinga del fondo en ambos temas. */
+  background: var(--surface-raised, var(--surface));
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px 14px;
   text-align: center;
   box-shadow: var(--shadow-sm);
-  font-size: 1.05rem;
+  min-height: 96px;
   position: relative;
   z-index: 0;
   min-width: 0;
 }
-.highlight-card { background: var(--primary); color: white; border: none; font-size: 1.15rem; }
+.stat-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--text-soft);
+}
+.stat-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.2;
+}
+.stat-sub {
+  font-size: 0.75rem;
+  color: var(--text-soft);
+}
+.highlight-card {
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  border-color: var(--primary-dark);
+}
+.highlight-card .stat-label,
+.highlight-card .stat-value {
+  color: #fff;
+}
+.highlight-card .delta-badge { background: rgba(255,255,255,0.22); color: #fff; }
+
+.stat-card--danger {
+  border-color: var(--danger);
+  background: var(--danger-light, var(--surface-raised));
+}
+.stat-card--danger .stat-label,
+.stat-card--danger .stat-value {
+  color: var(--danger);
+}
+
+.stat-card--warning {
+  border-color: var(--warning);
+  background: var(--warning-light, var(--surface-raised));
+}
+.stat-card--warning .stat-label,
+.stat-card--warning .stat-value {
+  color: var(--warning);
+}
 
 .chart-box {
   height: 280px;

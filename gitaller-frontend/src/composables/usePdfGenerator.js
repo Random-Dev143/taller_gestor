@@ -1,11 +1,13 @@
 import { useApi } from './useApi'
 import { useToast, errMsg } from './useToast'
 import { useConfigStore } from '../stores/useConfigStore'
+import { usePdfOutput } from './usePdfOutput'
 
 export function usePdfGenerator() {
   const { fetchJSON, API_BASE } = useApi()
   const toast = useToast()
   const configStore = useConfigStore()
+  const { previsualizarPDF } = usePdfOutput()
 
   const generarExplicacionPDF = async (ot) => {
     try {
@@ -149,8 +151,7 @@ export function usePdfGenerator() {
           
           pdf.addImage(imgData, 'PNG', 0, 10, imgWidth, imgHeight)
           const pdfBlob = pdf.output('blob')
-          const blobURL = URL.createObjectURL(pdfBlob)
-          window.open(blobURL, '_blank')
+          await previsualizarPDF(pdfBlob, `explicacion_ot_${orden.ot || ot}.pdf`)
           
           document.body.removeChild(div)
         } catch (err) {

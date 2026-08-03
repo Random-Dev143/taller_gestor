@@ -30,14 +30,18 @@
 
   --text: #1a2a3a;
   --text-soft: #445;
-  --border: #d0d7e2;
-  --border-soft: #eef3f9;
-  --bg: #f4f7fc;
-  --surface: #ffffff;
-  --surface-raised: #ffffff;
+  /* Escala de grises neutra, anclada en #e4e4e4 como el tono más claro
+     de la interfaz (--surface-raised). El resto baja en luminosidad
+     desde ahí para dar jerarquía: tarjeta elevada > tarjeta normal >
+     fondo de página > borde sutil > borde. */
+  --border: #a1a1a0;
+  --border-soft: #bdbdbc;
+  --bg: #cbcbca;
+  --surface: #d9d9d8;
+  --surface-raised: #e4e4e4;
   --overlay: rgba(15, 23, 42, 0.55);
-  --hover-row: #fafcfe;
-  --scrollbar-thumb: #c7d0dc;
+  --hover-row: #c9c9c8;
+  --scrollbar-thumb: #8f8f8e;
 
   --radius: 10px;
   --radius-sm: 6px;
@@ -89,7 +93,11 @@
   --text: #e2e8f0;
   --text-soft: #94a3b8;
   --border: #334155;
-  --border-soft: #1e293b;
+  /* Antes era #1e293b, IDÉNTICO a --surface: cualquier borde/separador que
+     usara esta variable (cards, encabezados de tabla, dividers) quedaba
+     invisible en modo oscuro. Se sube un tono para que se distinga del
+     fondo y de las superficies, sin llegar al contraste de --border. */
+  --border-soft: #26374d;
   --bg: #0f172a;
   --surface: #1e293b;
   --surface-raised: #26374d;

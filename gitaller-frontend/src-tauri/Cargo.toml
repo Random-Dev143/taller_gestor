@@ -24,6 +24,14 @@ log = "0.4"
 tauri-plugin-log = "2"
 tauri = { version = "2", features = [] }
 tauri-plugin-shell = "2"
+# Agregados para previsualizar y descargar PDFs generados en el frontend:
+# el webview de Tauri no soporta window.open() en pestaña nueva ni el
+# flujo de descarga del navegador (<a download>), así que usamos estos
+# plugins para escribir el archivo a disco y abrirlo con la app del
+# sistema (fs + opener), o dejar elegir dónde guardarlo (dialog).
+tauri-plugin-fs = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
 # Agregado para poder usar tokio::time::sleep en start_server (lib.rs).
 # Tauri ya trae tokio como dependencia transitiva, así que esto no agrega
 # peso real al binario, solo lo expone como dependencia directa.

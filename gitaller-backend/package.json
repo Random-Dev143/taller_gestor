@@ -10,7 +10,8 @@
   },
   "pkg": {
     "assets": [
-      "node_modules/sqlite3/lib/binding/**/*.node"
+      "node_modules/sqlite3/lib/binding/**/*.node",
+      "dist/**/*"
     ]
   },
   "dependencies": {

@@ -84,6 +84,13 @@ pub fn run() {
     tauri::Builder::default()
         // Inicializamos el plugin de shell (obligatorio para los sidecars)
         .plugin(tauri_plugin_shell::init())
+        // Necesarios para que los botones de "Previsualizar"/"Descargar" PDF
+        // funcionen en la app de escritorio (ver usePdfOutput.js en el
+        // frontend): fs para escribir el archivo, opener para abrirlo con
+        // el lector de PDF del sistema, dialog para el "Guardar como".
+        .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         // Le pasamos a Tauri nuestra estructura de estado (el cajón vacío) al arrancar
         .manage(ServerProcess(Mutex::new(None)))
         // Registramos los comandos para que Vue los pueda llamar
@@ -108,7 +115,7 @@ pub fn run() {
                             println!("[gitaller-server] Proceso finalizado correctamente al cerrar la app.");
                         }
                     }
-                }
+                };
             }
         });
 }
