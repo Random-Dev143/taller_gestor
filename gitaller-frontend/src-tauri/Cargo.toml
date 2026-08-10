@@ -1,11 +1,11 @@
 [package]
-name = "app"
-version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+name = "GiTalelr"
+version = "0.1.3"
+description = "Gestor integral de taller"
+authors = ["Facundo Rua"]
 license = ""
-repository = ""
-edition = "2021"
+repository = "https://github.com/Random-Dev143/taller_gestor"
+edition = "2026"
 rust-version = "1.77.2"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

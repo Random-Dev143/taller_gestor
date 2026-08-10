@@ -20,4 +20,4 @@ backups/
 *.xml
 *.env
 dotenv
-
+build.bat

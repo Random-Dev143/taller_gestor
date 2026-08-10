@@ -76,4 +76,6 @@ const guardarCliente = () => {
 .mb-10 { margin-bottom: 10px; }
 .mb-15 { margin-bottom: 15px; }
 .text-left { text-align: left; }
+
+
 </style>
