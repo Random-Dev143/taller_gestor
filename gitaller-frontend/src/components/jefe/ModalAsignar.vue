@@ -19,6 +19,19 @@
           <label>Tiempo estimado (horas)</label>
           <input type="number" v-model="form.tiempo_estimado" step="0.5" min="0.5" required />
         </div>
+        <div class="form-group" v-if="ot === '0000' && !isEdit">
+          <label>Tipo de tarea interna</label>
+          <div class="tipo-tarea-toggle">
+            <label class="tipo-tarea-opcion">
+              <input type="radio" v-model="form.es_rutina" :value="true" />
+              🔁 Rutina (limpieza, capacitaciones — siempre disponible, no se cierra)
+            </label>
+            <label class="tipo-tarea-opcion">
+              <input type="radio" v-model="form.es_rutina" :value="false" />
+              🔧 Extraordinaria (con un tiempo estimado — se cierra al terminar)
+            </label>
+          </div>
+        </div>
         <div class="form-group" v-if="isEdit">
           <label>Corrección: Tiempo Real Invertido</label>
           <input type="number" v-model="form.tiempo_real" step="0.1" min="0" />
@@ -50,7 +63,7 @@ const props = defineProps({
 const emit = defineEmits(['close', 'confirm'])
 
 const isEdit = computed(() => !!props.actividadEdit)
-const form = ref({ id: null, legajos: [], descripcion: '', tiempo_estimado: 1, tiempo_real: 0, fecha_inicio: '', fecha_fin: '' })
+const form = ref({ id: null, legajos: [], descripcion: '', tiempo_estimado: 1, tiempo_real: 0, fecha_inicio: '', fecha_fin: '', es_rutina: false })
 
 onMounted(() => {
   if (props.actividadEdit) {
@@ -99,4 +112,18 @@ const submitAsignacion = () => {
 <style scoped>
 .form-group { margin-bottom: 15px; }
 .form-group label { display: block; margin-bottom: 5px; font-weight: 600; font-size: 0.9rem; color: var(--text-soft); }
+.tipo-tarea-toggle { display: flex; flex-direction: column; gap: 8px; }
+.tipo-tarea-opcion {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 400;
+  font-size: 0.85rem;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+.tipo-tarea-opcion input { margin: 0; }
 </style>

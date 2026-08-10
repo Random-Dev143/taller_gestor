@@ -64,13 +64,23 @@
                       <span v-else>{{ a.nombre_mecanico || a.legajo_mecanico }}</span>
                     </td>
                     <td>{{ a.descripcion }}</td>
-                    <td><span class="badge-sm">{{ a.estado }}</span></td>
+                    <td>
+                      <span class="badge-sm">{{ a.estado }}</span>
+                      <span v-if="data.ot === '0000' && a.es_rutina" class="badge-sm badge-rutina" title="Rutina: siempre disponible, no se cierra">🔁</span>
+                    </td>
                     <td>{{ a.tiempo_estimado }}</td>
                     <td>{{ (a.tiempo_real || 0).toFixed(2) }}</td>
                     <td v-if="esJefe" style="white-space: nowrap;">
                       <button class="btn btn-sm" v-can="'tarea_gestionar_todas'" @click="$emit('editar-actividad', a)" title="Reasignar/Editar">✏️</button>
                       <button class="btn btn-danger btn-sm" v-can="'tarea_gestionar_todas'" @click="$emit('eliminar-actividad', a.id)" title="Eliminar asignación">🗑️</button>
                       <button class="btn btn-sm" v-can="'tiempo_editar_manual'" @click="toggleTiempos(a.id)" title="Ver Tiempos">🕒</button>
+                      <button
+                        v-if="data.ot === '0000' && !a.es_rutina && !['Finalizada', 'Cerrada por Jefe'].includes(a.estado)"
+                        class="btn btn-success btn-sm"
+                        v-can="'tarea_gestionar_todas'"
+                        @click="cerrarTareaInterna(a)"
+                        title="Cerrar esta tarea interna extraordinaria"
+                      >✅ Cerrar</button>
                     </td>
                   </tr>
                   <tr v-if="esJefe && tiemposAbiertos === a.id">
@@ -139,12 +149,28 @@ const formatearFechaAporte = (fechaStr) => {
   return new Date(utcStr).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' });
 }
 
-onMounted(async () => {
+const cargarDatos = async () => {
   try {
     data.value = await fetchJSON(`/ordenes/${props.otId}`)
-  } catch (err) { toast.error('Error cargando detalle: ' + errMsg(err)) } 
+  } catch (err) { toast.error('Error cargando detalle: ' + errMsg(err)) }
   finally { loading.value = false }
-})
+}
+
+onMounted(cargarDatos)
+
+// Cierre manual desde el Jefe: solo para tareas internas extraordinarias
+// (nunca rutinas — el backend lo rechaza igual, pero el botón ni siquiera
+// se muestra para esas). Útil cuando el mecánico se olvidó de cerrarla.
+const cerrarTareaInterna = async (actividad) => {
+  if (!confirm(`¿Cerrar la tarea "${actividad.descripcion}"? El mecánico ya no podrá seguir operándola.`)) return
+  try {
+    await fetchJSON(`/actividades/${actividad.id}/cerrar-jefe`, { method: 'POST' })
+    toast.success('Tarea interna cerrada.')
+    await cargarDatos()
+  } catch (err) {
+    toast.error(errMsg(err))
+  }
+}
 
 const getTiempos = (actId) => {
   return (data.value?.tiempos_actividad || []).filter(t => t.actividad_id === actId);
@@ -264,4 +290,5 @@ th { background: var(--border-soft); }
 .btn { margin-right: 4px; }
 .tiempos-edit { background: var(--border-soft); }
 .tiempo-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+.badge-rutina { margin-left: 4px; background: var(--primary); }
 </style>

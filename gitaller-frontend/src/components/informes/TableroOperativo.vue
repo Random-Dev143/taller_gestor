@@ -85,13 +85,21 @@
           </div>
         </div>
         <div class="card p-15">
-          <h3 class="chart-title">Eficacia vs Eficiencia</h3>
+          <h3 class="chart-title">Eficacia</h3>
           <p class="chart-hint">
-            <strong>Eficacia</strong>: % de las horas presentes que fueron productivas.
-            <strong>Eficiencia</strong>: % del tiempo estimado en presupuesto que realmente se tardó (más de 100% = trabajó más rápido de lo presupuestado).
+            % de las horas exigidas que fueron productivas. Se apila lo hecho en <strong>OT de cliente</strong> más lo hecho en <strong>tareas internas extraordinarias</strong> (las rutinas, como limpieza, no suman ni restan acá).
           </p>
           <div class="chart-wrapper">
-            <Bar v-if="chartEficiencia" :data="chartEficiencia" :options="opcionesGraficoBarras" />
+            <Bar v-if="chartEficacia" :data="chartEficacia" :options="opcionesEficacia" />
+          </div>
+        </div>
+        <div class="card p-15">
+          <h3 class="chart-title">Eficiencia</h3>
+          <p class="chart-hint">
+            Tiempo estimado vs. tiempo real de cada grupo por separado (más de 100% = más rápido de lo estimado). No se suman entre sí porque son dos comparaciones independientes.
+          </p>
+          <div class="chart-wrapper">
+            <Bar v-if="chartEficiencia" :data="chartEficiencia" :options="opcionesEficiencia" />
           </div>
         </div>
       </div>
@@ -181,10 +189,24 @@ const opcionesGraficoTorta = {
   plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, padding: 15 } } }
 }
 
-const opcionesGraficoBarras = {
+// Eficacia SÍ es aditiva (OT + Interna extraordinaria = el total sobre
+// hs_exigidas), así que se puede apilar en una sola barra sin falsear nada.
+const opcionesEficacia = {
   responsive: true,
   maintainAspectRatio: false,
-  scales: { y: { beginAtZero: true, max: 120 } },
+  scales: {
+    x: { stacked: true },
+    y: { stacked: true, beginAtZero: true, max: 120 }
+  },
+  plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, padding: 10 } } }
+}
+
+// Eficiencia NO es aditiva (cada barra es su propio ratio: estimado/real de
+// ESE grupo) — nunca deben apilarse, van una al lado de la otra.
+const opcionesEficiencia = {
+  responsive: true,
+  maintainAspectRatio: false,
+  scales: { y: { beginAtZero: true, max: 150 } },
   plugins: { legend: { display: false } }
 }
 
@@ -200,16 +222,38 @@ const chartDistribucion = computed(() => {
   }
 })
 
-const chartEficiencia = computed(() => {
+// Barra apilada: cuánto de la Eficacia total vino de OTs de cliente y
+// cuánto de tareas internas extraordinarias (las rutinas no aportan nada acá).
+const chartEficacia = computed(() => {
   if (!mecanicoFiltrado.value) return null;
   const m = mecanicoFiltrado.value;
   return {
-    labels: ['Eficacia', 'Eficiencia'],
-    datasets: [{
-      data: [eficaciaDe(m), m.eficiencia_porcentaje],
-      backgroundColor: ['#0056a7', '#1d8a4f'],
-      borderRadius: 4
-    }]
+    labels: ['Eficacia'],
+    datasets: [
+      { label: 'OT de cliente', data: [m.productividad_ot_porcentaje ?? 0], backgroundColor: '#0056a7' },
+      { label: 'Tareas internas', data: [m.productividad_interna_porcentaje ?? 0], backgroundColor: '#d4a017' }
+    ]
+  }
+})
+
+// Dos barras independientes lado a lado: cada una compara su propio
+// estimado contra su propio real, no se pueden sumar entre sí. Si el
+// mecánico no tuvo tareas internas extraordinarias en el período, esa
+// barra directamente no se dibuja (eficiencia_interna_porcentaje = null).
+const chartEficiencia = computed(() => {
+  if (!mecanicoFiltrado.value) return null;
+  const m = mecanicoFiltrado.value;
+  const labels = ['Eficiencia OT']
+  const data = [m.eficiencia_ot_porcentaje ?? 0]
+  const colores = ['#1d8a4f']
+  if (m.eficiencia_interna_porcentaje !== null && m.eficiencia_interna_porcentaje !== undefined) {
+    labels.push('Eficiencia Interna')
+    data.push(m.eficiencia_interna_porcentaje)
+    colores.push('#d4a017')
+  }
+  return {
+    labels,
+    datasets: [{ data, backgroundColor: colores, borderRadius: 4 }]
   }
 })
 

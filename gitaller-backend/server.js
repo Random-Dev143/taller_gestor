@@ -233,6 +233,14 @@ if (sincronizarDist()) {
     });
 }
 
+// ─── MANEJO GLOBAL DE ERRORES ──────────────────────────────────────
+// Va al final, después de TODAS las rutas (Express lo reconoce como
+// manejador de errores por tener 4 parámetros). Cualquier error lanzado
+// (o promesa rechazada) dentro de un handler async de cualquier ruta
+// /api/* cae acá — ver middlewares/errorHandler.js para el detalle.
+const errorHandler = require('./middlewares/errorHandler');
+app.use(errorHandler);
+
 // ─── INICIAR TAREAS PROGRAMADAS ────────────────────────────────────
 iniciarCron();
 

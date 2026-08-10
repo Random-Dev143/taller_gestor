@@ -229,7 +229,8 @@ const confirmarAsignacion = async (datos) => {
             legajos_mecanicos: datos.legajos_mecanicos, 
             descripcion: datos.descripcion, 
             tiempo_estimado: datos.tiempo_estimado, 
-            jefe_legajo: jefeLegajo.value 
+            jefe_legajo: jefeLegajo.value,
+            es_rutina: datos.es_rutina || false
         })
       })
       toast.success('Nueva tarea asignada')

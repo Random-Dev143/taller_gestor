@@ -154,6 +154,45 @@ async function migrarEstructura() {
             console.log('✅ Migración de equipo independiente (actividad_mecanicos) completada.');
         }
 
+        // Tareas Internas (ot='0000'): distinción entre rutinas (limpieza,
+        // capacitaciones periódicas — no tienen fin, nunca se cierran ni se
+        // vuelven a crear) y extraordinarias (reparaciones internas puntuales
+        // con un tiempo_estimado real, que sí se cierran cuando terminan y sí
+        // cuentan para eficacia/eficiencia). Por defecto 0 (extraordinaria)
+        // para no reclasificar silenciosamente tareas ya existentes como
+        // rutinas — el Jefe las revisa y marca a mano cuáles corresponden.
+        //
+        // OJO: la migración V2 de más arriba (la que crea `actividades_new`
+        // dentro del bloque de "Normalización & Integrity") reconstruyó la
+        // tabla `actividades` con un CHECK incompleto — le falta el estado
+        // 'Cerrada por Jefe' en la lista de valores permitidos. Como esa
+        // migración ya corrió una vez en instalaciones existentes, el
+        // `CREATE TABLE IF NOT EXISTS` de más abajo (que sí tiene el estado
+        // completo) nunca llega a aplicarse — es un no-op si la tabla ya
+        // existe. Cualquier intento de guardar 'Cerrada por Jefe' rompe con
+        // SQLITE_CONSTRAINT hasta reconstruir la tabla una vez más, esta vez
+        // con el CHECK correcto. Se aprovecha el mismo paso para agregar
+        // es_rutina si hiciera falta, evitando reconstruir la tabla dos veces.
+        const actividadesDDL = await get(`SELECT sql FROM sqlite_master WHERE type='table' AND name='actividades'`);
+        const faltaEstadoCerradaPorJefe = actividadesDDL && !actividadesDDL.sql.includes('Cerrada por Jefe');
+        const actividadesCols = (await all(`PRAGMA table_info(actividades)`)).map(c => c.name);
+        const faltaEsRutina = !actividadesCols.includes('es_rutina');
+
+        if (faltaEstadoCerradaPorJefe) {
+            await run('PRAGMA foreign_keys=OFF');
+            await withTransaction(async () => {
+                await run(`CREATE TABLE actividades_new2 (id INTEGER PRIMARY KEY AUTOINCREMENT, ot TEXT NOT NULL, descripcion TEXT NOT NULL, tiempo_estimado REAL NOT NULL, tiempo_real REAL DEFAULT 0, estado TEXT DEFAULT 'Asignada' CHECK(estado IN ('Pendiente', 'Asignada', 'En Curso', 'Pausada', 'Finalizada', 'Cerrada por Jefe')), legajo_mecanico TEXT NOT NULL, auto_pausa INTEGER DEFAULT 0, fecha_inicio DATETIME, fecha_fin DATETIME, es_rutina INTEGER NOT NULL DEFAULT 0, FOREIGN KEY(ot) REFERENCES ordenes(ot) ON DELETE CASCADE ON UPDATE CASCADE, FOREIGN KEY(legajo_mecanico) REFERENCES legajos(legajo) ON DELETE RESTRICT ON UPDATE CASCADE)`);
+                await run(`INSERT INTO actividades_new2 (id, ot, descripcion, tiempo_estimado, tiempo_real, estado, legajo_mecanico, auto_pausa, fecha_inicio, fecha_fin) SELECT id, ot, descripcion, tiempo_estimado, tiempo_real, estado, legajo_mecanico, auto_pausa, fecha_inicio, fecha_fin FROM actividades`);
+                await run(`DROP TABLE actividades`);
+                await run(`ALTER TABLE actividades_new2 RENAME TO actividades`);
+            });
+            await run('PRAGMA foreign_keys=ON');
+            console.log('✅ Migración de actividades completada (CHECK constraint con "Cerrada por Jefe" + columna es_rutina).');
+        } else if (faltaEsRutina) {
+            await run(`ALTER TABLE actividades ADD COLUMN es_rutina INTEGER NOT NULL DEFAULT 0`);
+            console.log('✅ Migración de tareas internas (es_rutina) completada.');
+        }
+
         const tiemposCols = (await all(`PRAGMA table_info(tiempos_actividad)`)).map(c => c.name);
         if (!tiemposCols.includes('legajo_mecanico')) {
             await run(`ALTER TABLE tiempos_actividad ADD COLUMN legajo_mecanico TEXT`);
@@ -220,7 +259,7 @@ db.serialize(async () => {
     db.run(`CREATE TABLE IF NOT EXISTS asignaciones (id INTEGER PRIMARY KEY AUTOINCREMENT, ot TEXT NOT NULL, legajo_mecanico TEXT NOT NULL, fecha_asignacion DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(ot) REFERENCES ordenes(ot) ON DELETE CASCADE ON UPDATE CASCADE, FOREIGN KEY(legajo_mecanico) REFERENCES legajos(legajo) ON DELETE RESTRICT ON UPDATE CASCADE)`);
     db.run(`CREATE TABLE IF NOT EXISTS explicaciones (id INTEGER PRIMARY KEY AUTOINCREMENT, ot TEXT NOT NULL UNIQUE, causa TEXT, FOREIGN KEY(ot) REFERENCES ordenes(ot) ON DELETE CASCADE ON UPDATE CASCADE)`);
     db.run(`CREATE TABLE IF NOT EXISTS aportes (id INTEGER PRIMARY KEY AUTOINCREMENT, ot TEXT NOT NULL, legajo TEXT NOT NULL, actividades TEXT NOT NULL, horas REAL DEFAULT 0, fecha_aporte DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(ot) REFERENCES ordenes(ot) ON DELETE CASCADE ON UPDATE CASCADE, FOREIGN KEY(legajo) REFERENCES legajos(legajo) ON DELETE RESTRICT ON UPDATE CASCADE)`);
-    db.run(`CREATE TABLE IF NOT EXISTS actividades (id INTEGER PRIMARY KEY AUTOINCREMENT, ot TEXT NOT NULL, descripcion TEXT NOT NULL, tiempo_estimado REAL NOT NULL, tiempo_real REAL DEFAULT 0, estado TEXT DEFAULT 'Asignada' CHECK(estado IN ('Pendiente', 'Asignada', 'En Curso', 'Pausada', 'Finalizada', 'Cerrada por Jefe')), legajo_mecanico TEXT NOT NULL, auto_pausa INTEGER DEFAULT 0, fecha_inicio DATETIME, fecha_fin DATETIME, FOREIGN KEY(ot) REFERENCES ordenes(ot) ON DELETE CASCADE ON UPDATE CASCADE, FOREIGN KEY(legajo_mecanico) REFERENCES legajos(legajo) ON DELETE RESTRICT ON UPDATE CASCADE)`);
+    db.run(`CREATE TABLE IF NOT EXISTS actividades (id INTEGER PRIMARY KEY AUTOINCREMENT, ot TEXT NOT NULL, descripcion TEXT NOT NULL, tiempo_estimado REAL NOT NULL, tiempo_real REAL DEFAULT 0, estado TEXT DEFAULT 'Asignada' CHECK(estado IN ('Pendiente', 'Asignada', 'En Curso', 'Pausada', 'Finalizada', 'Cerrada por Jefe')), legajo_mecanico TEXT NOT NULL, auto_pausa INTEGER DEFAULT 0, fecha_inicio DATETIME, fecha_fin DATETIME, es_rutina INTEGER NOT NULL DEFAULT 0, FOREIGN KEY(ot) REFERENCES ordenes(ot) ON DELETE CASCADE ON UPDATE CASCADE, FOREIGN KEY(legajo_mecanico) REFERENCES legajos(legajo) ON DELETE RESTRICT ON UPDATE CASCADE)`);
     db.run(`CREATE TABLE IF NOT EXISTS tiempos_actividad (id INTEGER PRIMARY KEY AUTOINCREMENT, actividad_id INTEGER NOT NULL, legajo_mecanico TEXT, inicio DATETIME NOT NULL, fin DATETIME, FOREIGN KEY(actividad_id) REFERENCES actividades(id) ON DELETE CASCADE ON UPDATE CASCADE)`);
     db.run(`CREATE TABLE IF NOT EXISTS actividad_mecanicos (
     actividad_id INTEGER NOT NULL, 

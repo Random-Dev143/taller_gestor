@@ -3,13 +3,13 @@
     <div class="header-row">
       <h2>Gestión de Usuarios y Accesos</h2>
       <div style="display: flex; gap: 10px;">
-        <select v-model="filtroEstado" class="form-control" style="width: auto;" @change="cargarUsuarios">
+        <select v-model="filtroEstado" class="form-control" style="width: auto;" @change="cargarDatos(filtroEstado)">
           <option value="">Todos los estados</option>
           <option value="pendiente">Pendientes</option>
           <option value="aprobado">Aprobados</option>
           <option value="suspendido">Suspendidos</option>
         </select>
-        <button class="btn btn-secondary btn-sm" @click="cargarDatos">↻ Actualizar</button>
+        <button class="btn btn-secondary btn-sm" @click="cargarDatos(filtroEstado)">↻ Actualizar</button>
       </div>
     </div>
 
@@ -54,7 +54,7 @@
             <td style="white-space: nowrap;">
               <!-- Modo Edición -->
               <template v-if="editandoId === u.id">
-                <button class="btn btn-success btn-sm" v-can="'usuario_gestionar'" @click="guardarCambios(u.id)">Guardar</button>
+                <button class="btn btn-success btn-sm" v-can="'usuario_gestionar'" @click="guardarEdicionUsuario(u.id)">Guardar</button>
                 <button class="btn btn-secondary btn-sm" @click="cancelarEdicion">Cancelar</button>
               </template>
               
@@ -66,8 +66,8 @@
               <!-- Modo Vista Normal -->
               <template v-else>
                 <button class="btn btn-sm" v-can="'usuario_gestionar'" @click="iniciarEdicion(u)">✏️ Editar</button>
-                <button v-if="u.estado !== 'suspendido'" class="btn btn-danger btn-sm" v-can="'usuario_gestionar'" @click="suspenderUsuario(u.id)">🚫 Suspender</button>
-                <button v-else class="btn btn-outline btn-sm" v-can="'usuario_gestionar'" @click="reactivarUsuario(u.id)">Reactivar</button>
+                <button v-if="u.estado !== 'suspendido'" class="btn btn-danger btn-sm" v-can="'usuario_gestionar'" @click="confirmarSuspension(u.id)">🚫 Suspender</button>
+                <button v-else class="btn btn-outline btn-sm" v-can="'usuario_gestionar'" @click="confirmarReactivacion(u.id)">Reactivar</button>
               </template>
             </td>
           </tr>
@@ -79,16 +79,10 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { useApi } from '../../composables/useApi'
-import { useToast, errMsg } from '../../composables/useToast'
+import { useUsuarios } from '../../composables/useUsuarios'
 
-const { fetchJSON } = useApi()
-const toast = useToast()
+const { usuarios, legajos, rolesLista, loading, cargarDatos, guardarCambios, suspenderUsuario, reactivarUsuario } = useUsuarios()
 
-const usuarios = ref([])
-const legajos = ref([])
-const rolesLista = ref([])
-const loading = ref(true)
 const filtroEstado = ref('')
 
 const editandoId = ref(null)
@@ -101,29 +95,6 @@ const claseEstado = (estado) => ({
   'aprobado': 'badge-success',
   'suspendido': 'badge-danger'
 }[estado] || '')
-
-const cargarDatos = async () => {
-  loading.value = true
-  try {
-    const params = new URLSearchParams()
-    if (filtroEstado.value) params.set('estado', filtroEstado.value)
-    
-    // Traemos usuarios, legajos y ROLES en paralelo
-    const [resUsuarios, resLegajos, resRoles] = await Promise.all([
-      fetchJSON(`/usuarios?${params.toString()}`),
-      fetchJSON('/legajos'),
-      fetchJSON('/roles') // <-- NUEVA PETICIÓN
-    ])
-    
-    usuarios.value = resUsuarios
-    legajos.value = resLegajos
-    rolesLista.value = resRoles
-  } catch (err) {
-    toast.error('Error cargando datos: ' + errMsg(err))
-  } finally {
-    loading.value = false
-  }
-}
 
 const iniciarEdicion = (u) => {
   editandoId.value = u.id
@@ -138,54 +109,26 @@ const cancelarEdicion = () => {
   editandoId.value = null
 }
 
-const guardarCambios = async (id) => {
-  // Si busca .rol en lugar de .rol_id, siempre dará error porque no existe.
-  if (!formEdit.value.rol_id) {
-    return toast.error('Debe asignar un perfil al usuario.')
-  }
-  
-  try {
-    await fetchJSON(`/usuarios/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify({
-        estado: formEdit.value.estado,
-        rol_id: formEdit.value.rol_id, // Enviamos rol_id al backend
-        legajo: formEdit.value.legajo || null
-      })
-    })
-    toast.success('Usuario actualizado correctamente')
+const guardarEdicionUsuario = async (id) => {
+  const ok = await guardarCambios(id, formEdit.value)
+  if (ok) {
     cancelarEdicion()
-    cargarDatos()
-  } catch (err) {
-    toast.error('Error al actualizar: ' + errMsg(err))
+    cargarDatos(filtroEstado.value)
   }
 }
 
-const suspenderUsuario = async (id) => {
+const confirmarSuspension = async (id) => {
   if (!confirm('¿Seguro que desea suspender a este usuario? Perderá el acceso al sistema.')) return
-  try {
-    await fetchJSON(`/usuarios/${id}`, { method: 'DELETE' })
-    toast.success('Usuario suspendido')
-    cargarDatos()
-  } catch (err) {
-    toast.error(errMsg(err))
-  }
+  const ok = await suspenderUsuario(id)
+  if (ok) cargarDatos(filtroEstado.value)
 }
 
-const reactivarUsuario = async (id) => {
-  try {
-    await fetchJSON(`/usuarios/${id}`, { 
-      method: 'PUT', 
-      body: JSON.stringify({ estado: 'aprobado' }) 
-    })
-    toast.success('Usuario reactivado')
-    cargarDatos()
-  } catch (err) {
-    toast.error(errMsg(err))
-  }
+const confirmarReactivacion = async (id) => {
+  const ok = await reactivarUsuario(id)
+  if (ok) cargarDatos(filtroEstado.value)
 }
 
-onMounted(cargarDatos)
+onMounted(() => cargarDatos(filtroEstado.value))
 </script>
 
 <style scoped>

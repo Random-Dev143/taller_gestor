@@ -56,7 +56,7 @@
                 </td>
                 <td style="white-space: nowrap; vertical-align: top;">
                   <template v-if="editandoId === u.id">
-                    <button class="btn btn-success btn-sm mb-1 w-100" v-can="'agenda_gestionar'" @click="guardarEdicion(u.id, u.patente)">Guardar</button>
+                    <button class="btn btn-success btn-sm mb-1 w-100" v-can="'agenda_gestionar'" @click="confirmarEdicion(u.id, u.patente)">Guardar</button>
                     <button class="btn btn-secondary btn-sm w-100" @click="cancelarEdicion">Cancelar</button>
                   </template>
                   <template v-else>
@@ -74,7 +74,7 @@
     <hr style="margin:20px 0;" />
 
     <h3>Agregar Registro Manual</h3>
-    <form @submit.prevent="crearCliente">
+    <form @submit.prevent="enviarNuevoCliente">
       <div class="form-grid">
         <div class="form-group"><label>Patente *</label><input type="text" v-model="form.patente" required /></div>
         <div class="form-group"><label>Cliente *</label><input type="text" v-model="form.cliente" required /></div>
@@ -99,19 +99,15 @@
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
-import { useApi } from '../../composables/useApi'
-import { useToast, errMsg } from '../../composables/useToast'
+import { useAgenda } from '../../composables/useAgenda'
 import ModalHistorialCliente from './ModalHistorialCliente.vue'
 
-const { fetchJSON } = useApi()
-const toast = useToast()
+const { unidadesRaw, loading, cargarAgenda, crearCliente, guardarEdicion } = useAgenda()
 
 const historialSeleccionado = ref(null)
 const verHistorial = (u) => { historialSeleccionado.value = u }
 
-const unidadesRaw = ref([])
 const busqueda = ref('')
-const loading = ref(true)
 const enviando = ref(false)
 const form = ref({ patente: '', cliente: '', unidad: '', telefono: '', correo: '', contacto_nombre: '', contacto_apellido: '' })
 const editandoId = ref(null)
@@ -168,23 +164,13 @@ watch(busqueda, (val) => {
   }
 })
 
-const cargarAgenda = async () => {
-  loading.value = true
-  try { unidadesRaw.value = await fetchJSON('/unidades') } 
-  catch (err) { toast.error(errMsg(err)) } 
-  finally { loading.value = false }
-}
-
-const crearCliente = async () => {
+const enviarNuevoCliente = async () => {
   enviando.value = true
-  try {
-    const payload = { ...form.value, patente: form.value.patente.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() }
-    await fetchJSON('/unidades', { method: 'POST', body: JSON.stringify(payload) })
-    toast.success('Cliente/Unidad agregado')
+  const ok = await crearCliente(form.value)
+  if (ok) {
     form.value = { patente: '', cliente: '', unidad: '', telefono: '', correo: '', contacto_nombre: '', contacto_apellido: '' }
-    cargarAgenda()
-  } catch (err) { toast.error(errMsg(err)) } 
-  finally { enviando.value = false }
+  }
+  enviando.value = false
 }
 
 const iniciarEdicion = (u) => {
@@ -193,13 +179,9 @@ const iniciarEdicion = (u) => {
 }
 const cancelarEdicion = () => { editandoId.value = null }
 
-const guardarEdicion = async (id, patente) => {
-  try {
-    await fetchJSON(`/unidades/${id}`, { method: 'PUT', body: JSON.stringify({ patente, ...editForm.value }) })
-    toast.success('Actualizado')
-    cancelarEdicion()
-    cargarAgenda()
-  } catch (err) { toast.error(errMsg(err)) }
+const confirmarEdicion = async (id, patente) => {
+  const ok = await guardarEdicion(id, patente, editForm.value)
+  if (ok) cancelarEdicion()
 }
 
 onMounted(cargarAgenda)

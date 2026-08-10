@@ -1,6 +1,6 @@
 <template>
   <div class="view-mecanico">
-    <NavBar brand="🛠️ Mi Panel - Taller" :tabs="[]" logoutText="Cambiar legajo" customLogout @logout="cambiarLegajo" />
+    <NavBar brand="🛠️ Mi Panel - Taller" :tabs="tabs" v-model:activeTab="activeTab" logoutText="Cambiar legajo" customLogout @logout="cambiarLegajo" />
 
     <div class="card">
       <div class="header-row">
@@ -23,7 +23,7 @@
 
      <div v-else>
         <!-- SECCIÓN TAREAS INTERNAS -->
-        <div v-if="tareasInternas.length > 0" style="margin-bottom: 30px;">
+        <div v-if="activeTab === 'mecanico-interna'" v-show="tareasInternas.length > 0" style="margin-bottom: 30px;">
           <h3 style="color: var(--muted); border-bottom: 1px solid var(--border-soft); padding-bottom: 8px;">Rutinas y Tareas Internas</h3>
           <div class="grid-tareas">
             <div v-for="tarea in tareasInternas" :key="tarea.id" class="card-tarea" style="background-color: var(--status-urgente-bg); border-left: 4px solid var(--warning);">
@@ -31,17 +31,24 @@
                 <h3>{{ tarea.descripcion }}</h3>
                 <span :class="['badge-sm', estadoClass(tarea.mi_estado)]">{{ tarea.mi_estado }}</span>
               </div>
-              <p class="tarea-horas">Asignado por Jefe de Taller</p>
+              <p class="tarea-horas">
+                Asignado por Jefe de Taller
+                <span v-if="tarea.es_rutina" class="badge-sm badge-rutina" title="Tarea rutinaria: siempre disponible, no se cierra">🔁 Rutina</span>
+              </p>
               <div class="acciones-tarea mt-10">
-                <button v-if="tarea.mi_estado !== 'En Curso'" v-can="'tarea_operar'" @click="toggleTareaInterna(tarea)" class="btn btn-outline btn-sm w-100">▶ Iniciar Rutina</button>
+                <button v-if="tarea.mi_estado !== 'En Curso'" v-can="'tarea_operar'" @click="toggleTareaInterna(tarea)" class="btn btn-outline btn-sm w-100">▶ Iniciar{{ tarea.es_rutina ? ' Rutina' : '' }}</button>
                 <button v-else v-can="'tarea_operar'" @click="toggleTareaInterna(tarea)" class="btn btn-warning btn-sm w-100">⏸ Detener / Pausar</button>
+
+                <!-- Solo las extraordinarias se pueden cerrar; las rutinas nunca -->
+                <button v-if="!tarea.es_rutina && ['En Curso', 'Pausada'].includes(tarea.mi_estado)" v-can="'tarea_operar'" @click="finalizarTareaInterna(tarea)" class="btn btn-success btn-sm w-100 mt-5">✅ Finalizar</button>
               </div>
             </div>
           </div>
+          <p v-if="tareasInternas.length === 0" class="empty-state">No tenés tareas internas asignadas por el momento.</p>
         </div>
 
         <!-- SECCIÓN OTs DE CLIENTES -->
-        <div v-if="tareasCliente.length > 0">
+        <div v-if="activeTab === 'mecanico-ot'" v-show="tareasCliente.length > 0">
           <h3 style="color: var(--primary-dark); border-bottom: 1px solid var(--border-soft); padding-bottom: 8px;">Órdenes de Trabajo</h3>
           <div class="grid-tareas">
             
@@ -124,6 +131,12 @@ const router = useRouter()
 const tareas = ref([])
 const loading = ref(true)
 const legajo = ref(localStorage.getItem('legajoMecanico') || '')
+
+const tabs = [
+  { id: 'mecanico-ot', label: 'Órdenes de Trabajo' },
+  { id: 'mecanico-interna', label: 'Orden Interna' }
+]
+const activeTab = ref('mecanico-ot')
 
 const showModalPausa = ref(false)
 const showModalFinalizar = ref(false)
@@ -322,6 +335,25 @@ const toggleTareaInterna = async (tarea) => {
 
 
 
+const finalizarTareaInterna = async (tarea) => {
+  if (tarea.es_rutina) return // por las dudas: las rutinas nunca se cierran
+
+  const previo = tarea.mi_estado
+  tarea.mi_estado = 'Finalizada'
+
+  try {
+    await fetchJSON(`/actividades/${tarea.id}/estado`, {
+      method: 'POST',
+      body: JSON.stringify({ nuevo_estado: 'Finalizada', legajo_mecanico: legajo.value })
+    })
+    toast.success('Tarea interna finalizada.')
+    cargarTareas()
+  } catch (err) {
+    tarea.mi_estado = previo
+    toast.error(errMsg(err))
+  }
+}
+
 onMounted(() => {
   if (!legajo.value) {
     router.push({ name: 'mecanico-login' })
@@ -356,6 +388,7 @@ onUnmounted(() => {
 .tarea-header h3 { margin: 0; font-size: 1.05rem; color: var(--primary); }
 .tarea-vehiculo { margin: 2px 0; font-size: 0.9rem; }
 .tarea-cliente { margin: 0 0 8px; color: var(--muted); font-size: 0.85rem; }
+.badge-rutina { margin-left: 6px; background: var(--primary); }
 .tarea-desc { font-size: 0.9rem; margin-bottom: 4px; }
 .tarea-horas { font-size: 0.8rem; color: var(--muted); margin-bottom: 12px; }
 .acciones-tarea { display: flex; gap: 8px; flex-wrap: wrap; }

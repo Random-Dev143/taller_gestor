@@ -25,49 +25,39 @@ function parseFechas(req) {
 
 // NUEVAS RUTAS MODULARES (Preparadas para la Fase 2)
 router.get('/mensual/financiero', async (req, res) => {
-    try {
-        const { inicio, fin, inicioAnterior, finAnterior } = parseFechas(req);
-        res.json(await getFinanciero(inicio, fin, inicioAnterior, finAnterior));
-    } catch (error) { res.status(500).json({ error: error.message }); }
+    const { inicio, fin, inicioAnterior, finAnterior } = parseFechas(req);
+    res.json(await getFinanciero(inicio, fin, inicioAnterior, finAnterior));
 });
 
 router.get('/mensual/operativo', async (req, res) => {
-    try {
-        const { inicio, fin } = parseFechas(req);
-        res.json(await getOperativo(inicio, fin));
-    } catch (error) { res.status(500).json({ error: error.message }); }
+    const { inicio, fin } = parseFechas(req);
+    res.json(await getOperativo(inicio, fin));
 });
 
 router.get('/mensual/taller', async (req, res) => {
-    try {
-        const { inicio, fin } = parseFechas(req);
-        res.json(await getTaller(inicio, fin, req.query.filtro_cuellos));
-    } catch (error) { res.status(500).json({ error: error.message }); }
+    const { inicio, fin } = parseFechas(req);
+    res.json(await getTaller(inicio, fin, req.query.filtro_cuellos));
 });
 
 
 // RUTA LEGACY (Mantiene vivo al Frontend actual)
 router.get('/mensual', async (req, res) => {
-    try {
-        const fechas = parseFechas(req);
-        
-        // Ejecutamos los 3 servicios en paralelo para mayor velocidad
-        const [financiero, operativo, taller] = await Promise.all([
-            getFinanciero(fechas.inicio, fechas.fin, fechas.inicioAnterior, fechas.finAnterior),
-            getOperativo(fechas.inicio, fechas.fin),
-            getTaller(fechas.inicio, fechas.fin, req.query.filtro_cuellos)
-        ]);
+    const fechas = parseFechas(req);
 
-        // Ensamblamos y devolvemos exactamente lo mismo que devolvía antes
-        res.json({
-            mes: fechas.textoRango,
-            ...financiero,
-            ...operativo,
-            ...taller
-        });
-    } catch (error) { 
-        res.status(500).json({ error: error.message }); 
-    }
+    // Ejecutamos los 3 servicios en paralelo para mayor velocidad
+    const [financiero, operativo, taller] = await Promise.all([
+        getFinanciero(fechas.inicio, fechas.fin, fechas.inicioAnterior, fechas.finAnterior),
+        getOperativo(fechas.inicio, fechas.fin),
+        getTaller(fechas.inicio, fechas.fin, req.query.filtro_cuellos)
+    ]);
+
+    // Ensamblamos y devolvemos exactamente lo mismo que devolvía antes
+    res.json({
+        mes: fechas.textoRango,
+        ...financiero,
+        ...operativo,
+        ...taller
+    });
 });
 
 module.exports = router;

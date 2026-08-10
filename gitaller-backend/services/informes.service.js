@@ -241,6 +241,12 @@ async function getOperativo(inicio, fin) {
         porLegajo[mec.legajo] = {
             legajo: mec.legajo, nombre: mec.nombre, ot_set: new Set(),
             hs_estimadas: 0, hs_productivas: 0, hs_internas: 0,
+            // Horas de tareas internas EXTRAORDINARIAS (es_rutina = 0): a
+            // diferencia de las rutinas, tienen un tiempo_estimado asignado
+            // por el Jefe y sí deben impactar en eficacia/eficiencia — pero
+            // por separado de hs_productivas/hs_estimadas (que son estrictamente
+            // de OTs de cliente), para no mezclarlas con ot_trabajadas/facturación.
+            hs_internas_extraordinarias: 0, hs_estimadas_internas: 0,
             facturacion_generada: 0, rentabilidad_eficiencia: 0, sesiones: []
         };
     }
@@ -260,7 +266,7 @@ async function getOperativo(inicio, fin) {
     // de repartir la sesión completa entre todo el equipo.
     const sesiones = await all(`
         SELECT
-            ta.legajo_mecanico AS legajo, l.nombre, a.estado,
+            ta.legajo_mecanico AS legajo, l.nombre, a.estado, a.es_rutina,
             a.id AS actividad_id, a.ot, a.tiempo_estimado, a.tiempo_real AS tiempo_real_total,
             ta.inicio, ta.fin, c.nombre AS cliente_nombre,
             (o.monto_mano_obra + o.monto_mano_obra_garantia) AS monto_mano_obra_total
@@ -289,7 +295,24 @@ async function getOperativo(inicio, fin) {
         m.sesiones.push(s);
 
         if (s.ot === '0000') {
+            // Las horas de CUALQUIER tarea interna (rutina o extraordinaria)
+            // siguen sumando acá: alimentan "Distribución del Tiempo" y
+            // hs_empleadas/tiempo_muerto exactamente igual que antes.
             m.hs_internas += horasPeriodo;
+
+            if (!s.es_rutina) {
+                // Extraordinaria: además, cuenta para eficacia/eficiencia con
+                // su propio tiempo estimado — en un balde APARTE para no
+                // duplicar horas dentro de hs_empleadas/tiempo_muerto.
+                m.hs_internas_extraordinarias += horasPeriodo;
+                const fraccionInterna = s.tiempo_real_total > 0 ? Math.min(1, horasPeriodo / s.tiempo_real_total) : 0;
+                m.hs_estimadas_internas += s.tiempo_estimado * fraccionInterna;
+            }
+            // Las rutinas no tienen "estimado" real (suceden, no se miden
+            // contra un presupuesto), así que nunca entran en eficacia ni
+            // eficiencia — quedan afuera de ambos porcentajes.
+            // '0000' tampoco es una OT de cliente en ningún caso: no se
+            // agrega a ot_set ni genera facturación/rentabilidad.
             continue;
         }
 
@@ -355,12 +378,18 @@ async function getOperativo(inicio, fin) {
         const hs_internas = parseFloat(m.hs_internas.toFixed(2));
         const hs_empleadas = parseFloat((hs_productivas + hs_internas).toFixed(2));
 
-        
+        // Horas de tareas internas EXTRAORDINARIAS (subconjunto de hs_internas,
+        // ya separadas más arriba). Solo estas — nunca las rutinas — entran
+        // en el cálculo de eficacia/eficiencia, en un balde propio para no
+        // duplicar horas ya contadas en hs_empleadas/tiempo_muerto.
+        const hs_internas_extraordinarias = parseFloat(m.hs_internas_extraordinarias.toFixed(2));
+        const hs_estimadas_internas = parseFloat(m.hs_estimadas_internas.toFixed(2));
 
         return {
             legajo: m.legajo, nombre: m.nombre,
             ot_trabajadas: m.ot_set.size,
             hs_estimadas, hs_productivas, hs_internas,
+            hs_internas_extraordinarias, hs_estimadas_internas,
             facturacion_generada: parseFloat(m.facturacion_generada.toFixed(2)),
             rentabilidad_eficiencia: parseFloat(m.rentabilidad_eficiencia.toFixed(2)),
             hs_empleadas,
@@ -368,8 +397,27 @@ async function getOperativo(inicio, fin) {
             dias_asistidos: diasDelMecanico.length,
             dias_ausentes, dias_ausentes_count: dias_ausentes.length,
             tiempo_muerto: Math.max(0, parseFloat((hs_exigidas - hs_productivas - hs_internas).toFixed(2))),
-            eficiencia_porcentaje: hs_productivas > 0 ? parseFloat(((hs_estimadas / hs_productivas) * 100).toFixed(2)) : 0,
-            productividad_porcentaje: hs_exigidas > 0 ? parseFloat((hs_productivas / hs_exigidas * 100).toFixed(2)) : 0,
+            // Totales combinados (se mantienen para no romper nada que ya
+            // los consuma): mezclan OT + tareas internas extraordinarias.
+            eficiencia_porcentaje: (hs_productivas + hs_internas_extraordinarias) > 0
+                ? parseFloat((((hs_estimadas + hs_estimadas_internas) / (hs_productivas + hs_internas_extraordinarias)) * 100).toFixed(2)) : 0,
+            productividad_porcentaje: hs_exigidas > 0
+                ? parseFloat(((hs_productivas + hs_internas_extraordinarias) / hs_exigidas * 100).toFixed(2)) : 0,
+            // Desglose OT vs. tareas internas extraordinarias.
+            // Eficacia SÍ es aditiva (ambas son porciones de hs_exigidas):
+            // productividad_ot_porcentaje + productividad_interna_porcentaje = productividad_porcentaje.
+            productividad_ot_porcentaje: hs_exigidas > 0
+                ? parseFloat((hs_productivas / hs_exigidas * 100).toFixed(2)) : 0,
+            productividad_interna_porcentaje: hs_exigidas > 0
+                ? parseFloat((hs_internas_extraordinarias / hs_exigidas * 100).toFixed(2)) : 0,
+            // Eficiencia NO es aditiva (cada una es un ratio propio: estimado
+            // vs. real de ese grupo) — se informan por separado, o `null` si
+            // el mecánico no trabajó nada de ese tipo en el período (para que
+            // el frontend pueda mostrar "sin datos" en vez de un 0% engañoso).
+            eficiencia_ot_porcentaje: hs_productivas > 0
+                ? parseFloat(((hs_estimadas / hs_productivas) * 100).toFixed(2)) : null,
+            eficiencia_interna_porcentaje: hs_internas_extraordinarias > 0
+                ? parseFloat(((hs_estimadas_internas / hs_internas_extraordinarias) * 100).toFixed(2)) : null,
             mapa_ocio: construirMapaOcio(diasHabilesPeriodo, m.sesiones, excepcionesMecanico),
             serie_diaria: construirSerieDiaria(diasHabilesPeriodo, m.sesiones, excepcionesMecanico)
         };

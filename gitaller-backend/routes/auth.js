@@ -4,7 +4,7 @@ const { run, get, all } = require('../config/database');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
-const { JWT_SECRET, extraerToken } = require('../middlewares/auth');
+const { JWT_SECRET, extraerToken, obtenerUsuarioConPermisos } = require('../middlewares/auth');
 
 //CREAR ADMIN POR DEFECTO
 async function asegurarAdmin() {
@@ -39,22 +39,18 @@ router.post('/register', async (req, res) => {
         return res.status(400).json({ error: 'Faltan datos obligatorios' });
     }
 
-    try {
-        const existente = await get(`SELECT id FROM usuarios WHERE email = ?`, [email]);
-        if (existente) return res.status(400).json({ error: 'El email ya está registrado' });
+    const existente = await get(`SELECT id FROM usuarios WHERE email = ?`, [email]);
+    if (existente) return res.status(400).json({ error: 'El email ya está registrado' });
 
-        const hash = bcrypt.hashSync(password, 10);
-        const nuevoId = crypto.randomUUID();
+    const hash = bcrypt.hashSync(password, 10);
+    const nuevoId = crypto.randomUUID();
 
-        await run(
-            `INSERT INTO usuarios (id, email, password_hash, nombre_completo) VALUES (?, ?, ?, ?)`,
-            [nuevoId, email, hash, nombre_completo]
-        );
+    await run(
+        `INSERT INTO usuarios (id, email, password_hash, nombre_completo) VALUES (?, ?, ?, ?)`,
+        [nuevoId, email, hash, nombre_completo]
+    );
 
-        res.json({ status: 'Registro exitoso. Espere la aprobación del administrador.' });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
+    res.json({ status: 'Registro exitoso. Espere la aprobación del administrador.' });
 });
 
 
@@ -62,63 +58,58 @@ router.post('/register', async (req, res) => {
 router.post('/login', async (req, res) => {
     const { email, password } = req.body;
 
-    try {
-        // Obtenemos el usuario y el nombre de su rol relacional
-        const usuario = await get(`
-            SELECT u.*, r.nombre as rol_nombre 
-            FROM usuarios u 
-            LEFT JOIN roles r ON u.rol_id = r.id 
-            WHERE u.email = ?
-        `, [email]);
+    // Obtenemos el usuario y el nombre de su rol relacional
+    const usuario = await get(`
+        SELECT u.*, r.nombre as rol_nombre 
+        FROM usuarios u 
+        LEFT JOIN roles r ON u.rol_id = r.id 
+        WHERE u.email = ?
+    `, [email]);
 
-        if (!usuario) return res.status(401).json({ error: 'Credenciales inválidas' });
+    if (!usuario) return res.status(401).json({ error: 'Credenciales inválidas' });
 
-        const passwordValido = bcrypt.compareSync(password, usuario.password_hash);
-        if (!passwordValido) return res.status(401).json({ error: 'Credenciales inválidas' });
+    const passwordValido = bcrypt.compareSync(password, usuario.password_hash);
+    if (!passwordValido) return res.status(401).json({ error: 'Credenciales inválidas' });
 
-        if (usuario.estado !== 'aprobado') {
-            return res.status(403).json({ error: 'Su cuenta está pendiente de aprobación o suspendida.' });
-        }
-
-        // Buscamos el array de permisos exactos que tiene este rol
-        let permisosArreglo = [];
-        if (usuario.rol_id) {
-            const permisosRaw = await all(`SELECT permiso_clave FROM rol_permisos WHERE rol_id = ?`, [usuario.rol_id]);
-            permisosArreglo = permisosRaw.map(p => p.permiso_clave);
-        }
-
-        // Generamos el token incluyendo el nuevo array de permisos
-        const payload = {
-            id: usuario.id,
-            email: usuario.email,
-            nombre: usuario.nombre_completo,
-            rol: usuario.rol_nombre,
-            rol_id: usuario.rol_id,
-            legajo: usuario.legajo,
-            estado: usuario.estado,
-            permisos: permisosArreglo
-        };
-        const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '12h' });
-
-        // AUTENTICACIÓN VÍA BEARER TOKEN:
-        // Se abandona el uso de cookies de sesión porque la app se usa desde
-        // múltiples dispositivos en la red (PC con Tauri, celulares y TV vía
-        // navegador), cada uno accediendo por una IP/origen distinto. Las
-        // cookies con SameSite=None requieren HTTPS real (Secure) para que
-        // los navegadores/webviews modernos las acepten, lo cual es
-        // inviable de gestionar en varios dispositivos dentro de una LAN.
-        // En su lugar, el token se devuelve en el body y el frontend lo
-        // guarda y lo reenvía en el header "Authorization: Bearer <token>"
-        // en cada request.
-        res.json({
-            status: 'Login exitoso',
-            token,
-            usuario: payload
-        });
-
-    } catch (error) {
-        res.status(500).json({ error: error.message });
+    if (usuario.estado !== 'aprobado') {
+        return res.status(403).json({ error: 'Su cuenta está pendiente de aprobación o suspendida.' });
     }
+
+    // Buscamos el array de permisos exactos que tiene este rol
+    let permisosArreglo = [];
+    if (usuario.rol_id) {
+        const permisosRaw = await all(`SELECT permiso_clave FROM rol_permisos WHERE rol_id = ?`, [usuario.rol_id]);
+        permisosArreglo = permisosRaw.map(p => p.permiso_clave);
+    }
+
+    // Generamos el token incluyendo el nuevo array de permisos
+    const payload = {
+        id: usuario.id,
+        email: usuario.email,
+        nombre: usuario.nombre_completo,
+        rol: usuario.rol_nombre,
+        rol_id: usuario.rol_id,
+        legajo: usuario.legajo,
+        estado: usuario.estado,
+        permisos: permisosArreglo
+    };
+    const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '12h' });
+
+    // AUTENTICACIÓN VÍA BEARER TOKEN:
+    // Se abandona el uso de cookies de sesión porque la app se usa desde
+    // múltiples dispositivos en la red (PC con Tauri, celulares y TV vía
+    // navegador), cada uno accediendo por una IP/origen distinto. Las
+    // cookies con SameSite=None requieren HTTPS real (Secure) para que
+    // los navegadores/webviews modernos las acepten, lo cual es
+    // inviable de gestionar en varios dispositivos dentro de una LAN.
+    // En su lugar, el token se devuelve en el body y el frontend lo
+    // guarda y lo reenvía en el header "Authorization: Bearer <token>"
+    // en cada request.
+    res.json({
+        status: 'Login exitoso',
+        token,
+        usuario: payload
+    });
 });
 
 // --- VERIFICAR SESIÓN (Útil para que el frontend sepa si está logueado al recargar la página) ---
@@ -128,7 +119,30 @@ router.get('/me', async (req, res) => {
 
     try {
         const decoded = jwt.verify(token, JWT_SECRET);
-        res.json({ loggedIn: true, usuario: decoded });
+
+        // Igual que en requireAuth: no confiamos en los permisos/estado que
+        // traía el token al momento del login — los recalculamos en vivo
+        // contra la base para que checkSession() (llamado en cada
+        // navegación del frontend) siempre refleje el estado actual real,
+        // sin esperar a que expire el token de 12hs.
+        const usuario = await obtenerUsuarioConPermisos(decoded.id);
+        if (!usuario || usuario.estado !== 'aprobado') {
+            return res.json({ loggedIn: false });
+        }
+
+        res.json({
+            loggedIn: true,
+            usuario: {
+                id: usuario.id,
+                email: usuario.email,
+                nombre: usuario.nombre_completo,
+                rol: usuario.rol_nombre,
+                rol_id: usuario.rol_id,
+                legajo: usuario.legajo,
+                estado: usuario.estado,
+                permisos: usuario.permisos
+            }
+        });
     } catch {
         res.json({ loggedIn: false });
     }
