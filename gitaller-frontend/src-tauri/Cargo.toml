@@ -5,7 +5,7 @@ description = "Gestor integral de taller"
 authors = ["Facundo Rua"]
 license = ""
 repository = "https://github.com/Random-Dev143/taller_gestor"
-edition = "2026"
+edition = "2021"
 rust-version = "1.77.2"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
