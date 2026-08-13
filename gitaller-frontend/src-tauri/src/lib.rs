@@ -1,6 +1,6 @@
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager, RunEvent};
-use tauri_plugin_shell::{ShellExt, process::CommandChild, process::CommandEvent};
+use tauri_plugin_shell::{process::CommandChild, process::CommandEvent, ShellExt};
 
 // 1. ESTRUCTURA DE ESTADO:
 // Esto crea el "cajón" en la memoria RAM donde vamos a guardar
@@ -82,6 +82,8 @@ fn stop_server(app: AppHandle) -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         // Inicializamos el plugin de shell (obligatorio para los sidecars)
         .plugin(tauri_plugin_shell::init())
         // Necesarios para que los botones de "Previsualizar"/"Descargar" PDF
