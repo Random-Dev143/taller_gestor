@@ -41,7 +41,9 @@ process.env.JWT_SECRET = obtenerOGenerarSecret();
 // Cargamos igual un .env opcional (junto al propio ejecutable) para otras
 // variables no sensibles, como PORT. Ya no se usa para JWT_SECRET.
 const exeDir = path.dirname(process.pkg ? process.execPath : __filename);
-require('dotenv').config({ path: path.join(exeDir, '.env') });
+// quiet: true evita que dotenv imprima sus "tips" promocionales (incluye
+// anuncios de servicios de terceros) en cada arranque del servidor.
+require('dotenv').config({ path: path.join(exeDir, '.env'), quiet: true });
 
 const express = require('express');
 const cors = require('cors');

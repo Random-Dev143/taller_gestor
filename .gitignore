@@ -21,4 +21,5 @@ backups/
 *.env
 dotenv
 build.bat
-gitaller-frontend/src-tauri/target/
+GEMINI.md
+*.patch

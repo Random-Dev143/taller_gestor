@@ -1,0 +1,345 @@
+'use strict';
+const { all } = require('../../config/database');
+const { getFeriadosSet } = require('../feriados.service');
+
+// Horarios laborales centralizados: antes estaban hardcodeados en 3 lugares
+// distintos (construirMapaOcio, cálculo de días hábiles y hs_exigidas).
+const HORAS_LABORALES = { habil: [8, 9, 10, 11, 12, 14, 15, 16, 17], sabado: [8, 9, 10, 11, 12] };
+const horasDelDia = (diaSemana) => diaSemana === 6 ? HORAS_LABORALES.sabado : HORAS_LABORALES.habil;
+
+// Función matemática para escanear huecos de inactividad
+function construirMapaOcio(diasHabiles, sesiones, excepcionesPorFecha) {
+    const heatmap = {};
+    for (let d = 1; d <= 6; d++) {
+        heatmap[d] = {};
+        for (const h of horasDelDia(d)) heatmap[d][h] = 0;
+    }
+
+    const bucketCapacity = {};
+
+    // 1. Llenar los "baldes" de horas hábiles disponibles (60 min por hora),
+    //    prorrateando las excepciones parciales (ej: 4hs de permiso) en vez de
+    //    solo excluir el día completo cuando son >= 8hs.
+    for (const fecha of diasHabiles) {
+        const exc = excepcionesPorFecha.get(fecha);
+        const horasDescontadas = exc ? exc.horas_descontadas : 0;
+
+        // Día completo justificado: no aporta capacidad, no cuenta como ocio.
+        if (horasDescontadas >= 8) continue;
+
+        const dSemana = new Date(fecha + 'T12:00:00Z').getDay();
+        const slots = horasDelDia(dSemana);
+
+        // Minutos a descontar del total de franjas de ese día (permiso parcial),
+        // repartidos secuencialmente entre las franjas disponibles.
+        let minutosADescontar = Math.round(horasDescontadas * 60);
+
+        for (const h of slots) {
+            const key = `${fecha}-${h}`;
+            const capacidadFranja = Math.max(0, 60 - minutosADescontar);
+            minutosADescontar = Math.max(0, minutosADescontar - 60);
+
+            bucketCapacity[key] = capacidadFranja;
+            heatmap[dSemana][h] += capacidadFranja; // Ocio potencial ya neto de permisos
+        }
+    }
+
+    // 2. Restar los minutos exactos trabajados en cada balde
+    for (const s of sesiones) {
+        let curr = new Date(s.inicio + 'Z');
+        const end = s.fin ? new Date(s.fin + 'Z') : new Date();
+
+        while (curr < end) {
+            const fecha = curr.toISOString().split('T')[0];
+            const h = curr.getHours();
+            const dSemana = curr.getDay();
+
+            const nextHour = new Date(curr);
+            nextHour.setHours(h + 1, 0, 0, 0);
+            const chunkEnd = nextHour < end ? nextHour : end;
+            const mins = (chunkEnd - curr) / 60000;
+
+            const key = `${fecha}-${h}`;
+            if (bucketCapacity[key] && heatmap[dSemana] && heatmap[dSemana][h] !== undefined) {
+                heatmap[dSemana][h] = Math.max(0, heatmap[dSemana][h] - mins);
+            }
+            curr = chunkEnd;
+        }
+    }
+
+    // 3. Formatear para el Frontend
+    const result = [];
+    for (let d = 1; d <= 6; d++) {
+        for (const h of horasDelDia(d)) {
+            result.push({ dia: d, hora: h, minutos_ocio: Math.round(heatmap[d][h]) });
+        }
+    }
+    return result;
+}
+
+const TIPO_DESCANSO = {
+  NORMAL: 'normal',
+  FIN_DE_SEMANA: 'fin_de_semana',
+  FIN_DE_SEMANA_LARGO: 'fin_de_semana_largo', // finde con feriado pegado (puente)
+  PERMISO_PREVIO: 'permiso_previo'            // el día calendario anterior tuvo excepción >= 8hs
+};
+
+// Serie diaria de ocio por mecánico: a diferencia del heatmap semanal (que agrupa
+// por día-de-semana + hora, perdiendo la fecha real), esta serie conserva cada
+// fecha puntual y la etiqueta según qué la precedió, para poder comparar
+// "primer día después de un descanso" vs "día normal".
+function construirSerieDiaria(diasHabilesPeriodo, sesiones, excepcionesMecanico) {
+    const minutosTrabajadosPorFecha = new Map();
+    for (const s of sesiones) {
+        let curr = new Date(s.inicio + 'Z');
+        const end = s.fin ? new Date(s.fin + 'Z') : new Date();
+
+        while (curr < end) {
+            const fecha = curr.toISOString().split('T')[0];
+            const h = curr.getHours();
+            const nextHour = new Date(curr);
+            nextHour.setHours(h + 1, 0, 0, 0);
+            const chunkEnd = nextHour < end ? nextHour : end;
+            const mins = (chunkEnd - curr) / 60000;
+
+            if (horasDelDia(curr.getDay()).includes(h)) {
+                minutosTrabajadosPorFecha.set(fecha, (minutosTrabajadosPorFecha.get(fecha) || 0) + mins);
+            }
+            curr = chunkEnd;
+        }
+    }
+
+    const result = [];
+    for (let i = 0; i < diasHabilesPeriodo.length; i++) {
+        const fecha = diasHabilesPeriodo[i];
+        const exc = excepcionesMecanico.get(fecha);
+        const horasDescontadas = exc ? exc.horas_descontadas : 0;
+
+        // Día completo ausente/justificado: sin señal de "cómo trabajó", se excluye del patrón
+        if (horasDescontadas >= 8) continue;
+
+        const dSemana = new Date(fecha + 'T12:00:00Z').getDay();
+        const capacidadMin = horasDelDia(dSemana).length * 60 - Math.round(horasDescontadas * 60);
+        if (capacidadMin <= 0) continue;
+
+        const trabajadosMin = minutosTrabajadosPorFecha.get(fecha) || 0;
+        const ocioMin = Math.max(0, capacidadMin - trabajadosMin);
+
+        // ¿Qué precedió a este día hábil?
+        const fechaAnteriorHabil = diasHabilesPeriodo[i - 1];
+        const gapCalendario = fechaAnteriorHabil
+            ? Math.round((new Date(fecha) - new Date(fechaAnteriorHabil)) / 86400000)
+            : 0;
+
+        const fechaCalAnteriorStr = new Date(new Date(fecha + 'T12:00:00Z').getTime() - 86400000).toISOString().split('T')[0];
+        const excDiaAnteriorCalendario = excepcionesMecanico.get(fechaCalAnteriorStr);
+
+        let tipo_descanso = TIPO_DESCANSO.NORMAL;
+        if (gapCalendario >= 3) tipo_descanso = TIPO_DESCANSO.FIN_DE_SEMANA_LARGO;
+        else if (gapCalendario === 2) tipo_descanso = TIPO_DESCANSO.FIN_DE_SEMANA;
+        else if (excDiaAnteriorCalendario && excDiaAnteriorCalendario.horas_descontadas >= 8) tipo_descanso = TIPO_DESCANSO.PERMISO_PREVIO;
+
+        result.push({
+            fecha,
+            minutos_ocio: Math.round(ocioMin),
+            minutos_trabajados: Math.round(trabajadosMin),
+            capacidad_minutos: Math.round(capacidadMin),
+            ocio_porcentaje: parseFloat(((ocioMin / capacidadMin) * 100).toFixed(1)),
+            tipo_descanso
+        });
+    }
+    return result;
+}
+
+async function getOperativo(inicio, fin) {
+    if (!inicio || !fin) {
+        throw new Error('Debe indicar fecha de inicio y fin para el informe operativo');
+    }
+
+    const feriadosSet = await getFeriadosSet();
+    const rangeStart = new Date(inicio + 'T00:00:00Z');
+    const rangeEnd = new Date(fin + 'T00:00:00Z');
+
+    const diasHabilesPeriodo = [];
+    {
+        const limite = new Date(Math.min(rangeEnd.getTime(), Date.now()));
+        for (let cursor = new Date(rangeStart); cursor < limite; cursor = new Date(cursor.getTime() + 86400000)) {
+            const fecha = cursor.toISOString().split('T')[0];
+            const dia = new Date(fecha + 'T12:00:00Z').getDay();
+            if (dia >= 1 && dia <= 6 && !feriadosSet.has(fecha)) diasHabilesPeriodo.push(fecha);
+        }
+    }
+
+    const mecanicosActivos = await all(`SELECT legajo, nombre FROM legajos WHERE rol IN ('mecanico', 'jefe')`);
+    const porLegajo = {};
+    for (const mec of mecanicosActivos) {
+        porLegajo[mec.legajo] = {
+            legajo: mec.legajo, nombre: mec.nombre, ot_set: new Set(),
+            hs_estimadas: 0, hs_productivas: 0, hs_internas: 0,
+            hs_internas_extraordinarias: 0, hs_estimadas_internas: 0,
+            facturacion_generada: 0, rentabilidad_eficiencia: 0, sesiones: []
+        };
+    }
+
+    const denomEstimadoPorOT = await all(`
+        SELECT ot, SUM(tiempo_estimado) AS denom_estimado
+        FROM actividades WHERE estado = 'Finalizada' GROUP BY ot
+    `);
+    const denomPorOTMap = new Map(denomEstimadoPorOT.map(r => [r.ot, r.denom_estimado]));
+
+    const sesiones = await all(`
+        SELECT
+            ta.legajo_mecanico AS legajo, l.nombre, a.estado, a.es_rutina,
+            a.id AS actividad_id, a.ot, a.tiempo_estimado, a.tiempo_real AS tiempo_real_total,
+            ta.inicio, ta.fin, c.nombre AS cliente_nombre,
+            (o.monto_mano_obra + o.monto_mano_obra_garantia) AS monto_mano_obra_total
+        FROM tiempos_actividad ta
+        JOIN actividades a ON ta.actividad_id = a.id
+        JOIN legajos l ON ta.legajo_mecanico = l.legajo
+        JOIN ordenes o ON a.ot = o.ot
+        JOIN unidades u ON o.patente = u.patente
+        JOIN clientes c ON u.cliente_id = c.id
+        WHERE ta.inicio < ? AND (ta.fin IS NULL OR ta.fin > ?)
+          AND (ta.fin IS NOT NULL OR (ta.id = (SELECT MAX(id) FROM tiempos_actividad WHERE actividad_id = a.id AND legajo_mecanico = ta.legajo_mecanico)))
+    `, [fin, inicio]);
+
+    for (const s of sesiones) {
+        const inicioSesion = new Date(s.inicio + 'Z');
+        const finSesion = s.fin ? new Date(s.fin + 'Z') : new Date();
+        const start = Math.max(inicioSesion, rangeStart);
+        const end = Math.min(finSesion, rangeEnd);
+        const horasPeriodo = Math.max(0, (end - start) / 3600000);
+
+        if (horasPeriodo <= 0) continue;
+
+        const m = porLegajo[s.legajo];
+        if (!m) continue;
+
+        m.sesiones.push(s);
+
+        if (s.ot === '0000') {
+            m.hs_internas += horasPeriodo;
+
+            if (!s.es_rutina) {
+                m.hs_internas_extraordinarias += horasPeriodo;
+                const fraccionInterna = s.tiempo_real_total > 0 ? Math.min(1, horasPeriodo / s.tiempo_real_total) : 0;
+                m.hs_estimadas_internas += s.tiempo_estimado * fraccionInterna;
+            }
+            continue;
+        }
+
+        m.ot_set.add(s.ot);
+        m.hs_productivas += horasPeriodo;
+        const fraccion = s.tiempo_real_total > 0 ? Math.min(1, horasPeriodo / s.tiempo_real_total) : 0;
+        m.hs_estimadas += s.tiempo_estimado * fraccion;
+
+        const denomEstimado = denomPorOTMap.get(s.ot) || 0;
+        if (s.estado === 'Finalizada' && denomEstimado > 0) {
+            const tasaPorHoraEstimada = s.monto_mano_obra_total / denomEstimado;
+            m.facturacion_generada += s.tiempo_estimado * tasaPorHoraEstimada * fraccion;
+            m.rentabilidad_eficiencia += (s.tiempo_estimado - s.tiempo_real_total) * tasaPorHoraEstimada * fraccion;
+        }
+    }
+
+    const diasActivosRows = await all(`
+        SELECT DISTINCT ta.legajo_mecanico AS legajo, DATE(ta.inicio) as fecha
+        FROM tiempos_actividad ta
+        WHERE ta.legajo_mecanico IS NOT NULL AND ta.inicio >= ? AND ta.inicio < ?
+    `, [inicio, fin]);
+
+    const excepcionesRows = await all(`SELECT id, legajo, DATE(fecha) as fecha, motivo, horas_descontadas FROM excepciones_mecanicos WHERE DATE(fecha) >= ? AND DATE(fecha) < ?`, [inicio, fin]);
+
+    const diasActivosPorLegajo = new Map();
+    for (const d of diasActivosRows) {
+        if (!diasActivosPorLegajo.has(d.legajo)) diasActivosPorLegajo.set(d.legajo, []);
+        diasActivosPorLegajo.get(d.legajo).push(d.fecha);
+    }
+
+    const excepcionesPorLegajoFecha = new Map(); // legajo -> Map(fecha -> excepcion)
+    for (const e of excepcionesRows) {
+        if (!excepcionesPorLegajoFecha.has(e.legajo)) excepcionesPorLegajoFecha.set(e.legajo, new Map());
+        excepcionesPorLegajoFecha.get(e.legajo).set(e.fecha, e);
+    }
+
+    const tiempos_mecanicos = Object.values(porLegajo).map(m => {
+        const diasDelMecanico = diasActivosPorLegajo.get(m.legajo) || [];
+        const diasTrabajadosSet = new Set(diasDelMecanico);
+        const excepcionesMecanico = excepcionesPorLegajoFecha.get(m.legajo) || new Map();
+
+        let hs_exigidas = 0;
+        for (const fecha of diasDelMecanico) {
+            const esFeriado = feriadosSet.has(fecha);
+            let base_dia = esFeriado ? 0 : (new Date(fecha + 'T12:00:00Z').getDay() === 6 ? 5 : 10);
+            const exc = excepcionesMecanico.get(fecha);
+            if (exc) base_dia -= exc.horas_descontadas;
+            hs_exigidas += Math.max(0, base_dia);
+        }
+
+        const dias_ausentes = diasHabilesPeriodo
+            .filter(fecha => !diasTrabajadosSet.has(fecha))
+            .map(fecha => {
+                const exc = excepcionesMecanico.get(fecha);
+                return { fecha, motivo: exc ? exc.motivo : null, excepcion_id: exc ? exc.id : null };
+            });
+
+        const hs_estimadas = parseFloat(m.hs_estimadas.toFixed(2));
+        const hs_productivas = parseFloat(m.hs_productivas.toFixed(2));
+        const hs_internas = parseFloat(m.hs_internas.toFixed(2));
+        const hs_empleadas = parseFloat((hs_productivas + hs_internas).toFixed(2));
+
+        const hs_internas_extraordinarias = parseFloat(m.hs_internas_extraordinarias.toFixed(2));
+        const hs_estimadas_internas = parseFloat(m.hs_estimadas_internas.toFixed(2));
+
+        return {
+            legajo: m.legajo, nombre: m.nombre,
+            ot_trabajadas: m.ot_set.size,
+            hs_estimadas, hs_productivas, hs_internas,
+            hs_internas_extraordinarias, hs_estimadas_internas,
+            facturacion_generada: parseFloat(m.facturacion_generada.toFixed(2)),
+            rentabilidad_eficiencia: parseFloat(m.rentabilidad_eficiencia.toFixed(2)),
+            hs_empleadas,
+            hs_exigidas: parseFloat(hs_exigidas.toFixed(2)),
+            dias_asistidos: diasDelMecanico.length,
+            dias_ausentes, dias_ausentes_count: dias_ausentes.length,
+            tiempo_muerto: Math.max(0, parseFloat((hs_exigidas - hs_productivas - hs_internas).toFixed(2))),
+            eficiencia_porcentaje: (hs_productivas + hs_internas_extraordinarias) > 0
+                ? parseFloat((((hs_estimadas + hs_estimadas_internas) / (hs_productivas + hs_internas_extraordinarias)) * 100).toFixed(2)) : 0,
+            productividad_porcentaje: hs_exigidas > 0
+                ? parseFloat(((hs_productivas + hs_internas_extraordinarias) / hs_exigidas * 100).toFixed(2)) : 0,
+            productividad_ot_porcentaje: hs_exigidas > 0
+                ? parseFloat((hs_productivas / hs_exigidas * 100).toFixed(2)) : 0,
+            productividad_interna_porcentaje: hs_exigidas > 0
+                ? parseFloat((hs_internas_extraordinarias / hs_exigidas * 100).toFixed(2)) : 0,
+            eficiencia_ot_porcentaje: hs_productivas > 0
+                ? parseFloat(((hs_estimadas / hs_productivas) * 100).toFixed(2)) : null,
+            eficiencia_interna_porcentaje: hs_internas_extraordinarias > 0
+                ? parseFloat(((hs_estimadas_internas / hs_internas_extraordinarias) * 100).toFixed(2)) : null,
+            mapa_ocio: construirMapaOcio(diasHabilesPeriodo, m.sesiones, excepcionesMecanico),
+            serie_diaria: construirSerieDiaria(diasHabilesPeriodo, m.sesiones, excepcionesMecanico)
+        };
+    }).sort((a, b) => b.facturacion_generada - a.facturacion_generada);
+
+    const gruposDescanso = {};
+    for (const m of tiempos_mecanicos) {
+        if (m.hs_productivas === 0 && m.hs_internas === 0) continue;
+
+        for (const dia of m.serie_diaria) {
+            if (!gruposDescanso[dia.tipo_descanso]) {
+                gruposDescanso[dia.tipo_descanso] = { tipo_descanso: dia.tipo_descanso, dias: 0, suma_ocio_pct: 0 };
+            }
+            gruposDescanso[dia.tipo_descanso].dias += 1;
+            gruposDescanso[dia.tipo_descanso].suma_ocio_pct += dia.ocio_porcentaje;
+        }
+    }
+    const patrones_descanso = Object.values(gruposDescanso)
+        .map(g => ({
+            tipo_descanso: g.tipo_descanso,
+            cantidad_dias: g.dias,
+            ocio_promedio_porcentaje: parseFloat((g.suma_ocio_pct / g.dias).toFixed(1))
+        }))
+        .sort((a, b) => a.ocio_promedio_porcentaje - b.ocio_promedio_porcentaje);
+
+    return { tiempos_mecanicos, patrones_descanso };
+}
+
+module.exports = { getOperativo };
