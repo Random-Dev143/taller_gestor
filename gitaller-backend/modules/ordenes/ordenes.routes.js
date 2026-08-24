@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const ordenesService = require('../services/ordenes.service');
+const ordenesService = require('./ordenes.service');
 
 router.get('/', async (req, res) => {
     res.json(await ordenesService.listar(req.query));

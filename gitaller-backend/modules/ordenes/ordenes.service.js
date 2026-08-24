@@ -1,12 +1,12 @@
 'use strict';
 // ─── SERVICE DE ÓRDENES DE TRABAJO ──────────────────────────────────
-// Toda la lógica de negocio y las queries de OTs viven acá. routes/ordenes.js
+// Toda la lógica de negocio y las queries de OTs viven acá. modules/ordenes/ordenes.routes.js
 // es apenas: parsear req -> llamar a esta función -> mandar res. Así el
 // archivo de rutas se puede leer de un vistazo (qué endpoints hay) sin
 // tener que bucear entre SQL para entender el flujo HTTP, y esta lógica
 // se puede probar/reusar sin pasar por Express.
 
-const { run, all, get, cambiarEstado, recalcularTiempoEmpleado, withTransaction } = require('../config/database');
+const { run, all, get, cambiarEstado, recalcularTiempoEmpleado, withTransaction } = require('../../config/database');
 
 // Filtro de facturación: usa la misma expresión de montos que OTTable.vue
 // (tieneMontos) para que el criterio sea consistente entre lo que se ve

@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const actividadesService = require('../services/actividades.service');
+const actividadesService = require('./actividades.service');
 
 function manejarError(error, res) {
     if (error.status) return res.status(error.status).json({ error: error.message });

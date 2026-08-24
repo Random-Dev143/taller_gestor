@@ -1,9 +1,10 @@
 'use strict';
 // ─── CONEXIÓN A LA BASE DE DATOS ────────────────────────────────────
 // Responsabilidad única de este archivo: abrir el archivo .db en
-// %APPDATA%\GITaller\taller.db, configurar PRAGMAs, y exponer los
-// helpers Promise-based (run/all/get) + un runner de transacciones.
-// No define tablas ni migraciones — eso vive en schema.js y migrations.js.
+// %APPDATA%\GITaller\taller.db y exponer los helpers Promise-based
+// (run/all/get) + un runner de transacciones. No define tablas ni
+// migraciones (eso vive en db/migrations/*.js, orquestado por
+// db/migrator.js) ni setea PRAGMAs (los setea migrator.js al arrancar).
 
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');

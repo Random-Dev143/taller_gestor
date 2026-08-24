@@ -131,10 +131,10 @@ app.use('/api/unidades', requireAuth(['agenda_ver', 'agenda_gestionar']), requir
 app.use('/api/legajos', requireAuth(['legajo_ver', 'legajo_gestionar']), require('./routes/legajos'));
 
 // Órdenes de Trabajo (Si tiene al menos uno de estos permisos, pasa)
-app.use('/api/ordenes', requireAuth(['ot_ver_lista', 'ot_crear', 'ot_editar']), require('./routes/ordenes'));
+app.use('/api/ordenes', requireAuth(['ot_ver_lista', 'ot_crear', 'ot_editar']), require('./modules/ordenes/ordenes.routes'));
 
 // Tareas Operativas
-app.use('/api/actividades', requireAuth(['tarea_ver_propias', 'tarea_gestionar_todas']), require('./routes/actividades'));
+app.use('/api/actividades', requireAuth(['tarea_ver_propias', 'tarea_gestionar_todas']), require('./modules/actividades/actividades.routes'));
 
 // Feriados y Excepciones
 app.use('/api/feriados', requireAuth(['ausencia_justificar', 'rol_gestionar']), require('./routes/feriados'));
@@ -145,6 +145,9 @@ app.use('/api/informes', requireAuth(['informe_financiero', 'informe_operativo',
 // Configuración y Administración del Sistema
 app.use('/api/usuarios', requireAuth(['usuario_gestionar']), require('./routes/usuarios'));
 app.use('/api/roles', requireAuth(['rol_gestionar']), require('./routes/roles')); // <-- NUEVA RUTA PARA ROLES
+
+// Módulo de Repuestos (Pañol): catálogo, lotes FIFO, kardex y cargos a OT
+app.use('/api/repuestos', requireAuth(['repuesto_ver', 'repuesto_gestionar']), require('./modules/repuestos/repuestos.routes'));
 
 // --- SERVIR EL FRONTEND A LA RED LOCAL (TV, Celulares) ---
 // IMPORTANTE: este bloque va DESPUÉS de todas las rutas /api. Si se
