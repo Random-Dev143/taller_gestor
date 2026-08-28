@@ -12,7 +12,17 @@ const os = require('os');
 const fs = require('fs');
 
 const appDataPath = process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
-const appFolder = path.join(appDataPath, 'GITaller');
+
+// Aislamiento dev/producción en la MISMA PC: por defecto usa la carpeta de
+// siempre (%APPDATA%\GITaller, donde vive la base real del taller). Para
+// correr un backend de pruebas en la misma máquina sin arriesgar la base
+// de producción (que es exactamente lo que generó el incidente de
+// corrupción de WAL que motivó este cambio), seteá la variable de entorno
+// GITALLER_APPDATA_FOLDER (por ejemplo en gitaller-backend/.env, que no se
+// versiona) a un nombre distinto, como 'GITaller-dev'. Con eso, el backend
+// de pruebas abre su PROPIO archivo .db, completamente separado del real.
+const nombreCarpeta = process.env.GITALLER_APPDATA_FOLDER || 'GITaller';
+const appFolder = path.join(appDataPath, nombreCarpeta);
 
 if (!fs.existsSync(appFolder)) {
     fs.mkdirSync(appFolder, { recursive: true });

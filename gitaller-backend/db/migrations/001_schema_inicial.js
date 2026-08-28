@@ -73,7 +73,7 @@ async function up({ run }) {
         hora_almuerzo_inicio INTEGER DEFAULT 13,
         hora_almuerzo_fin INTEGER DEFAULT 14,
         trabaja_corrido INTEGER DEFAULT 0,
-        puerto_servidor INTEGER DEFAULT 5881,
+        puerto_servidor INTEGER DEFAULT 5723,
         slogan TEXT DEFAULT 'tu slogan aqui',
         direccion TEXT DEFAULT 'tu dirección aqui',
         cuit TEXT DEFAULT '',

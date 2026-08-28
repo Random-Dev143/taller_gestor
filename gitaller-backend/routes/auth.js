@@ -4,7 +4,7 @@ const { run, get, all } = require('../config/database');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
-const { JWT_SECRET, extraerToken, obtenerUsuarioConPermisos } = require('../middlewares/auth');
+const { JWT_SECRET, extraerToken, obtenerUsuarioConPermisos, requireAuth } = require('../middlewares/auth');
 
 //CREAR ADMIN POR DEFECTO
 async function asegurarAdmin() {
@@ -154,6 +154,27 @@ router.get('/me', async (req, res) => {
 // no hay cookie que limpiar.
 router.post('/logout', (req, res) => {
     res.json({ status: 'Sesión cerrada' });
+});
+
+// --- REFRESH (mantener sesión) ---
+// Usado por el modal de aviso de sesión por vencer (ver
+// useSessionExpiry.js en el frontend): mientras el token actual siga
+// siendo válido, emite uno nuevo con 12hs más — sin pedir contraseña de
+// nuevo. requireAuth([]) ya se encarga de rechazar si el token viejo
+// expiró o el usuario fue desactivado, así que acá solo queda re-firmar.
+router.post('/refresh', requireAuth([]), (req, res) => {
+    const payload = {
+        id: req.usuario.id,
+        email: req.usuario.email,
+        nombre: req.usuario.nombre_completo,
+        rol: req.usuario.rol_nombre,
+        rol_id: req.usuario.rol_id,
+        legajo: req.usuario.legajo,
+        estado: req.usuario.estado,
+        permisos: req.usuario.permisos
+    };
+    const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '12h' });
+    res.json({ token });
 });
 
 module.exports = router;

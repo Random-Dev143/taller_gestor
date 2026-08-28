@@ -66,7 +66,9 @@
         </template>
       </div>
 
-      <button type="submit" class="btn btn-success" :disabled="guardando">Guardar Configuración</button>
+      <button type="submit" class="btn btn-success" :disabled="guardando">
+        {{ reiniciandoBackend ? 'Reiniciando servidor...' : (guardando ? 'Guardando...' : 'Guardar Configuración') }}
+      </button>
     </form>
 
     <hr style="margin: 30px 0;">
@@ -90,12 +92,15 @@ import { ref, onMounted, watch } from 'vue'
 import { useApi } from '../../composables/useApi'
 import { useToast, errMsg } from '../../composables/useToast'
 import { useConfigStore } from '../../stores/useConfigStore'
+import { initRuntimePort } from '../../runtimePort'
 
 const { fetchJSON, API_BASE, getToken } = useApi()
 const toast = useToast()
 const configStore = useConfigStore()
 
 const guardando = ref(false)
+const reiniciandoBackend = ref(false)
+const puertoOriginal = ref(5881)
 const form = ref({
   nombre_taller: '', hora_apertura: 8, hora_cierre: 18, 
   hora_almuerzo_inicio: 13, hora_almuerzo_fin: 14, trabaja_corrido: false,
@@ -122,16 +127,50 @@ onMounted(async () => {
     telefono: c.telefono || '',     
     email: c.email || ''            
   }
+  puertoOriginal.value = form.value.puerto_servidor
 })
 
 const guardarConfig = async () => {
   guardando.value = true
+  const cambioPuerto = Number(form.value.puerto_servidor) !== Number(puertoOriginal.value)
+
   try {
     await fetchJSON('/configuracion', { method: 'PUT', body: JSON.stringify(form.value) })
     toast.success('Configuración guardada')
     await configStore.cargarConfig() // Recarga global
+
+    // El backend solo lee `puerto_servidor` UNA VEZ, al arrancar. Guardar
+    // el valor nuevo en la base no alcanza para que empiece a escuchar
+    // ahí: hace falta reiniciar el proceso. En la app de escritorio
+    // (Tauri) lo hacemos automáticamente acá; por navegador de red no hay
+    // forma de reiniciar el sidecar remotamente.
+    const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__ !== undefined
+    if (cambioPuerto && isTauri) {
+      reiniciandoBackend.value = true
+      toast.info('Puerto cambiado: reiniciando el servidor...')
+
+      const { invoke } = await import('@tauri-apps/api/core')
+      await invoke('stop_server')
+      // Margen para que el proceso viejo libere el socket antes de
+      // levantar uno nuevo, evitando una carrera de EADDRINUSE.
+      await new Promise(r => setTimeout(r, 800))
+      await invoke('start_server')
+
+      // Le damos tiempo al backend nuevo a migrar/sembrar y bindear el
+      // puerto nuevo antes de volver a leer runtime-port.json.
+      await new Promise(r => setTimeout(r, 3000))
+      await initRuntimePort()
+
+      toast.success('Servidor reiniciado en el nuevo puerto. Recargando la app...')
+      setTimeout(() => window.location.reload(), 800)
+    } else if (cambioPuerto && !isTauri) {
+      toast.info('El puerto se guardó, pero hace falta reiniciar el servidor manualmente en la PC del taller para que tome efecto.', 8000)
+    }
   } catch (err) { toast.error(errMsg(err)) }
-  finally { guardando.value = false }
+  finally {
+    guardando.value = false
+    reiniciandoBackend.value = false
+  }
 }
 
 const subirLogo = () => {

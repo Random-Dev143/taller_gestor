@@ -1,10 +1,18 @@
+import { getRuntimePort } from '../runtimePort'
+
 export function useApi() {
     // Detectamos si estamos corriendo dentro de la ventana de Tauri
     const isTauri = window.__TAURI_INTERNALS__ !== undefined;
 
-    // El puerto de la API ahora se puede configurar a través de una variable de entorno
-    // en el frontend para que coincida con la configuración del backend.
-    const port = import.meta.env.VITE_API_PORT || 5881;
+    // Prioridad para resolver el puerto de la API:
+    //   1. Puerto real descubierto en runtime (runtimePort.js), leído del
+    //      archivo que escribe el backend al arrancar — refleja lo que el
+    //      admin haya configurado en Configuración, sin recompilar el front.
+    //   2. VITE_API_PORT, fijado en tiempo de build (dev, o acceso por
+    //      navegador desde otros dispositivos de la red, que no pueden leer
+    //      el filesystem del servidor).
+    //   3. 5881, el default histórico de producción.
+    const port = getRuntimePort() || import.meta.env.VITE_API_PORT || 5881;
 
     let defaultBase = '';
     

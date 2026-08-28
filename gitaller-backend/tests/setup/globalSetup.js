@@ -17,14 +17,17 @@ const STATE_FILE = path.join(os.tmpdir(), 'gitaller-test-state.json');
 
 // IMPORTANTE: server.js NO usa process.env.PORT como puerto final — lo
 // resuelve leyendo `configuracion.puerto_servidor` de la base (ver
-// setTimeout final en server.js), columna cuyo DEFAULT es 5881. Como acá
-// arrancamos con una %APPDATA% nueva, el seed inserta esa fila con el
-// default, así que el server SIEMPRE termina escuchando en 5881, pase lo
-// que pase con PORT. Por eso los tests apuntan directo a 5881 en vez de
-// inventarse un puerto "de test" que en la práctica nunca se usaría.
+// setTimeout final en server.js). Como acá arrancamos con una %APPDATA%
+// nueva, el seed inserta esa fila con el DEFAULT del esquema — que es
+// 5723 para instalaciones nuevas, justamente para no pisar el 5881 real
+// de producción si alguien corre esta suite en la misma PC que tiene el
+// taller funcionando (ver db/migrations/001_schema_inicial.js). Por eso
+// los tests apuntan a 5723 en vez de inventarse un puerto "de test" que
+// en la práctica nunca se usaría.
 // Consecuencia: no se puede correr la suite mientras haya otra instancia
-// de GITaller (o `node server.js` manual) escuchando ese puerto.
-const PORT = 5881;
+// de GITaller de PRUEBAS escuchando en el 5723 (la de producción, en el
+// 5881, no interfiere en absoluto gracias a este mismo cambio).
+const PORT = 5723;
 
 async function esperarServidor(baseURL, intentosMax = 40) {
     for (let i = 0; i < intentosMax; i++) {

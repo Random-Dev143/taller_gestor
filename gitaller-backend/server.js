@@ -54,6 +54,11 @@ const iniciarCron = require('./utils/cron');
 const { requireAuth } = require('./middlewares/auth'); // 4. Middleware de seguridad
 
 const app = express();
+// Último recurso si la consulta a `configuracion.puerto_servidor` fallara
+// por completo (no es el puerto por defecto de una instalación nueva — ese
+// se define en el esquema, ver db/migrations/001_schema_inicial.js). Se
+// deja en 5881 a propósito: es el puerto histórico de producción, así que
+// ante un error de lectura de la config es la apuesta más segura.
 const PORT = process.env.PORT || 5881;
 const FIRMAS_DIR = path.join(APP_DIR, 'firmas');
 
@@ -148,6 +153,11 @@ app.use('/api/roles', requireAuth(['rol_gestionar']), require('./routes/roles'))
 
 // Módulo de Repuestos (Pañol): catálogo, lotes FIFO, kardex y cargos a OT
 app.use('/api/repuestos', requireAuth(['repuesto_ver', 'repuesto_gestionar']), require('./modules/repuestos/repuestos.routes'));
+
+// Mantenimiento del sistema (checkpoint seguro del WAL + backup antes de
+// cerrar). La propia ruta exige estar logueado (requireAuth([]) por
+// endpoint), así que no se envuelve acá con un requireAuth adicional.
+app.use('/api/sistema', require('./routes/sistema'));
 
 // --- SERVIR EL FRONTEND A LA RED LOCAL (TV, Celulares) ---
 // IMPORTANTE: este bloque va DESPUÉS de todas las rutas /api. Si se
@@ -251,6 +261,8 @@ iniciarCron();
 
 // ─── ARRANQUE DINÁMICO ─────────────────────────────────────────────
 const { get } = require('./config/database');
+const { appFolder } = require('./db/connection');
+const fsSync = require('fs');
 
 // Levanta el servidor en el puerto indicado, manejando explícitamente el
 // error EADDRINUSE (puerto ocupado). Antes este error no se manejaba y,
@@ -263,6 +275,21 @@ function iniciarServidor(port, intento = 1) {
     const server = app.listen(port, '0.0.0.0', () => {
         console.log(`🚀 API Taller Segura activa en http://0.0.0.0:${port}`);
         console.log(`📁 Firmas y Logos: ${FIRMAS_DIR}`);
+
+        // Publicamos el puerto REAL en el que quedamos escuchando en un archivo
+        // dentro de %APPDATA%\GITaller (o su equivalente de dev, ver
+        // db/connection.js), para que el frontend de Tauri lo pueda leer al
+        // arrancar y arme la URL de la API contra el puerto correcto sin
+        // necesitar recompilar el frontend. Ver src/runtimePort.js.
+        try {
+            const runtimePortFile = path.join(appFolder, 'runtime-port.json');
+            fsSync.writeFileSync(runtimePortFile, JSON.stringify({
+                port,
+                actualizado_en: new Date().toISOString()
+            }));
+        } catch (error) {
+            console.error('⚠️ No se pudo escribir runtime-port.json (el frontend puede quedar apuntando a un puerto viejo):', error.message);
+        }
     });
 
     server.on('error', (err) => {

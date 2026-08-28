@@ -14,24 +14,29 @@ describe('Arranque del servidor', () => {
     // login funcione (lo que garantiza que el admin fue creado), pero el
     // *stream* del log a disco puede tardar unos milisegundos más en
     // flushear que el propio evento que dispara la escritura.
-    function leerLogConReintentos(intentosMax = 20) {
+    async function leerLogConReintentos(intentosMax = 20) {
         const { logFile } = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
         let log = '';
         for (let i = 0; i < intentosMax; i++) {
             log = fs.readFileSync(logFile, 'utf8');
             if (log.includes('Admin por defecto creado')) return log;
+            // Sin esta espera, los 20 intentos se agotaban en microsegundos
+            // (mismo tick), sin darle tiempo real al buffer del logStream a
+            // volcarse a disco — un "reintento" que en la práctica nunca
+            // reintentaba nada.
+            await new Promise(r => setTimeout(r, 150));
         }
         return log; // se devuelve igual lo que haya, para que el assert falle con detalle
     }
 
-    test('el log de arranque no contiene los "tips" promocionales de dotenv', () => {
-        const log = leerLogConReintentos();
+    test('el log de arranque no contiene los "tips" promocionales de dotenv', async () => {
+        const log = await leerLogConReintentos();
         expect(log).not.toMatch(/injected env/i);
         expect(log).not.toMatch(/vestauth/i);
     });
 
-    test('el arranque crea el admin por defecto y las OT/permisos base', () => {
-        const log = leerLogConReintentos();
+    test('el arranque crea el admin por defecto y las OT/permisos base', async () => {
+        const log = await leerLogConReintentos();
         expect(log).toMatch(/OT 0000 \(Trabajos Internos\) inicializada correctamente/);
         expect(log).toMatch(/Permisos y roles base inicializados correctamente/);
         expect(log).toMatch(/Admin por defecto creado/);
