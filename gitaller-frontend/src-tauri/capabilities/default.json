@@ -27,6 +27,10 @@
       "identifier": "fs:allow-write-file",
       "allow": [{ "path": "$APPCACHE/**" }, { "path": "**" }]
     },
+    {
+      "identifier": "fs:allow-read-text-file",
+      "allow": [{ "path": "**" }]
+    },
     "dialog:allow-save",
     {
       "identifier": "opener:allow-open-path",

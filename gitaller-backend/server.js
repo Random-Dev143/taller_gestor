@@ -54,6 +54,11 @@ const iniciarCron = require('./utils/cron');
 const { requireAuth } = require('./middlewares/auth'); // 4. Middleware de seguridad
 
 const app = express();
+// Último recurso si la consulta a `configuracion.puerto_servidor` fallara
+// por completo (no es el puerto por defecto de una instalación nueva — ese
+// se define en el esquema, ver db/migrations/001_schema_inicial.js). Se
+// deja en 5881 a propósito: es el puerto histórico de producción, así que
+// ante un error de lectura de la config es la apuesta más segura.
 const PORT = process.env.PORT || 5881;
 const FIRMAS_DIR = path.join(APP_DIR, 'firmas');
 
@@ -131,10 +136,10 @@ app.use('/api/unidades', requireAuth(['agenda_ver', 'agenda_gestionar']), requir
 app.use('/api/legajos', requireAuth(['legajo_ver', 'legajo_gestionar']), require('./routes/legajos'));
 
 // Órdenes de Trabajo (Si tiene al menos uno de estos permisos, pasa)
-app.use('/api/ordenes', requireAuth(['ot_ver_lista', 'ot_crear', 'ot_editar']), require('./routes/ordenes'));
+app.use('/api/ordenes', requireAuth(['ot_ver_lista', 'ot_crear', 'ot_editar']), require('./modules/ordenes/ordenes.routes'));
 
 // Tareas Operativas
-app.use('/api/actividades', requireAuth(['tarea_ver_propias', 'tarea_gestionar_todas']), require('./routes/actividades'));
+app.use('/api/actividades', requireAuth(['tarea_ver_propias', 'tarea_gestionar_todas']), require('./modules/actividades/actividades.routes'));
 
 // Feriados y Excepciones
 app.use('/api/feriados', requireAuth(['ausencia_justificar', 'rol_gestionar']), require('./routes/feriados'));
@@ -145,6 +150,19 @@ app.use('/api/informes', requireAuth(['informe_financiero', 'informe_operativo',
 // Configuración y Administración del Sistema
 app.use('/api/usuarios', requireAuth(['usuario_gestionar']), require('./routes/usuarios'));
 app.use('/api/roles', requireAuth(['rol_gestionar']), require('./routes/roles')); // <-- NUEVA RUTA PARA ROLES
+
+// NOTA: el módulo de Repuestos (Pañol) todavía no pasó a producción — su
+// código vive completo en la rama refactor/backend-estructura, listo para
+// mergear cuando corresponda. El esquema, las migraciones y los permisos
+// ('repuesto_ver', 'repuesto_gestionar') SÍ están preparados de antemano
+// (ver db/seed.js), así que integrarlo después es solo: copiar
+// modules/repuestos/, la migración 013_modulo_repuestos.js, y agregar acá
+// una línea `app.use('/api/repuestos', ...)` — sin tocar nada más.
+
+// Mantenimiento del sistema (checkpoint seguro del WAL + backup antes de
+// cerrar). La propia ruta exige estar logueado (requireAuth([]) por
+// endpoint), así que no se envuelve acá con un requireAuth adicional.
+app.use('/api/sistema', require('./routes/sistema'));
 
 // --- SERVIR EL FRONTEND A LA RED LOCAL (TV, Celulares) ---
 // IMPORTANTE: este bloque va DESPUÉS de todas las rutas /api. Si se
@@ -248,6 +266,8 @@ iniciarCron();
 
 // ─── ARRANQUE DINÁMICO ─────────────────────────────────────────────
 const { get } = require('./config/database');
+const { appFolder } = require('./db/connection');
+const fsSync = require('fs');
 
 // Levanta el servidor en el puerto indicado, manejando explícitamente el
 // error EADDRINUSE (puerto ocupado). Antes este error no se manejaba y,
@@ -260,6 +280,21 @@ function iniciarServidor(port, intento = 1) {
     const server = app.listen(port, '0.0.0.0', () => {
         console.log(`🚀 API Taller Segura activa en http://0.0.0.0:${port}`);
         console.log(`📁 Firmas y Logos: ${FIRMAS_DIR}`);
+
+        // Publicamos el puerto REAL en el que quedamos escuchando en un archivo
+        // dentro de %APPDATA%\GITaller (o su equivalente de dev, ver
+        // db/connection.js), para que el frontend de Tauri lo pueda leer al
+        // arrancar y arme la URL de la API contra el puerto correcto sin
+        // necesitar recompilar el frontend. Ver src/runtimePort.js.
+        try {
+            const runtimePortFile = path.join(appFolder, 'runtime-port.json');
+            fsSync.writeFileSync(runtimePortFile, JSON.stringify({
+                port,
+                actualizado_en: new Date().toISOString()
+            }));
+        } catch (error) {
+            console.error('⚠️ No se pudo escribir runtime-port.json (el frontend puede quedar apuntando a un puerto viejo):', error.message);
+        }
     });
 
     server.on('error', (err) => {

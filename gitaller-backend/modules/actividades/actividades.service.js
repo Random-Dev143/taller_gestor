@@ -1,9 +1,9 @@
 'use strict';
 // ─── SERVICE DE ACTIVIDADES ──────────────────────────────────────────
 // Mismo criterio que ordenes.service.js: toda la lógica y las queries acá,
-// routes/actividades.js queda como controlador delgado.
+// modules/actividades/actividades.routes.js queda como controlador delgado.
 
-const { run, all, get, cambiarEstado, recalcularTiempoEmpleado, withTransaction, sincronizarEstadoOT, sincronizarEstadoActividad } = require('../config/database');
+const { run, all, get, cambiarEstado, recalcularTiempoEmpleado, withTransaction, sincronizarEstadoOT, sincronizarEstadoActividad } = require('../../config/database');
 
 // Calcula horas transcurridas entre el inicio de una sesión abierta y ahora
 function horasDesde(inicioStr) {
@@ -118,6 +118,12 @@ async function cambiarEstadoMiembro(id, { nuevo_estado, motivo, legajo_mecanico 
         }
 
         await sincronizarEstadoActividad(id);
+        // FIX: este endpoint (play/pausa/finalizar por mecánico — el flujo más
+        // usado del día a día) nunca recalculaba tiempo_empleado_horas de la OT.
+        // Otros endpoints del mismo service (agregarTiempo, corregirTiempo,
+        // eliminarTiempo, registrarAporte) sí lo hacen; a este le faltaba.
+        // Detectado por tests/ordenes-actividades-flujo.test.js.
+        await recalcularTiempoEmpleado(actividad.ot);
     });
     return { status: 'Estado actualizado' };
 }

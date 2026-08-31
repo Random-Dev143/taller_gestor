@@ -3,7 +3,14 @@ import { createPinia } from 'pinia'
 import App from './App.vue'
 import router from './router'
 import { useAuthStore } from './stores/useAuthStore'
+import { initRuntimePort } from './runtimePort'
 import './style.css'
+
+// Antes de montar: si estamos en Tauri, intentamos leer el puerto real
+// donde quedó escuchando el backend (puede diferir del default si se
+// cambió desde Configuración). useApi.js usa este valor al armar la URL
+// base de todos los pedidos a la API.
+await initRuntimePort()
 
 const app = createApp(App)
 

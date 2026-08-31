@@ -2,11 +2,13 @@
   <div class="container" id="app">
     <router-view />
     <ToastContainer />
+    <SessionExpiryModal />
   </div>
 </template>
 
 <script setup>
 import ToastContainer from './components/common/ToastContainer.vue';
+import SessionExpiryModal from './components/common/SessionExpiryModal.vue';
 import { onMounted } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { getVersion } from '@tauri-apps/api/app';
@@ -18,7 +20,7 @@ import { useApi } from './composables/useApi';
 import { useToast } from './composables/useToast'; 
 
 const configStore = useConfigStore();
-const { API_BASE } = useApi(); 
+const { API_BASE, fetchJSON } = useApi(); 
 const toast = useToast(); 
 
 onMounted(async () => {
@@ -84,6 +86,27 @@ onMounted(async () => {
     } catch (e) {
       console.error('Error al iniciar el servidor de fondo:', e);
     }
+
+    // --- CIERRE SEGURO ---
+    // Cerrar la ventana (o que Windows apague la PC) termina en un
+    // `child.kill()` forzado del sidecar de Node, sin darle chance de
+    // cerrar limpio (ver src-tauri/src/lib.rs). Antes de dejar cerrar,
+    // le pedimos al backend un checkpoint del WAL + backup consistente
+    // (ver routes/sistema.js), para achicar la ventana de riesgo de dejar
+    // el .db principal desactualizado respecto al -wal/-shm.
+    getCurrentWindow().onCloseRequested(async (event) => {
+      event.preventDefault();
+      try {
+        await fetchJSON('/sistema/checkpoint-seguro', { method: 'POST' });
+      } catch (err) {
+        console.error('No se pudo hacer el checkpoint seguro antes de cerrar:', err);
+        // Igual dejamos cerrar: preferimos cerrar con un WAL posiblemente
+        // pendiente de checkpoint (SQLite lo recupera solo al reabrir)
+        // antes que dejar la app trabada sin poder cerrarse.
+      } finally {
+        await getCurrentWindow().destroy();
+      }
+    });
 
     // --- PERRO GUARDIÁN (Watchdog) DINÁMICO ---
     setInterval(async () => {

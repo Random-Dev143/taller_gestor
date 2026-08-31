@@ -145,4 +145,10 @@ function iniciarCron() {
     }, 60000);
 }
 
+// hacerBackupDB también se usa fuera del cron (ver routes/sistema.js,
+// checkpoint-seguro), así que se cuelga como propiedad de la función
+// exportada en vez de cambiar `module.exports` a un objeto — server.js
+// hace `const iniciarCron = require('./utils/cron'); iniciarCron();`,
+// así que el export tiene que seguir siendo invocable directamente.
 module.exports = iniciarCron;
+module.exports.hacerBackupDB = hacerBackupDB;

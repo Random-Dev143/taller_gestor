@@ -5,7 +5,7 @@
   "main": "server.js",
   "bin": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "jest --config jest.config.js --forceExit",
     "build:exe": "pkg . --targets node18-win-x64 --output gitaller-server.exe"
   },
   "pkg": {
@@ -26,6 +26,12 @@
     "sqlite3": "^6.0.1"
   },
   "devDependencies": {
+    "jest": "^30.5.0",
     "pkg": "^5.8.1"
+  },
+  "allowScripts": {
+    "sqlite3@6.0.1": true,
+    "@parcel/watcher@2.6.0": true,
+    "unrs-resolver@1.12.2": true
   }
 }
