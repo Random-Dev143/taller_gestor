@@ -29,6 +29,18 @@
 
     <div v-else>
       <div class="stats-grid mt-15" ref="kpisRef">
+        <div class="stat-card stat-card--eficiencia">
+          <span class="stat-label">Eficiencia (Total Cerradas)</span>
+          <span class="stat-value">{{ store.financiero.resumen.total_ot }}</span>
+          <span class="stat-sub">OTs cerradas en el período, sin importar la marca</span>
+          <DeltaBadge :valor="deltaOts" invertido />
+        </div>
+        <div class="stat-card stat-card--eficiencia">
+          <span class="stat-label">Eficacia (IVECO)</span>
+          <span class="stat-value">{{ store.financiero.resumen.total_iveco }}</span>
+          <span class="stat-sub">OTs cerradas de IVECO (incluye garantía) — {{ pctSobreTotalOts(store.financiero.resumen.total_iveco) }}% del total</span>
+          <DeltaBadge :valor="deltaOtsIveco" invertido />
+        </div>
         <div class="stat-card highlight-card">
           <span class="stat-label">Facturación Total</span>
           <span class="stat-value">{{ formatCurrency(store.financiero.resumen.total_facturado) }}</span>
@@ -48,9 +60,21 @@
           <span class="stat-value">{{ formatCurrency(store.financiero.resumen.total_repuestos) }}</span>
         </div>
         <div class="stat-card">
-          <span class="stat-label">Total OTs</span>
+          <span class="stat-label">OT Totales</span>
           <span class="stat-value">{{ store.financiero.resumen.total_ot }}</span>
           <DeltaBadge :valor="deltaOts" invertido />
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">OT IVECO</span>
+          <span class="stat-value">{{ store.financiero.resumen.total_iveco }}</span>
+          <span class="stat-sub">{{ pctSobreTotalOts(store.financiero.resumen.total_iveco) }}% del total — incluye garantía</span>
+          <DeltaBadge :valor="deltaOtsIveco" invertido />
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">OT Garantía</span>
+          <span class="stat-value">{{ store.financiero.resumen.total_garantia }}</span>
+          <span class="stat-sub">{{ pctSobreTotalOts(store.financiero.resumen.total_garantia) }}% del total</span>
+          <DeltaBadge :valor="deltaOtsGarantia" invertido />
         </div>
         <div class="stat-card">
           <span class="stat-label">Ciclo Promedio</span>
@@ -69,6 +93,24 @@
           <span class="stat-sub">
             {{ store.financiero.resumen.cantidad_descuentos_pendientes }} OT{{ store.financiero.resumen.cantidad_descuentos_pendientes === 1 ? '' : 's' }} esperando aprobación del admin
           </span>
+        </div>
+        <div class="stat-card stat-card--warning" v-if="store.financiero.resumen.cantidad_finalizadas_sin_montos > 0">
+          <span class="stat-label">OTs Cerradas Sin Montos Cargados</span>
+          <span class="stat-value">{{ store.financiero.resumen.cantidad_finalizadas_sin_montos }}</span>
+          <span class="stat-sub">Posible olvido de carga antes de cerrar — revisar</span>
+        </div>
+        <div class="stat-card" v-if="store.financiero.resumen.total_garantia > 0">
+          <span class="stat-label">Horas Reales en Garantía</span>
+          <span class="stat-value">{{ formatHoras(store.financiero.resumen.hs_garantia_reales) }}</span>
+          <span class="stat-sub">Trabajadas efectivamente en OTs de garantía</span>
+        </div>
+        <div class="stat-card" v-if="store.financiero.resumen.total_garantia > 0">
+          <span class="stat-label">Horas Facturadas en Garantía</span>
+          <span class="stat-value">{{ formatHoras(store.financiero.resumen.hs_garantia_facturacion_estimada) }}</span>
+          <span class="stat-sub" v-if="store.financiero.resumen.cantidad_garantia_facturacion_pendiente > 0">
+            Estimado: {{ store.financiero.resumen.cantidad_garantia_facturacion_pendiente }} OT{{ store.financiero.resumen.cantidad_garantia_facturacion_pendiente === 1 ? '' : 's' }} todavía sin el dato de fábrica (usa horas reales mientras tanto)
+          </span>
+          <span class="stat-sub" v-else>Dato de facturación completo para todas las OTs del período</span>
         </div>
       </div>
       <p class="chart-hint" v-if="store.financiero.resumen_anterior">
@@ -123,10 +165,46 @@
           <div class="header-with-actions">
             <h3>Concentración por Día de la Semana</h3>
           </div>
-          <p class="chart-hint">¿Qué días de la semana ingresan y salen más vehículos?</p>
+          <p class="chart-hint">¿Qué días de la semana ingresan y salen más vehículos? El promedio divide el total de cada día por la cantidad de veces que ese día cayó dentro del período elegido.</p>
           <div class="chart-box">
             <Bar v-if="datosDiasSemana.some(d => d.aperturas > 0 || d.cierres > 0)" :data="chartDiasSemana" :options="opcionesBarraCantidades" />
             <p v-else class="empty-state">Sin movimientos en este período.</p>
+          </div>
+          <div class="table-wrapper mt-15">
+            <table>
+              <thead><tr><th>Día</th><th>Aperturas</th><th>Prom./día</th><th>Cierres</th><th>Prom./día</th></tr></thead>
+              <tbody>
+                <tr v-for="d in datosDiasSemana" :key="d.dia">
+                  <td>{{ d.etiqueta }}</td>
+                  <td>{{ d.aperturas }}</td>
+                  <td>{{ d.promedioAperturas.toFixed(1) }}</td>
+                  <td>{{ d.cierres }}</td>
+                  <td>{{ d.promedioCierres.toFixed(1) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <hr class="divider" />
+
+      <div class="charts-grid">
+        <div class="section-block" ref="aperturasDiaSemanaRef">
+          <h3>Aperturas por Día de la Semana</h3>
+          <p class="chart-hint">Qué días de la semana entran más vehículos al taller — útil para anticipar la carga de trabajo de asesores.</p>
+          <div class="chart-box chart-box-doughnut">
+            <Doughnut v-if="datosDiasSemana.some(d => d.aperturas > 0)" :data="chartAperturasDiaSemana" :options="opcionesDoughnut" />
+            <p v-else class="empty-state">Sin aperturas en este período.</p>
+          </div>
+        </div>
+
+        <div class="section-block" ref="cierresDiaSemanaRef">
+          <h3>Cierres por Día de la Semana</h3>
+          <p class="chart-hint">Qué días de la semana se terminan más OTs — útil para nivelar la carga de trabajo de los mecánicos durante la semana.</p>
+          <div class="chart-box chart-box-doughnut">
+            <Doughnut v-if="datosDiasSemana.some(d => d.cierres > 0)" :data="chartCierresDiaSemana" :options="opcionesDoughnut" />
+            <p v-else class="empty-state">Sin cierres en este período.</p>
           </div>
         </div>
       </div>
@@ -294,7 +372,7 @@ import TableroOperativo from '../informes/TableroOperativo.vue'
 ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale, LineElement, PointElement, ArcElement)
 
 const store = useInformesStore()
-const { formatCurrency, opcionesBase, getOpcionesBarraMoneda, opcionesDoughnut, opcionesDoughnutMoneda } = useChartConfig()
+const { formatCurrency, formatHoras, formatNumero, pctEnIndice, pctDeSerie, opcionesBase, getOpcionesBarraMoneda, opcionesDoughnut, opcionesDoughnutMoneda } = useChartConfig()
 const { exportarDashboardPDF } = useDashboardExporter()
 
 // Lógica PDF
@@ -305,6 +383,8 @@ const kpisRef = ref(null)
 const financieroRef = ref(null)
 const tendenciaRef = ref(null)
 const diasSemanaRef = ref(null)
+const aperturasDiaSemanaRef = ref(null)
+const cierresDiaSemanaRef = ref(null)
 const rendimientoOperativoRef = ref(null)
 const aporteMecanicosRef = ref(null)
 const tiemposRef = ref(null)
@@ -325,6 +405,7 @@ const exportarPDF = async () => {
       filename: `informe_ivemar_${store.desde}_a_${store.hasta}.pdf`,
       blocks: [
         kpisRef.value, financieroRef.value, tendenciaRef.value, diasSemanaRef.value,
+        aperturasDiaSemanaRef.value, cierresDiaSemanaRef.value,
         rendimientoOperativoRef.value, aporteMecanicosRef.value, tiemposRef.value, rentabilidadMecanicosRef.value, 
         cuellosRef.value, composicionRef.value, repuestosManoObraRef.value,
         garantiaRef.value, clientesRef.value, rentabilidadRef.value
@@ -342,6 +423,14 @@ const calcularDelta = (actual, anterior) => (anterior ? ((actual - anterior) / a
 const deltaFacturacion = computed(() => calcularDelta(store.financiero?.resumen.total_facturado, store.financiero?.resumen_anterior.total_facturado))
 const deltaTicket = computed(() => calcularDelta(store.financiero?.resumen.facturacion_promedio, store.financiero?.resumen_anterior.facturacion_promedio))
 const deltaOts = computed(() => calcularDelta(store.financiero?.resumen.total_ot, store.financiero?.resumen_anterior.total_ot))
+const deltaOtsIveco = computed(() => calcularDelta(store.financiero?.resumen.total_iveco, store.financiero?.resumen_anterior.total_iveco))
+const deltaOtsGarantia = computed(() => calcularDelta(store.financiero?.resumen.total_garantia, store.financiero?.resumen_anterior.total_garantia))
+
+// % que representa cada categoría de OT sobre el total del período (punto 3)
+const pctSobreTotalOts = (cantidad) => {
+  const total = store.financiero?.resumen.total_ot || 0
+  return total > 0 ? (((cantidad || 0) / total) * 100).toFixed(1) : '0.0'
+}
 
 // Utilidades Fechas
 const getSemana = (fecha) => {
@@ -383,7 +472,7 @@ const chartFinanciero = computed(() => ({
 
 // 2. TENDENCIAS
 const agrupacionTendencia = ref('diaria')
-const opcionesLineaCantidad = { ...opcionesBase }
+const opcionesLineaCantidad = { ...opcionesBase, plugins: { ...opcionesBase.plugins, tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y} OTs (${pctEnIndice(ctx)}%)` } } } }
 const datosTendenciaAgrupados = computed(() => {
   if (!store.taller) return []
   const grupos = {}
@@ -409,14 +498,36 @@ const chartTendencia = computed(() => ({
 
 // 3. DIAS DE LA SEMANA
 const diasNombres = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
-const opcionesBarraCantidades = { ...opcionesBase, plugins: { ...opcionesBase.plugins, tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y} OTs` } } } }
+const opcionesBarraCantidades = { ...opcionesBase, plugins: { ...opcionesBase.plugins, tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y} OTs (${pctEnIndice(ctx)}%)` } } } }
+
+// Cuántas veces cayó cada día de la semana dentro del rango [desde, hasta]
+// (inclusive) — necesario para calcular el promedio por día, no solo el
+// total acumulado. Ej: si el período tiene 4 lunes, el promedio de los
+// lunes es total_lunes / 4, no total_lunes / 7.
+const ocurrenciasPorDiaSemana = computed(() => {
+  const ocurrencias = Array(7).fill(0)
+  if (!store.desde || !store.hasta) return ocurrencias
+  const inicio = new Date(store.desde + 'T00:00:00')
+  const fin = new Date(store.hasta + 'T00:00:00')
+  for (let d = new Date(inicio); d <= fin; d.setDate(d.getDate() + 1)) {
+    ocurrencias[d.getDay()]++
+  }
+  return ocurrencias
+})
+
 const datosDiasSemana = computed(() => {
   if (!store.taller) return []
   const dias = Array(7).fill(0).map((_, i) => ({ dia: i, etiqueta: diasNombres[i], aperturas: 0, cierres: 0 }))
   store.taller.aperturas_por_dia?.forEach(d => { const [y, m, dd] = d.fecha.split('-'); dias[new Date(y, m - 1, dd).getDay()].aperturas += d.cantidad })
   store.taller.cierres_por_dia?.forEach(d => { const [y, m, dd] = d.fecha.split('-'); dias[new Date(y, m - 1, dd).getDay()].cierres += d.cantidad })
+  const ocurrencias = ocurrenciasPorDiaSemana.value
+  dias.forEach((dd, i) => {
+    dd.ocurrencias = ocurrencias[i]
+    dd.promedioAperturas = ocurrencias[i] > 0 ? dd.aperturas / ocurrencias[i] : 0
+    dd.promedioCierres = ocurrencias[i] > 0 ? dd.cierres / ocurrencias[i] : 0
+  })
   const ordenados = [dias[1], dias[2], dias[3], dias[4], dias[5], dias[6], dias[0]]
-  if (ordenados[6].aperturas === 0 && ordenados[6].cierres === 0) ordenados.pop()
+  if (ordenados[6].aperturas === 0 && ordenados[6].cierres === 0 && ordenados[6].ocurrencias === 0) ordenados.pop()
   return ordenados
 })
 const chartDiasSemana = computed(() => ({
@@ -425,6 +536,19 @@ const chartDiasSemana = computed(() => ({
     { label: 'Aperturas', backgroundColor: '#b8860b', data: datosDiasSemana.value.map(d => d.aperturas) },
     { label: 'Cierres', backgroundColor: '#1d8a4f', data: datosDiasSemana.value.map(d => d.cierres) }
   ]
+}))
+
+// Tortas de aperturas/cierres por día de la semana (punto 5): reusan la
+// misma paleta de colores en el mismo orden de días para que sean fáciles
+// de comparar entre sí a simple vista.
+const coloresDias = ['#0056a7', '#1d8a4f', '#b8860b', '#b22234', '#6c7a8a', '#8e44ad', '#16a085']
+const chartAperturasDiaSemana = computed(() => ({
+  labels: datosDiasSemana.value.map(d => d.etiqueta),
+  datasets: [{ data: datosDiasSemana.value.map(d => d.aperturas), backgroundColor: coloresDias }]
+}))
+const chartCierresDiaSemana = computed(() => ({
+  labels: datosDiasSemana.value.map(d => d.etiqueta),
+  datasets: [{ data: datosDiasSemana.value.map(d => d.cierres), backgroundColor: coloresDias }]
 }))
 
 // 4. APORTE MECANICOS
@@ -445,14 +569,14 @@ const opcionesAporteMecanico = computed(() => {
   const esFact = modoAporteMecanico.value === 'facturacion'
   return {
     ...opcionesBase,
-    plugins: { ...opcionesBase.plugins, tooltip: { callbacks: { label: (ctx) => esFact ? `Mano de Obra: ${formatCurrency(ctx.parsed.y)}` : `Órdenes: ${ctx.parsed.y}` } } },
+    plugins: { ...opcionesBase.plugins, tooltip: { callbacks: { label: (ctx) => esFact ? `Mano de Obra: ${formatCurrency(ctx.parsed.y)} (${pctDeSerie(ctx)}%)` : `Órdenes: ${ctx.parsed.y} (${pctDeSerie(ctx)}%)` } } },
     scales: { x: opcionesBase.scales.x, y: { ...opcionesBase.scales.y, ticks: { ...opcionesBase.scales.y.ticks, callback: (v) => esFact ? formatCurrency(v) : v } } }
   }
 })
 
 // 5. TIEMPOS ESTIMADO VS REAL
 const mecanicoSeleccionado = ref('separados')
-const opcionesBarraHoras = { ...opcionesBase, plugins: { ...opcionesBase.plugins, tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y} hs` } } } }
+const opcionesBarraHoras = { ...opcionesBase, plugins: { ...opcionesBase.plugins, tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y} hs (${pctEnIndice(ctx)}%)` } } } }
 const datosTiempos = computed(() => {
   const mec = store.operativo?.tiempos_mecanicos || []
   if (mecanicoSeleccionado.value === 'todos') {
@@ -486,12 +610,12 @@ const chartRentabilidad = computed(() => {
 })
 const opcionesBarraRentabilidad = computed(() => ({
   ...opcionesBase,
-  plugins: { ...opcionesBase.plugins, legend: { display: false }, tooltip: { callbacks: { label: (ctx) => `Rentabilidad: ${formatCurrency(ctx.parsed.y)}` } } },
+  plugins: { ...opcionesBase.plugins, legend: { display: false }, tooltip: { callbacks: { label: (ctx) => `Rentabilidad: ${formatCurrency(ctx.parsed.y)} (${pctDeSerie(ctx)}% del total, en valor absoluto)` } } },
   scales: { x: opcionesBase.scales.x, y: { ...opcionesBase.scales.y, ticks: { ...opcionesBase.scales.y.ticks, callback: (v) => formatCurrency(v) } } }
 }))
 
 // 7. CUELLOS DE BOTELLA
-const opcionesBarraHorasHorizontal = { ...opcionesBase, indexAxis: 'y', plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx) => `${ctx.parsed.x} hs` } } } }
+const opcionesBarraHorasHorizontal = { ...opcionesBase, indexAxis: 'y', plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx) => `${ctx.parsed.x} hs (${pctDeSerie(ctx, ctx.parsed.x)}%)` } } } }
 const chartCuellos = computed(() => {
   const datos = store.taller?.permanencia_estado || []
   return {
@@ -626,6 +750,14 @@ onMounted(() => { store.cargarInformes() })
 .stat-card--warning .stat-label,
 .stat-card--warning .stat-value {
   color: var(--warning);
+}
+
+.stat-card--eficiencia {
+  border-color: var(--primary);
+  background: var(--surface-raised, var(--surface));
+}
+.stat-card--eficiencia .stat-label {
+  color: var(--primary);
 }
 
 .chart-box {
