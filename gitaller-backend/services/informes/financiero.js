@@ -13,6 +13,12 @@ async function getFinanciero(inicio, fin, inicioAnterior, finAnterior) {
         SELECT COUNT(*) AS total_ot,
                SUM(CASE WHEN es_garantia = 1 THEN 1 ELSE 0 END) AS total_garantia,
                SUM(CASE WHEN es_no_iveco = 1 THEN 1 ELSE 0 END) AS total_no_iveco,
+               -- "IVECO" = todo lo que NO es de otra marca, incluye garantía
+               -- (una OT de garantía IVECO sigue siendo IVECO). Es la base
+               -- de la métrica de "Eficacia" pedida: cuántas OTs cerradas
+               -- fueron de la marca principal del taller, a diferencia de
+               -- "Eficiencia" que cuenta TODO lo cerrado sin importar marca.
+               COALESCE(SUM(CASE WHEN es_no_iveco = 0 THEN 1 ELSE 0 END), 0) AS total_iveco,
                SUM(CASE WHEN es_garantia = 0 AND es_no_iveco = 0 THEN 1 ELSE 0 END) AS total_normales,
                SUM(CASE WHEN controlada = 1 THEN 1 ELSE 0 END) AS total_controladas,
                ROUND(SUM(tiempo_asignado_horas), 2) AS hs_asignadas,
@@ -26,7 +32,26 @@ async function getFinanciero(inicio, fin, inicioAnterior, finAnterior) {
                ROUND(SUM(${DESCUENTO_AUTORIZADO}), 2) AS total_descuentos,
                SUM(CASE WHEN descuento_estado = 'autorizado' THEN 1 ELSE 0 END) AS cantidad_descuentos,
                ROUND(SUM(CASE WHEN descuento_estado = 'pendiente' THEN COALESCE(monto_descuento,0) ELSE 0 END), 2) AS total_descuentos_pendientes,
-               SUM(CASE WHEN descuento_estado = 'pendiente' THEN 1 ELSE 0 END) AS cantidad_descuentos_pendientes
+               SUM(CASE WHEN descuento_estado = 'pendiente' THEN 1 ELSE 0 END) AS cantidad_descuentos_pendientes,
+               -- Horas de OTs en garantía: reales (siempre disponibles, se
+               -- miden solas con el trabajo) vs. facturadas (las carga a
+               -- mano el asesor cuando llega la respuesta de fábrica, algo
+               -- que puede demorar hasta 30 días). Mientras no llegue ese
+               -- dato (tiempo_facturado_horas en 0), se usan las horas
+               -- reales como estimación provisoria, para que el informe no
+               -- muestre "0 horas facturadas" en OTs que en realidad solo
+               -- están esperando el dato — ver hs_garantia_facturacion_estimada.
+               ROUND(SUM(CASE WHEN es_garantia = 1 THEN tiempo_empleado_horas ELSE 0 END), 2) AS hs_garantia_reales,
+               ROUND(SUM(CASE WHEN es_garantia = 1 THEN (CASE WHEN tiempo_facturado_horas > 0 THEN tiempo_facturado_horas ELSE 0 END) ELSE 0 END), 2) AS hs_garantia_facturadas,
+               ROUND(SUM(CASE WHEN es_garantia = 1 THEN (CASE WHEN tiempo_facturado_horas > 0 THEN tiempo_facturado_horas ELSE tiempo_empleado_horas END) ELSE 0 END), 2) AS hs_garantia_facturacion_estimada,
+               SUM(CASE WHEN es_garantia = 1 AND (tiempo_facturado_horas IS NULL OR tiempo_facturado_horas <= 0) THEN 1 ELSE 0 END) AS cantidad_garantia_facturacion_pendiente,
+               -- Señal de proceso: OTs que se cerraron sin cargar NINGÚN
+               -- monto (ni repuestos ni mano de obra, facturable o de
+               -- garantía). No necesariamente es un error — puede ser una
+               -- OT interna o de cortesía — pero en general vale la pena
+               -- que el asesor lo revise, porque suele ser un olvido de
+               -- carga antes de cerrar.
+               COALESCE(SUM(CASE WHEN (COALESCE(monto_repuestos,0) + COALESCE(monto_mano_obra,0) + COALESCE(monto_repuestos_garantia,0) + COALESCE(monto_mano_obra_garantia,0)) = 0 THEN 1 ELSE 0 END), 0) AS cantidad_finalizadas_sin_montos
         FROM ordenes WHERE estado_actual = 'Finalizada' AND fecha_cierre IS NOT NULL AND fecha_cierre >= ? AND fecha_cierre < ?
     `;
     const resumen = await get(queryResumen, [inicio, fin]);
