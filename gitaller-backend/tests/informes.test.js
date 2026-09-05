@@ -138,3 +138,68 @@ describe('Informe financiero: horas de garantía (reales vs. facturadas)', () =>
         expect(r.cantidad_garantia_facturacion_pendiente).toBeGreaterThanOrEqual(1);
     });
 });
+
+describe('Informe financiero: Eficiencia/Eficacia y definición estricta de garantía', () => {
+    // EFICIENCIA = % de OTs del período (cualquier marca) que se abrieron
+    // y cerraron el MISMO día calendario.
+    // EFICACIA (IVECO) = mismo criterio de "mismo día", pero solo sobre
+    // el subconjunto de OTs IVECO (incluye garantía) y sobre el total de
+    // OTs IVECO como denominador, no sobre el total general.
+    // "Garantía" exige es_garantia=1 Y es_no_iveco=0 — una OT de otra
+    // marca marcada por error como garantía no debe contar.
+    const sufijo = Date.now().toString().slice(-6);
+
+    async function crearOT(ot, { esNoIveco = false, esGarantia = false, apertura, cierre }) {
+        await post('/api/ordenes', {
+            ot, cliente: `Cliente ${ot}`, patente: `PAT${ot}`,
+            unidad: 'Unidad Test', asesor_legajo: 'ADMIN',
+            es_no_iveco: esNoIveco, es_garantia: esGarantia,
+            fecha_apertura: apertura
+        }, { token });
+        await post(`/api/ordenes/${ot}/controlar`, { jefe_legajo: 'ADMIN' }, { token });
+        await put(`/api/ordenes/${ot}`, { fecha_cierre: cierre }, { token });
+    }
+
+    // Fecha fija y aislada del resto de la suite (año 2019, nadie más usa ese rango)
+    const RANGO_AISLADO = 'desde=2019-01-01&hasta=2019-02-01';
+    const OT_MISMO_DIA_IVECO = `1${sufijo}`;
+    const OT_VARIOS_DIAS_IVECO = `2${sufijo}`;
+    const OT_MISMO_DIA_NO_IVECO = `3${sufijo}`;
+    const OT_GARANTIA_MAL_MARCADA = `4${sufijo}`; // no-IVECO pero es_garantia=true
+    const OT_GARANTIA_REAL = `5${sufijo}`;
+
+    beforeAll(async () => {
+        await crearOT(OT_MISMO_DIA_IVECO, { apertura: '2019-01-10 09:00:00', cierre: '2019-01-10 18:00:00' });
+        await crearOT(OT_VARIOS_DIAS_IVECO, { apertura: '2019-01-10 09:00:00', cierre: '2019-01-15 18:00:00' });
+        await crearOT(OT_MISMO_DIA_NO_IVECO, { esNoIveco: true, apertura: '2019-01-10 09:00:00', cierre: '2019-01-10 18:00:00' });
+        await crearOT(OT_GARANTIA_MAL_MARCADA, { esNoIveco: true, esGarantia: true, apertura: '2019-01-10 09:00:00', cierre: '2019-01-20 18:00:00' });
+        await crearOT(OT_GARANTIA_REAL, { esGarantia: true, apertura: '2019-01-10 09:00:00', cierre: '2019-01-20 18:00:00' });
+    });
+
+    test('eficiencia_pct: 2 de 5 OTs cerradas el mismo día -> 40%', async () => {
+        const { data } = await get(`/api/informes/mensual/financiero?${RANGO_AISLADO}`, { token });
+        expect(data.resumen.total_ot).toBe(5);
+        expect(data.resumen.cantidad_mismo_dia).toBe(2);
+        expect(data.resumen.eficiencia_pct).toBeCloseTo(40.0, 1);
+    });
+
+    test('eficacia_iveco_pct: 1 de 3 OTs IVECO cerrada el mismo día -> 33.3%', async () => {
+        const { data } = await get(`/api/informes/mensual/financiero?${RANGO_AISLADO}`, { token });
+        expect(data.resumen.total_iveco).toBe(3); // mismo_dia_iveco + varios_dias_iveco + garantia_real
+        expect(data.resumen.cantidad_iveco_mismo_dia).toBe(1);
+        expect(data.resumen.eficacia_iveco_pct).toBeCloseTo(33.3, 1);
+    });
+
+    test('una OT no-IVECO marcada por error como garantía NO cuenta como garantía', async () => {
+        const { data } = await get(`/api/informes/mensual/financiero?${RANGO_AISLADO}`, { token });
+        // Solo OT_GARANTIA_REAL debe contar; OT_GARANTIA_MAL_MARCADA queda afuera por ser es_no_iveco=true
+        expect(data.resumen.total_garantia).toBe(1);
+    });
+
+    test('período sin ninguna OT: eficiencia/eficacia quedan en null (no en un 0% engañoso)', async () => {
+        const { data } = await get('/api/informes/mensual/financiero?desde=2015-01-01&hasta=2015-02-01', { token });
+        expect(data.resumen.total_ot).toBe(0);
+        expect(data.resumen.eficiencia_pct).toBeNull();
+        expect(data.resumen.eficacia_iveco_pct).toBeNull();
+    });
+});

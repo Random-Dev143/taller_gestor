@@ -31,15 +31,25 @@
       <div class="stats-grid mt-15" ref="kpisRef">
         <div class="stat-card stat-card--eficiencia">
           <span class="stat-label">Eficiencia (Total Cerradas)</span>
-          <span class="stat-value">{{ store.financiero.resumen.total_ot }}</span>
-          <span class="stat-sub">OTs cerradas en el período, sin importar la marca</span>
-          <DeltaBadge :valor="deltaOts" invertido />
+          <span class="stat-value" v-if="store.financiero.resumen.eficiencia_pct !== null">{{ store.financiero.resumen.eficiencia_pct }}%</span>
+          <span class="stat-value" v-else>—</span>
+          <span class="stat-sub">
+            {{ store.financiero.resumen.cantidad_mismo_dia }} de {{ store.financiero.resumen.total_ot }} OTs se abrieron y cerraron el mismo día
+            <template v-if="deltaPuntosEficiencia !== null">
+              ({{ deltaPuntosEficiencia >= 0 ? '▲' : '▼' }} {{ Math.abs(deltaPuntosEficiencia).toFixed(1) }} pts vs. período anterior)
+            </template>
+          </span>
         </div>
         <div class="stat-card stat-card--eficiencia">
           <span class="stat-label">Eficacia (IVECO)</span>
-          <span class="stat-value">{{ store.financiero.resumen.total_iveco }}</span>
-          <span class="stat-sub">OTs cerradas de IVECO (incluye garantía) — {{ pctSobreTotalOts(store.financiero.resumen.total_iveco) }}% del total</span>
-          <DeltaBadge :valor="deltaOtsIveco" invertido />
+          <span class="stat-value" v-if="store.financiero.resumen.eficacia_iveco_pct !== null">{{ store.financiero.resumen.eficacia_iveco_pct }}%</span>
+          <span class="stat-value" v-else>—</span>
+          <span class="stat-sub">
+            {{ store.financiero.resumen.cantidad_iveco_mismo_dia }} de {{ store.financiero.resumen.total_iveco }} OTs IVECO se abrieron y cerraron el mismo día
+            <template v-if="deltaPuntosEficacia !== null">
+              ({{ deltaPuntosEficacia >= 0 ? '▲' : '▼' }} {{ Math.abs(deltaPuntosEficacia).toFixed(1) }} pts vs. período anterior)
+            </template>
+          </span>
         </div>
         <div class="stat-card highlight-card">
           <span class="stat-label">Facturación Total</span>
@@ -425,6 +435,16 @@ const deltaTicket = computed(() => calcularDelta(store.financiero?.resumen.factu
 const deltaOts = computed(() => calcularDelta(store.financiero?.resumen.total_ot, store.financiero?.resumen_anterior.total_ot))
 const deltaOtsIveco = computed(() => calcularDelta(store.financiero?.resumen.total_iveco, store.financiero?.resumen_anterior.total_iveco))
 const deltaOtsGarantia = computed(() => calcularDelta(store.financiero?.resumen.total_garantia, store.financiero?.resumen_anterior.total_garantia))
+
+// Eficiencia/Eficacia ya son porcentajes (mismo día / total), así que la
+// comparación contra el período anterior se expresa en PUNTOS
+// porcentuales (diferencia simple), no como % de cambio relativo — evita
+// la ambigüedad de "¿subió 5% relativo o 5 puntos?" que tendría reusar
+// DeltaBadge (que siempre agrega el símbolo % pensado para cambios
+// relativos). null cuando alguno de los dos períodos no tiene datos.
+const deltaPuntos = (actual, anterior) => (actual === null || anterior === null || actual === undefined || anterior === undefined) ? null : actual - anterior
+const deltaPuntosEficiencia = computed(() => deltaPuntos(store.financiero?.resumen.eficiencia_pct, store.financiero?.resumen_anterior.eficiencia_pct))
+const deltaPuntosEficacia = computed(() => deltaPuntos(store.financiero?.resumen.eficacia_iveco_pct, store.financiero?.resumen_anterior.eficacia_iveco_pct))
 
 // % que representa cada categoría de OT sobre el total del período (punto 3)
 const pctSobreTotalOts = (cantidad) => {
