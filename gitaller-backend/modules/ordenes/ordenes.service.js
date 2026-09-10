@@ -111,7 +111,12 @@ async function obtenerDetalle(ot) {
     const explicacion = await get(`SELECT * FROM explicaciones WHERE ot = ?`, [ot]);
     const aportes = await all(`SELECT ap.*, l.nombre, l.firma_path FROM aportes ap JOIN legajos l ON ap.legajo = l.legajo WHERE ap.ot = ?`, [ot]);
     const historial = await all(`SELECT * FROM estados_historial WHERE ot = ? ORDER BY id`, [ot]);
-    const tiempos_actividad = await all(`SELECT ta.* FROM tiempos_actividad ta JOIN actividades a ON ta.actividad_id = a.id WHERE a.ot = ?`, [ot]);
+    // Se trae también el nombre del mecánico (l.nombre) junto a cada
+    // registro de tiempo, no solo el legajo: el frontend lo usa para
+    // agrupar visualmente los logueos por mecánico cuando una actividad
+    // tiene más de uno asignado — antes se mostraban todos mezclados en
+    // una sola lista, sin forma de saber a quién correspondía cada fila.
+    const tiempos_actividad = await all(`SELECT ta.*, l.nombre AS nombre_mecanico FROM tiempos_actividad ta JOIN actividades a ON ta.actividad_id = a.id LEFT JOIN legajos l ON ta.legajo_mecanico = l.legajo WHERE a.ot = ?`, [ot]);
 
     return { ...orden, asignaciones, actividades, explicacion, aportes, historial, tiempos_actividad };
 }

@@ -78,7 +78,10 @@ async function up({ run }) {
         direccion TEXT DEFAULT 'tu dirección aqui',
         cuit TEXT DEFAULT '',
         telefono TEXT DEFAULT '134-123456',
-        email TEXT DEFAULT 'taller@taller.com'
+        email TEXT DEFAULT 'taller@taller.com',
+        trabaja_sabados INTEGER DEFAULT 1,
+        sabado_hora_apertura INTEGER DEFAULT 8,
+        sabado_hora_cierre INTEGER DEFAULT 13
     )`);
 }
 

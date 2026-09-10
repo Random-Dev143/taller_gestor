@@ -85,13 +85,30 @@
                   </tr>
                   <tr v-if="esJefe && tiemposAbiertos === a.id">
                     <td colspan="6" class="tiempos-edit">
-                      <template v-if="getTiempos(a.id).length || nuevosTiempos[a.id]?.length">
-                        <div v-for="t in getTiempos(a.id)" :key="t.id" class="tiempo-row">
-                          <input type="datetime-local" :value="toLocalInput(t.inicio)" @change="t.inicio = fromLocalInput($event.target.value)">
-                          <input type="datetime-local" :value="toLocalInput(t.fin)" @change="t.fin = fromLocalInput($event.target.value)">
-                          <button class="btn btn-sm" v-can="'tiempo_editar_manual'" @click="guardarTiempo(t, a.id)" title="Guardar">💾</button>
-                          <button class="btn btn-danger btn-sm" v-can="'tiempo_editar_manual'" @click="eliminarTiempo(t.id)" title="Eliminar">🗑️</button>
-                        </div>
+                      <template v-if="hayMasDeUnMecanico(a)">
+                        <!-- Más de un mecánico en la actividad: se agrupan los
+                             logueos por persona, cada uno con su propio
+                             desplegable — antes quedaban todos mezclados en
+                             una sola lista y no se podía saber de quién era
+                             cada registro, ni detectar errores de logueo. -->
+                        <template v-if="gruposTiemposPorMecanico(a).length">
+                          <div v-for="grupo in gruposTiemposPorMecanico(a)" :key="grupo.legajo || 'sin-legajo'" class="grupo-mecanico">
+                            <button type="button" class="grupo-mecanico-header" @click="toggleGrupoMecanico(a.id, grupo.legajo)">
+                              <span class="grupo-mecanico-toggle">{{ grupoAbierto(a.id, grupo.legajo) ? '▾' : '▸' }}</span>
+                              <span class="grupo-mecanico-nombre">{{ grupo.nombre }}</span>
+                              <span class="grupo-mecanico-resumen">{{ grupo.registros.length }} registro{{ grupo.registros.length === 1 ? '' : 's' }} · {{ grupo.totalHoras.toFixed(2) }} hs</span>
+                            </button>
+                            <div v-if="grupoAbierto(a.id, grupo.legajo)" class="grupo-mecanico-body">
+                              <div v-for="t in grupo.registros" :key="t.id" class="tiempo-row">
+                                <input type="datetime-local" :value="toLocalInput(t.inicio)" @change="t.inicio = fromLocalInput($event.target.value)">
+                                <input type="datetime-local" :value="toLocalInput(t.fin)" @change="t.fin = fromLocalInput($event.target.value)">
+                                <button class="btn btn-sm" v-can="'tiempo_editar_manual'" @click="guardarTiempo(t, a.id)" title="Guardar">💾</button>
+                                <button class="btn btn-danger btn-sm" v-can="'tiempo_editar_manual'" @click="eliminarTiempo(t.id)" title="Eliminar">🗑️</button>
+                              </div>
+                            </div>
+                          </div>
+                        </template>
+                        <p v-else-if="!nuevosTiempos[a.id]?.length" class="empty-state">Sin registros de tiempo.</p>
                         <div v-for="t in (nuevosTiempos[a.id] || [])" :key="t.tempId" class="tiempo-row">
                           <input type="datetime-local" :value="toLocalInput(t.inicio)" @change="t.inicio = fromLocalInput($event.target.value)">
                           <input type="datetime-local" :value="toLocalInput(t.fin)" @change="t.fin = fromLocalInput($event.target.value)">
@@ -99,7 +116,24 @@
                           <button class="btn btn-danger btn-sm" v-can="'tiempo_editar_manual'" @click="quitarNuevo(a.id, t.tempId)" title="Quitar">🗑️</button>
                         </div>
                       </template>
-                      <p v-else class="empty-state">Sin registros de tiempo.</p>
+                      <template v-else>
+                        <!-- Un solo mecánico: no hace falta agrupar, se muestra igual que antes -->
+                        <template v-if="getTiempos(a.id).length || nuevosTiempos[a.id]?.length">
+                          <div v-for="t in getTiempos(a.id)" :key="t.id" class="tiempo-row">
+                            <input type="datetime-local" :value="toLocalInput(t.inicio)" @change="t.inicio = fromLocalInput($event.target.value)">
+                            <input type="datetime-local" :value="toLocalInput(t.fin)" @change="t.fin = fromLocalInput($event.target.value)">
+                            <button class="btn btn-sm" v-can="'tiempo_editar_manual'" @click="guardarTiempo(t, a.id)" title="Guardar">💾</button>
+                            <button class="btn btn-danger btn-sm" v-can="'tiempo_editar_manual'" @click="eliminarTiempo(t.id)" title="Eliminar">🗑️</button>
+                          </div>
+                          <div v-for="t in (nuevosTiempos[a.id] || [])" :key="t.tempId" class="tiempo-row">
+                            <input type="datetime-local" :value="toLocalInput(t.inicio)" @change="t.inicio = fromLocalInput($event.target.value)">
+                            <input type="datetime-local" :value="toLocalInput(t.fin)" @change="t.fin = fromLocalInput($event.target.value)">
+                            <button class="btn btn-sm" v-can="'tiempo_editar_manual'" @click="guardarTiempo(t, a.id)" title="Guardar">💾</button>
+                            <button class="btn btn-danger btn-sm" v-can="'tiempo_editar_manual'" @click="quitarNuevo(a.id, t.tempId)" title="Quitar">🗑️</button>
+                          </div>
+                        </template>
+                        <p v-else class="empty-state">Sin registros de tiempo.</p>
+                      </template>
                       <button class="btn btn-sm" v-can="'tiempo_editar_manual'" @click="agregarTiempo(a.id, a.legajo_mecanico)">➕ Agregar registro</button>
                     </td>
                   </tr>
@@ -175,6 +209,70 @@ const cerrarTareaInterna = async (actividad) => {
 const getTiempos = (actId) => {
   return (data.value?.tiempos_actividad || []).filter(t => t.actividad_id === actId);
 }
+
+// ¿Esta actividad tiene más de un mecánico asignado? Se usa
+// legajos_mecanicos (lista de códigos separados por coma, ya viene armada
+// desde el backend) en vez de contar registros de tiempo, porque una
+// actividad puede tener 2 mecánicos asignados aunque uno de ellos todavía
+// no haya logueado ni un solo minuto.
+const hayMasDeUnMecanico = (a) => {
+  if (a.legajos_mecanicos) {
+    return new Set(a.legajos_mecanicos.split(',').filter(Boolean)).size > 1;
+  }
+  // Respaldo por si el campo no viniera (no debería pasar): contar
+  // legajos distintos entre los propios registros de tiempo.
+  return new Set(getTiempos(a.id).map(t => t.legajo_mecanico).filter(Boolean)).size > 1;
+}
+
+// Agrupa los registros de tiempo de una actividad por mecánico — antes se
+// mostraban todos mezclados en una sola lista, sin forma de distinguir de
+// quién era cada logueo ni de detectar errores de carga. Los registros
+// sin legajo asignado (entradas manuales viejas) quedan agrupados aparte,
+// bajo "Sin mecánico asignado".
+const gruposTiemposPorMecanico = (a) => {
+  const mapa = new Map();
+  for (const t of getTiempos(a.id)) {
+    const clave = t.legajo_mecanico || '__sin_legajo__';
+    if (!mapa.has(clave)) {
+      mapa.set(clave, {
+        legajo: t.legajo_mecanico || null,
+        nombre: t.nombre_mecanico || t.legajo_mecanico || 'Sin mecánico asignado',
+        registros: []
+      });
+    }
+    mapa.get(clave).registros.push(t);
+  }
+  const grupos = Array.from(mapa.values());
+  for (const g of grupos) {
+    // Solo se suman las sesiones ya cerradas (con fin cargado); una
+    // sesión todavía "En Curso" no tiene un total fijo que mostrar acá.
+    g.totalHoras = g.registros.reduce((acc, t) => {
+      if (!t.inicio || !t.fin) return acc;
+      const inicio = new Date(t.inicio.replace(' ', 'T') + 'Z');
+      const fin = new Date(t.fin.replace(' ', 'T') + 'Z');
+      const horas = (fin - inicio) / 3600000;
+      return acc + (horas > 0 ? horas : 0);
+    }, 0);
+  }
+  // Orden estable (alfabético) para que la lista no cambie de orden solo
+  // por editar/guardar un registro.
+  grupos.sort((x, y) => (x.nombre || '').localeCompare(y.nombre || ''));
+  return grupos;
+}
+
+// Qué grupos (actividad + mecánico) están desplegados. Empiezan todos
+// cerrados a propósito — la idea es que se pueda desplegar solo lo que se
+// está buscando, no tener que scrollear todos los logueos de todo el
+// equipo para encontrar el de una persona en particular.
+const gruposAbiertosSet = ref(new Set());
+const claveGrupo = (actId, legajo) => `${actId}::${legajo || '__sin_legajo__'}`;
+const toggleGrupoMecanico = (actId, legajo) => {
+  const clave = claveGrupo(actId, legajo);
+  const nuevo = new Set(gruposAbiertosSet.value);
+  if (nuevo.has(clave)) nuevo.delete(clave); else nuevo.add(clave);
+  gruposAbiertosSet.value = nuevo;
+}
+const grupoAbierto = (actId, legajo) => gruposAbiertosSet.value.has(claveGrupo(actId, legajo));
 
 // "Nombre|Estado|Horas;;Nombre|Estado|Horas" -> [{nombre, estado, horas}]
 const parseEquipo = (equipoDetalle) => {
@@ -291,4 +389,15 @@ th { background: var(--border-soft); }
 .tiempos-edit { background: var(--border-soft); }
 .tiempo-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
 .badge-rutina { margin-left: 4px; background: var(--primary); }
+.grupo-mecanico { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px; overflow: hidden; }
+.grupo-mecanico-header {
+  width: 100%; display: flex; align-items: center; gap: 8px;
+  background: var(--surface-raised); border: none; cursor: pointer;
+  padding: 8px 12px; text-align: left; font: inherit; color: var(--text);
+}
+.grupo-mecanico-header:hover { background: var(--border-soft); }
+.grupo-mecanico-toggle { width: 1em; color: var(--primary); }
+.grupo-mecanico-nombre { font-weight: bold; flex: 1; }
+.grupo-mecanico-resumen { color: var(--muted); font-size: 0.85rem; white-space: nowrap; }
+.grupo-mecanico-body { padding: 8px 12px; }
 </style>

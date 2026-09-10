@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { all, get, run, recalcularTiempoEmpleado, sincronizarEstadoOT, sincronizarEstadoActividad, DB_PATH } = require('../config/database');
+const { decidirAccionCron } = require('./cronSchedule');
 
 // [FIX] Antes esto era path.join(__dirname, '..', 'backups'). __dirname, cuando
 // el backend corre empaquetado como .exe con `pkg`, apunta adentro del
@@ -127,14 +128,21 @@ function iniciarCron() {
 
             if (ultimaAccionAutomatica === timeKey) return; 
 
-            if (horaActual === 13) {
+            // Se trae la config real de la base en cada tick (una SELECT
+            // liviana cada 60s, sin costo relevante) en vez de cachearla
+            // al arrancar el proceso: si alguien cambia el horario desde
+            // Configuración, el cron lo empieza a respetar sin necesitar
+            // reiniciar el backend.
+            const config = await get(`SELECT hora_apertura, hora_cierre, hora_almuerzo_inicio, hora_almuerzo_fin, trabaja_corrido, trabaja_sabados, sabado_hora_apertura, sabado_hora_cierre FROM configuracion WHERE id = 1`);
+            const accion = decidirAccionCron(ahora, config);
+            if (accion === 'almuerzo') {
                 await hacerBackupDB();
                 await procesarPausaAutomatica(true);
                 ultimaAccionAutomatica = timeKey;
-            } else if (horaActual === 14) {
+            } else if (accion === 'reanudacion') {
                 await procesarReanudacionAutomatica();
                 ultimaAccionAutomatica = timeKey;
-            } else if (horaActual === 18) {
+            } else if (accion === 'cierre') {
                 await hacerBackupDB();
                 await procesarPausaAutomatica(false);
                 ultimaAccionAutomatica = timeKey;
@@ -145,10 +153,12 @@ function iniciarCron() {
     }, 60000);
 }
 
-// hacerBackupDB también se usa fuera del cron (ver routes/sistema.js,
-// checkpoint-seguro), así que se cuelga como propiedad de la función
-// exportada en vez de cambiar `module.exports` a un objeto — server.js
-// hace `const iniciarCron = require('./utils/cron'); iniciarCron();`,
-// así que el export tiene que seguir siendo invocable directamente.
+// hacerBackupDB y decidirAccionCron también se usan fuera del cron (ver
+// routes/sistema.js checkpoint-seguro, y tests/cron.test.js), así que se
+// cuelgan como propiedades de la función exportada en vez de cambiar
+// `module.exports` a un objeto — server.js hace
+// `const iniciarCron = require('./utils/cron'); iniciarCron();`, así que
+// el export tiene que seguir siendo invocable directamente.
 module.exports = iniciarCron;
 module.exports.hacerBackupDB = hacerBackupDB;
+module.exports.decidirAccionCron = decidirAccionCron;
