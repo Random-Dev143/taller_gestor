@@ -64,6 +64,27 @@
             <input type="number" v-model="form.hora_almuerzo_fin" min="0" max="23" />
           </div>
         </template>
+
+        <div class="form-group" style="grid-column: span 2;">
+          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin-top: 10px;">
+            <input type="checkbox" v-model="form.trabaja_sabados" style="width: 20px; height: 20px;" />
+            <span style="font-size: 1rem; color: var(--primary); font-weight: bold;">El taller abre los sábados</span>
+          </label>
+          <small style="color: var(--muted); display:block; margin-top:4px;">
+            Controla la pausa/cierre automático de tareas de los sábados (ver módulo de cron). Se asume media jornada, sin corte de almuerzo.
+          </small>
+        </div>
+
+        <template v-if="form.trabaja_sabados">
+          <div class="form-group">
+            <label>Sábado — Hora de Apertura (0-23)</label>
+            <input type="number" v-model="form.sabado_hora_apertura" min="0" max="23" />
+          </div>
+          <div class="form-group">
+            <label>Sábado — Hora de Cierre (0-23)</label>
+            <input type="number" v-model="form.sabado_hora_cierre" min="0" max="23" />
+          </div>
+        </template>
       </div>
 
       <button type="submit" class="btn btn-success" :disabled="guardando">
@@ -105,7 +126,8 @@ const form = ref({
   nombre_taller: '', hora_apertura: 8, hora_cierre: 18, 
   hora_almuerzo_inicio: 13, hora_almuerzo_fin: 14, trabaja_corrido: false,
   puerto_servidor: 5881,
-  slogan: '', direccion: '', cuit: '', telefono: '', email: '' 
+  slogan: '', direccion: '', cuit: '', telefono: '', email: '',
+  trabaja_sabados: true, sabado_hora_apertura: 8, sabado_hora_cierre: 13
 })
 
 onMounted(async () => {
@@ -125,7 +147,10 @@ onMounted(async () => {
     direccion: c.direccion || '',   
     cuit: c.cuit || '',             
     telefono: c.telefono || '',     
-    email: c.email || ''            
+    email: c.email || '',
+    trabaja_sabados: c.trabaja_sabados === undefined ? true : c.trabaja_sabados === 1,
+    sabado_hora_apertura: c.sabado_hora_apertura ?? 8,
+    sabado_hora_cierre: c.sabado_hora_cierre ?? 13
   }
   puertoOriginal.value = form.value.puerto_servidor
 })

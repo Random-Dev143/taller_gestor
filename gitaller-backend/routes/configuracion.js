@@ -7,7 +7,7 @@ const { requireAuth } = require('../middlewares/auth');
 // GET PÚBLICO (Para que el Login y el Frontend puedan leer el nombre del taller)
 router.get('/', async (req, res) => {
     const config = await get(`SELECT * FROM configuracion WHERE id = 1`);
-    res.json(config || { nombre_taller: 'GITaller', trabaja_corrido: 0 });
+    res.json(config || { nombre_taller: 'GITaller', trabaja_corrido: 0, trabaja_sabados: 1, sabado_hora_apertura: 8, sabado_hora_cierre: 13 });
 });
 
 // PUT PROTEGIDO (Solo Admin)
@@ -15,19 +15,22 @@ router.put('/', requireAuth(['usuario_gestionar']), async (req, res) => {
     const { 
         nombre_taller, hora_apertura, hora_cierre, hora_almuerzo_inicio, 
         hora_almuerzo_fin, trabaja_corrido, puerto_servidor,
-        slogan, direccion, cuit, telefono, email 
+        slogan, direccion, cuit, telefono, email,
+        trabaja_sabados, sabado_hora_apertura, sabado_hora_cierre
     } = req.body;
     
     await run(`
         UPDATE configuracion SET 
         nombre_taller = ?, hora_apertura = ?, hora_cierre = ?, 
         hora_almuerzo_inicio = ?, hora_almuerzo_fin = ?, trabaja_corrido = ?, puerto_servidor = ?,
-        slogan = ?, direccion = ?, cuit = ?, telefono = ?, email = ?
+        slogan = ?, direccion = ?, cuit = ?, telefono = ?, email = ?,
+        trabaja_sabados = ?, sabado_hora_apertura = ?, sabado_hora_cierre = ?
         WHERE id = 1
     `, [
         nombre_taller, hora_apertura, hora_cierre, hora_almuerzo_inicio, 
         hora_almuerzo_fin, trabaja_corrido ? 1 : 0, puerto_servidor || 5881,
-        slogan, direccion, cuit, telefono, email
+        slogan, direccion, cuit, telefono, email,
+        trabaja_sabados ? 1 : 0, sabado_hora_apertura, sabado_hora_cierre
     ]);
     res.json({ status: 'Configuración actualizada' });
 });
