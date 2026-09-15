@@ -259,6 +259,36 @@ app.use(errorHandler);
 // ─── INICIAR TAREAS PROGRAMADAS ────────────────────────────────────
 iniciarCron();
 
+// ─── CHECKPOINT PERIÓDICO DEL WAL (independiente del cron por hora) ──
+// Motivo: cerrar la ventana de la app mata el sidecar de Node a la fuerza
+// (ver src-tauri/src/lib.rs, child.kill()), sin darle chance de terminar
+// limpio. Confiar en que el cierre haga el checkpoint es frágil — si esa
+// llamada llega a fallar o demorar, la ventana puede quedar sin poder
+// cerrarse (bug real que ya pasó). La solución robusta es la contraria:
+// que el WAL NUNCA llegue a crecer mucho en primer lugar, sin depender
+// del cierre para nada. Por eso se vuelca a disco solo, cada pocos
+// minutos, sin importar si la app se cierra bien, mal, o se corta la luz.
+//
+// PASSIVE vuelca el contenido del WAL a la base, pero NO achica el
+// archivo -wal en disco — solo TRUNCATE lo hace. Como el problema real
+// reportado era justamente "WAL enorme" (tamaño en disco creciendo sin
+// control), acá se usa TRUNCATE. Es seguro llamarlo periódicamente: si en
+// ese instante hay una lectura en curso que todavía necesita datos del
+// WAL, SQLite simplemente no llega a truncar del todo esa vez (no tira
+// error) y se vuelve a intentar en el siguiente tick, 3 minutos después.
+const CHECKPOINT_PERIODICO_MS = 3 * 60 * 1000; // cada 3 minutos
+setInterval(async () => {
+    try {
+        const { run } = require('./config/database'); // cacheado por Node, no vuelve a ejecutar el módulo
+        await run('PRAGMA wal_checkpoint(TRUNCATE)');
+    } catch (error) {
+        // No debe tumbar el servidor por esto — se reintenta solo en el
+        // próximo tick. Ver utils/cron.js para el mismo criterio (con su
+        // propio catch agregado tras un bug real de proceso caído).
+        console.error('[SISTEMA] Error en checkpoint periódico del WAL:', error.message);
+    }
+}, CHECKPOINT_PERIODICO_MS);
+
 // ─── ARRANQUE DINÁMICO ─────────────────────────────────────────────
 const { get } = require('./config/database');
 const { appFolder } = require('./db/connection');
