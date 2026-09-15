@@ -147,6 +147,17 @@ function iniciarCron() {
                 await procesarPausaAutomatica(false);
                 ultimaAccionAutomatica = timeKey;
             }
+        } catch (error) {
+            // BUG CORREGIDO: antes este bloque era try/finally SIN catch.
+            // Si `get(...)` (o cualquier otro paso de acá arriba) tiraba una
+            // excepción, se propagaba como una promesa rechazada sin
+            // manejar — y en Node moderno eso tumba TODO el proceso por
+            // default. Como este tick corre cada 60 segundos, tarde o
+            // temprano un error transitorio (lock de SQLite, I/O, lo que
+            // sea) terminaba cayéndose el servidor entero, sin ningún aviso
+            // más allá del log. Ahora el error queda contenido acá: se
+            // loguea y el cron simplemente reintenta en el siguiente tick.
+            console.error('[SISTEMA] Error en el tick del cron (no debería tumbar el servidor):', error.message);
         } finally {
             cronEjecutando = false;
         }

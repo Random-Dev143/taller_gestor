@@ -87,23 +87,32 @@ onMounted(async () => {
       console.error('Error al iniciar el servidor de fondo:', e);
     }
 
-    // --- CIERRE SEGURO ---
-    // Cerrar la ventana (o que Windows apague la PC) termina en un
-    // `child.kill()` forzado del sidecar de Node, sin darle chance de
-    // cerrar limpio (ver src-tauri/src/lib.rs). Antes de dejar cerrar,
-    // le pedimos al backend un checkpoint del WAL + backup consistente
-    // (ver routes/sistema.js), para achicar la ventana de riesgo de dejar
-    // el .db principal desactualizado respecto al -wal/-shm.
+    // NOTA: la defensa PRINCIPAL contra un WAL gigante ya no depende de
+    // este momento — el backend hace un checkpoint (PRAGMA
+    // wal_checkpoint) solo, cada 3 minutos, sin importar cómo se cierre
+    // la app (ver server.js, CHECKPOINT_PERIODICO_MS). Así que perder
+    // este intento de acá abajo, en el peor caso, cuesta como máximo un
+    // par de minutos de WAL sin volcar — nunca "enorme".
+    //
+    // Esto de acá es solo un intento best-effort de capturar también los
+    // últimos segundos antes de cerrar. Con un timeout REAL (AbortController,
+    // que corta la petición de verdad, no solo "deja de esperar" — la
+    // versión anterior con Promise.race dejaba el pedido viajando de
+    // fondo igual) y corto (2s), para que bajo ninguna circunstancia
+    // pueda impedir que la ventana cierre. destroy() SIEMPRE se llama en
+    // el finally, pase lo que pase con el fetch.
     getCurrentWindow().onCloseRequested(async (event) => {
       event.preventDefault();
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
       try {
-        await fetchJSON('/sistema/checkpoint-seguro', { method: 'POST' });
+        await fetchJSON('/sistema/checkpoint-seguro', { method: 'POST', signal: controller.signal });
       } catch (err) {
-        console.error('No se pudo hacer el checkpoint seguro antes de cerrar:', err);
-        // Igual dejamos cerrar: preferimos cerrar con un WAL posiblemente
-        // pendiente de checkpoint (SQLite lo recupera solo al reabrir)
-        // antes que dejar la app trabada sin poder cerrarse.
+        // Llega acá tanto si el pedido falló como si se canceló por el
+        // timeout — en cualquier caso, se sigue cerrando igual.
+        console.warn('Checkpoint de cierre no se pudo confirmar (se sigue cerrando igual, el checkpoint periódico ya cubre esto):', err);
       } finally {
+        clearTimeout(timeoutId);
         await getCurrentWindow().destroy();
       }
     });
