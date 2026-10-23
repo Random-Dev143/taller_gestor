@@ -11,7 +11,8 @@
   "pkg": {
     "assets": [
       "node_modules/sqlite3/lib/binding/**/*.node",
-      "dist/**/*"
+      "dist/**/*",
+      "db/migrations/**/*.js"
     ]
   },
   "dependencies": {
