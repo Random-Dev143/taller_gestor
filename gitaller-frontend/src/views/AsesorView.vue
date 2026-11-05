@@ -9,6 +9,11 @@
           <input type="checkbox" v-model="soloFaltaFacturar" @change="onFiltroFacturacionChange" />
           Solo falta facturar
         </label>
+        <select v-if="activeTab === 'asesor-ots-finalizadas'" v-model="filtroGarantia" @change="onFiltroFacturacionChange" class="form-control select-garantia" title="Filtrar por garantía">
+          <option value="">Garantía: todas</option>
+          <option value="1">Es garantía: Sí</option>
+          <option value="0">Es garantía: No</option>
+        </select>
         <input type="text" v-model="busqueda" placeholder="🔍 Buscar por patente, OT o cliente..." class="form-control search-input" @input="onBuscar" />
         <button class="btn btn-secondary btn-sm" @click="cargarOTs">↻ Actualizar</button>
       </div>
@@ -84,6 +89,7 @@ let debounceTimer = null
 const sortBy = ref('')
 const sortDir = ref('desc')
 const soloFaltaFacturar = ref(false)
+const filtroGarantia = ref('') // '' = todas, '1' = es garantía, '0' = no es garantía
 
 const showModalDetalle = ref(false)
 const showModalEditar = ref(false)
@@ -108,6 +114,7 @@ const cargarOTs = async () => {
     if (busqueda.value.trim()) params.set('busqueda', busqueda.value.trim())
     if (sortBy.value) { params.set('sortBy', sortBy.value); params.set('sortDir', sortDir.value) }
     if (activeTab.value === 'asesor-ots-finalizadas' && soloFaltaFacturar.value) params.set('facturacion', 'pendientes')
+    if (activeTab.value === 'asesor-ots-finalizadas' && filtroGarantia.value !== '') params.set('garantia', filtroGarantia.value)
     const res = await fetchJSON(`/ordenes?${params.toString()}`)
     ots.value = res.data
     total.value = res.total
@@ -139,6 +146,7 @@ watch(activeTab, () => {
   page.value = 1
   busqueda.value = ''
   soloFaltaFacturar.value = false
+  filtroGarantia.value = ''
   cargarOTs()
 })
 
@@ -186,4 +194,5 @@ onMounted(cargarOTs)
 .header-row h2 { margin: 0; margin-right: auto; }
 .search-input { max-width: 300px; }
 .check-facturacion { display: flex; align-items: center; gap: 6px; font-size: 0.9rem; white-space: nowrap; }
+.select-garantia { width: auto; min-width: 150px; }
 </style>

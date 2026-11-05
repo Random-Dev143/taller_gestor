@@ -12,6 +12,11 @@
           <input type="checkbox" v-model="soloFaltaFacturar" @change="onFiltroFacturacionChange" />
           Solo falta facturar
         </label>
+        <select v-if="activeTab === 'jefe-ots-finalizadas'" v-model="filtroGarantia" @change="onFiltroFacturacionChange" class="form-control select-garantia" title="Filtrar por garantía">
+          <option value="">Garantía: todas</option>
+          <option value="1">Es garantía: Sí</option>
+          <option value="0">Es garantía: No</option>
+        </select>
         <input type="text" v-model="busqueda" placeholder="🔍 Buscar por patente, OT o cliente..." class="form-control search-input" @input="onBuscar" />
         <button class="btn btn-outline btn-sm" v-can="'tarea_gestionar_todas'" @click="abrirAsignacion('0000')" title="Asignar limpieza, capacitaciones, etc.">
         🧹 Tarea Interna
@@ -102,6 +107,7 @@ let debounceTimer = null
 const sortBy = ref('')
 const sortDir = ref('desc')
 const soloFaltaFacturar = ref(false)
+const filtroGarantia = ref('') // '' = todas, '1' = es garantía, '0' = no es garantía
 
 const showModalDetalle = ref(false)
 const showModalEditar = ref(false)
@@ -133,6 +139,7 @@ const cargarDatos = async () => {
     if (busqueda.value.trim()) params.set('busqueda', busqueda.value.trim())
     if (sortBy.value) { params.set('sortBy', sortBy.value); params.set('sortDir', sortDir.value) }
     if (activeTab.value === 'jefe-ots-finalizadas' && soloFaltaFacturar.value) params.set('facturacion', 'pendientes')
+    if (activeTab.value === 'jefe-ots-finalizadas' && filtroGarantia.value !== '') params.set('garantia', filtroGarantia.value)
     const [resOts, legajos] = await Promise.all([
       fetchJSON(`/ordenes?${params.toString()}`),
       fetchJSON('/legajos')
@@ -164,6 +171,7 @@ watch(activeTab, (newTab) => {
     page.value = 1
     busqueda.value = ''
     soloFaltaFacturar.value = false
+    filtroGarantia.value = ''
     cargarDatos()
   }
 })
@@ -268,4 +276,5 @@ onMounted(() => {
 .search-input { max-width: 300px; }
 .jefe-pill { cursor: pointer; }
 .check-facturacion { display: flex; align-items: center; gap: 6px; font-size: 0.9rem; white-space: nowrap; }
+.select-garantia { width: auto; min-width: 150px; }
 </style>

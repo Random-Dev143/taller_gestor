@@ -74,6 +74,10 @@ const limiterGeneral = rateLimit({
     message: { error: 'Demasiadas peticiones. Por favor, espere un momento.' },
     standardHeaders: true,
     legacyHeaders: false,
+    // Solo en la suite de tests (globalSetup arranca el server con NODE_ENV=test):
+    // la suite hace >100 peticiones/min desde una sola IP y recibía 429 al azar.
+    // En producción NODE_ENV no vale 'test', así que el límite sigue activo.
+    skip: () => process.env.NODE_ENV === 'test',
 });
 
 // Límite estricto para Sala de Espera: Máximo 15 peticiones por minuto por IP

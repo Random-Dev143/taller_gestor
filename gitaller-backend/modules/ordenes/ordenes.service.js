@@ -44,7 +44,9 @@ async function listar(query) {
     else if (query.estado === 'finalizadas') where += ` AND o.estado_actual = 'Finalizada'`;
     else if (query.estado) { where += ` AND o.estado_actual = ?`; params.push(query.estado); }
 
-    if (query.garantia !== undefined) { where += ` AND o.es_garantia = ?`; params.push(query.garantia); }
+    // Solo se filtra con '1' (es garantía) o '0' (no es garantía); cualquier otro
+    // valor (vacío, 'todas', etc.) se ignora y trae todas.
+    if (query.garantia === '0' || query.garantia === '1') { where += ` AND o.es_garantia = ?`; params.push(Number(query.garantia)); }
 
     if (query.facturacion === 'facturadas') where += ` AND ${MONTOS_EXPR} > 0`;
     else if (query.facturacion === 'pendientes') where += ` AND ${MONTOS_EXPR} = 0`;
