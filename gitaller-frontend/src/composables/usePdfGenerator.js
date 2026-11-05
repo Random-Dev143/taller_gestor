@@ -3,6 +3,27 @@ import { useToast, errMsg } from './useToast'
 import { useConfigStore } from '../stores/useConfigStore'
 import { usePdfOutput } from './usePdfOutput'
 
+// Escapa el texto del usuario (antes se inyectaba tal cual en innerHTML, así que
+// un "<" o un "&" escrito por el mecánico rompía o ensuciaba el PDF) y convierte
+// los saltos de línea (Enter) en <br> para que se respeten en el documento.
+const escaparHtml = (str) => String(str ?? '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+
+const textoAHtml = (str) => escaparHtml(str).replace(/\r\n|\r|\n/g, '<br>')
+
+// Horas decimales (1.5) -> "1h 30m". El valor crudo de la base es un decimal
+// largo (ej. 1.2833333), que mostrado tal cual con "hs" no se entiende.
+const formatearDuracion = (horasDecimal) => {
+  const totalMin = Math.round((Number(horasDecimal) || 0) * 60)
+  const h = Math.floor(totalMin / 60)
+  const m = totalMin % 60
+  if (h === 0) return `${m}m`
+  return m === 0 ? `${h}h` : `${h}h ${m}m`
+}
+
 export function usePdfGenerator() {
   const { fetchJSON, API_BASE } = useApi()
   const toast = useToast()
@@ -23,16 +44,22 @@ export function usePdfGenerator() {
       ])
 
       const data = await fetchJSON(`/ordenes/${ot}/explicacion`)
-      const { orden, explicacion, aportes, jefe } = data
+      const { orden, explicacion, aportes, jefe, tiempos_mecanicos } = data
       const safeAportes = aportes || []
 
       // 1. Preparamos los arrays para separar las causas de las reparaciones
-      let causasAgrupadas = explicacion?.causa ? [explicacion.causa] : []
+      // (cada ítem ya queda como HTML seguro: texto escapado + saltos de línea)
+      let causasAgrupadas = explicacion?.causa ? [textoAHtml(explicacion.causa)] : []
       let reparacionesAgrupadas = []
+
+      // Si el backend no manda tiempos_mecanicos (versión vieja), no se
+      // muestra la hora por aporte salvo que el aporte tenga una cargada.
+      const tiempoLegacy = (ap) => (Number(ap.horas) > 0 ? ` - ${formatearDuracion(ap.horas)}` : '')
 
       // 2. Analizamos cada aporte del mecánico
       safeAportes.forEach(ap => {
         let texto = ap.actividades || ''
+        const quien = escaparHtml(ap.nombre || ap.legajo)
 
         // Si el texto tiene el formato estructurado del Modal del Mecánico...
         if (texto.includes('CAUSA DEL DESPERFECTO:')) {
@@ -42,11 +69,11 @@ export function usePdfGenerator() {
           const repStr = partes[1] ? partes[1].trim() : ''
 
           // Guardamos cada parte en su lista correspondiente
-          if (causaStr) causasAgrupadas.push(`• ${causaStr} (Mec: ${ap.nombre || ap.legajo})`)
-          if (repStr) reparacionesAgrupadas.push(`<div style="margin-bottom: 5px;">• ${repStr} <b>(Mec: ${ap.nombre || ap.legajo} - ${ap.horas}hs)</b></div>`)
+          if (causaStr) causasAgrupadas.push(`• ${textoAHtml(causaStr)} (Mec: ${quien})`)
+          if (repStr) reparacionesAgrupadas.push(`<div style="margin-bottom: 5px;">• ${textoAHtml(repStr)} <b>(Mec: ${quien}${tiempoLegacy(ap)})</b></div>`)
         } else {
           // Si es un aporte viejo que no tiene ese formato, va directo a reparación
-          reparacionesAgrupadas.push(`<div style="margin-bottom: 5px;">• ${texto} <b>(Mec: ${ap.nombre || ap.legajo} - ${ap.horas}hs)</b></div>`)
+          reparacionesAgrupadas.push(`<div style="margin-bottom: 5px;">• ${textoAHtml(texto)} <b>(Mec: ${quien}${tiempoLegacy(ap)})</b></div>`)
         }
       })
 
@@ -54,6 +81,16 @@ export function usePdfGenerator() {
       const textoCausasFinal = causasAgrupadas.join('<br>')
       let textoActividades = reparacionesAgrupadas.join('')
       if (!textoActividades) textoActividades = 'Sin registros de reparación aún.'
+
+      // Tiempo real trabajado por cada mecánico en la OT (una sola vez por
+      // mecánico, aunque haya escrito más de un aporte).
+      const tiemposValidos = (tiempos_mecanicos || []).filter(t => Number(t.horas) > 0)
+      if (tiemposValidos.length) {
+        const detalle = tiemposValidos
+          .map(t => `${escaparHtml(t.nombre || t.legajo)}: <b>${formatearDuracion(t.horas)}</b>`)
+          .join(' &nbsp;|&nbsp; ')
+        textoActividades += `<div style="margin-top: 8px; padding-top: 6px; border-top: 1px dashed #999;">Tiempo trabajado &rarr; ${detalle}</div>`
+      }
 
       let firmaMecanico = ''
       if (safeAportes.length > 0) {
@@ -149,7 +186,17 @@ export function usePdfGenerator() {
           const imgWidth = 210
           const imgHeight = (canvas.height * imgWidth) / canvas.width
           
+          // Con saltos de línea el contenido puede superar una hoja A4. Si es
+          // así, se reparte en páginas; si entra en una, queda igual que antes.
+          const alturaUtil = 287 // 297mm - 10mm de margen superior
           pdf.addImage(imgData, 'PNG', 0, 10, imgWidth, imgHeight)
+          // Páginas siguientes: la misma imagen desplazada hacia arriba; lo
+          // que queda fuera de la hoja no se imprime. Si entra en una hoja,
+          // el bucle no corre y el resultado es idéntico al anterior.
+          for (let n = 1; n * alturaUtil < imgHeight; n++) {
+            pdf.addPage()
+            pdf.addImage(imgData, 'PNG', 0, -n * alturaUtil, imgWidth, imgHeight)
+          }
           const pdfBlob = pdf.output('blob')
           await previsualizarPDF(pdfBlob, `explicacion_ot_${orden.ot || ot}.pdf`)
           

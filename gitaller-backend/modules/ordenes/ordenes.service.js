@@ -273,7 +273,30 @@ async function obtenerExplicacionCompleta(ot) {
     const explicacion = await get(`SELECT * FROM explicaciones WHERE ot = ?`, [ot]);
     const aportes = await all(`SELECT ap.*, l.nombre, l.firma_path FROM aportes ap JOIN legajos l ON ap.legajo = l.legajo WHERE ap.ot = ? ORDER BY ap.fecha_aporte ASC`, [ot]);
     let jefe = orden.jefe_legajo ? await get(`SELECT legajo, nombre, firma_path FROM legajos WHERE legajo = ?`, [orden.jefe_legajo]) : null;
-    return { orden, explicacion, aportes, jefe, controlada: !!orden.controlada };
+
+    // Horas reales trabajadas por cada mecánico en esta OT (suma de todas sus
+    // actividades). aportes.horas NO sirve para esto: el aporte se guarda con
+    // horas = 0 al finalizar la tarea; el tiempo real vive en
+    // actividad_mecanicos.tiempo_real. El segundo SELECT cubre actividades
+    // viejas que no tienen filas en actividad_mecanicos.
+    const tiempos_mecanicos = await all(`
+        SELECT t.legajo, l.nombre, ROUND(SUM(t.horas), 4) AS horas
+        FROM (
+            SELECT am.legajo_mecanico AS legajo, am.tiempo_real AS horas
+            FROM actividad_mecanicos am JOIN actividades a ON a.id = am.actividad_id
+            WHERE a.ot = ?
+            UNION ALL
+            SELECT a.legajo_mecanico AS legajo, a.tiempo_real AS horas
+            FROM actividades a
+            WHERE a.ot = ? AND a.legajo_mecanico IS NOT NULL
+              AND NOT EXISTS (SELECT 1 FROM actividad_mecanicos am WHERE am.actividad_id = a.id)
+        ) t
+        LEFT JOIN legajos l ON l.legajo = t.legajo
+        GROUP BY t.legajo, l.nombre
+        ORDER BY l.nombre
+    `, [ot, ot]);
+
+    return { orden, explicacion, aportes, jefe, controlada: !!orden.controlada, tiempos_mecanicos };
 }
 
 async function actualizarAporte(id, { actividades, horas }) {
