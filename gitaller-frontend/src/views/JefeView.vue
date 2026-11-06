@@ -12,6 +12,10 @@
           <input type="checkbox" v-model="soloFaltaFacturar" @change="onFiltroFacturacionChange" />
           Solo falta facturar
         </label>
+        <FiltroFechasFinalizadas v-if="activeTab === 'jefe-ots-finalizadas'"
+          v-model:desde="fechaDesde" v-model:hasta="fechaHasta"
+          :buscando="busqueda.trim() !== ''"
+          @cambio="onFiltroFacturacionChange" @reset="resetearFechas" />
         <select v-if="activeTab === 'jefe-ots-finalizadas'" v-model="filtroGarantia" @change="onFiltroFacturacionChange" class="form-control select-garantia" title="Filtrar por garantía">
           <option value="">Garantía: todas</option>
           <option value="1">Es garantía: Sí</option>
@@ -78,6 +82,8 @@ import { useToast, errMsg } from '../composables/useToast'
 import { usePdfGenerator } from '../composables/usePdfGenerator'
 
 import NavBar from '../components/common/NavBar.vue'
+import FiltroFechasFinalizadas from '../components/common/FiltroFechasFinalizadas.vue'
+import { fechaLocalISO, DIAS_POR_DEFECTO } from '../composables/useRangoFechas'
 import OTTable from '../components/common/OTTable.vue'
 import PaginationBar from '../components/common/PaginationBar.vue'
 import ModalDetalleOT from '../components/asesor/ModalDetalleOT.vue'
@@ -108,6 +114,10 @@ const sortBy = ref('')
 const sortDir = ref('desc')
 const soloFaltaFacturar = ref(false)
 const filtroGarantia = ref('') // '' = todas, '1' = es garantía, '0' = no es garantía
+// Rango de fechas de Finalizadas: por defecto los últimos 30 días, para que la
+// lista no crezca sin límite. Se cambia con el selector; vacío = sin tope.
+const fechaDesde = ref(fechaLocalISO(DIAS_POR_DEFECTO))
+const fechaHasta = ref('')
 
 const showModalDetalle = ref(false)
 const showModalEditar = ref(false)
@@ -140,6 +150,12 @@ const cargarDatos = async () => {
     if (sortBy.value) { params.set('sortBy', sortBy.value); params.set('sortDir', sortDir.value) }
     if (activeTab.value === 'jefe-ots-finalizadas' && soloFaltaFacturar.value) params.set('facturacion', 'pendientes')
     if (activeTab.value === 'jefe-ots-finalizadas' && filtroGarantia.value !== '') params.set('garantia', filtroGarantia.value)
+    // Con texto en el buscador se busca en TODAS las fechas (si no, una OT vieja
+    // no se podría encontrar por número o patente sin tocar el selector).
+    if (activeTab.value === 'jefe-ots-finalizadas' && !busqueda.value.trim()) {
+      if (fechaDesde.value) params.set('desde', fechaDesde.value)
+      if (fechaHasta.value) params.set('hasta', fechaHasta.value)
+    }
     const [resOts, legajos] = await Promise.all([
       fetchJSON(`/ordenes?${params.toString()}`),
       fetchJSON('/legajos')
@@ -172,6 +188,8 @@ watch(activeTab, (newTab) => {
     busqueda.value = ''
     soloFaltaFacturar.value = false
     filtroGarantia.value = ''
+    fechaDesde.value = fechaLocalISO(DIAS_POR_DEFECTO)
+    fechaHasta.value = ''
     cargarDatos()
   }
 })
@@ -190,8 +208,18 @@ const onSortChange = (campo) => {
 }
 
 const onFiltroFacturacionChange = () => {
+  if (fechaDesde.value && fechaHasta.value && fechaDesde.value > fechaHasta.value) {
+    toast.error('La fecha "Desde" no puede ser posterior a "Hasta"')
+    return
+  }
   page.value = 1
   cargarDatos()
+}
+
+const resetearFechas = () => {
+  fechaDesde.value = fechaLocalISO(DIAS_POR_DEFECTO)
+  fechaHasta.value = ''
+  onFiltroFacturacionChange()
 }
 
 const abrirAsignacion = (ot) => { otSeleccionada.value = ot; actividadAEditar.value = null; showModalAsignar.value = true; }

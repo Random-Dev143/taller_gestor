@@ -48,6 +48,15 @@ async function listar(query) {
     // valor (vacío, 'todas', etc.) se ignora y trae todas.
     if (query.garantia === '0' || query.garantia === '1') { where += ` AND o.es_garantia = ?`; params.push(Number(query.garantia)); }
 
+    // Rango de fechas opcional (YYYY-MM-DD, en hora local). Se compara contra la
+    // fecha de cierre; si la OT no tiene (datos viejos), contra la de apertura.
+    // Las fechas se guardan en UTC, por eso 'localtime' antes de comparar el día.
+    // Valores con formato inválido se ignoran (igual que `garantia`).
+    const fechaValida = (v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && !isNaN(Date.parse(v));
+    const FECHA_REF = `date(COALESCE(o.fecha_cierre, o.fecha_apertura), 'localtime')`;
+    if (fechaValida(query.desde)) { where += ` AND ${FECHA_REF} >= ?`; params.push(query.desde); }
+    if (fechaValida(query.hasta)) { where += ` AND ${FECHA_REF} <= ?`; params.push(query.hasta); }
+
     if (query.facturacion === 'facturadas') where += ` AND ${MONTOS_EXPR} > 0`;
     else if (query.facturacion === 'pendientes') where += ` AND ${MONTOS_EXPR} = 0`;
 

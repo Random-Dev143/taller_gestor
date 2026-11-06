@@ -21,17 +21,20 @@
               <strong>{{ c.nombre }}</strong> <span style="font-size: 0.8rem; color: var(--text-soft);">{{ c.telefono || '' }}</span>
             </li>
           </ul>
+        </div>
 
-          <!-- Vehículos ya registrados a nombre del cliente elegido. Elegir uno
-               autocompleta patente/unidad; si el vehículo es nuevo, se ignora
-               y se completa el formulario a mano como siempre. -->
-          <div v-if="unidadesCliente.length > 0" class="unidades-cliente">
-            <span class="unidades-cliente-label">Vehículos de este cliente:</span>
-            <button v-for="u in unidadesCliente" :key="u.patente" type="button"
-                    class="btn-unidad-sugerida" @click="seleccionarUnidad(u)">
-              {{ u.patente }} · {{ u.unidad }}
-            </button>
-          </div>
+        <!-- Vehículos ya registrados a nombre del cliente elegido. Es una celda
+             propia y SIEMPRE visible (deshabilitada hasta elegir cliente), con
+             alto fijo: antes eran botones dentro de la celda del cliente y con
+             5+ unidades la celda crecía y desplazaba todo el formulario.
+             Elegir uno autocompleta patente/unidad/km; si el vehículo es nuevo,
+             se ignora y se completa el formulario a mano como siempre. -->
+        <div class="form-group">
+          <label>Vehículos del cliente</label>
+          <select v-model="unidadElegida" :disabled="unidadesCliente.length === 0" @change="onElegirUnidad($event.target.value)">
+            <option value="">{{ unidadesCliente.length === 0 ? '— Elegí un cliente de la lista —' : `— ${unidadesCliente.length} vehículo(s) registrados —` }}</option>
+            <option v-for="u in unidadesCliente" :key="u.patente" :value="u.patente">{{ u.patente }} · {{ u.unidad }}</option>
+          </select>
         </div>
         <div class="form-group">
           <label>Unidad *</label>
@@ -124,7 +127,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useApi } from '../../composables/useApi'
 import { useToast, errMsg } from '../../composables/useToast'
 
@@ -152,6 +155,7 @@ const montoDescuentoCalculado = computed(() => {
 const enviando = ref(false)
 const clientesSugeridos = ref([])
 const unidadesCliente = ref([])
+const unidadElegida = ref('') // patente elegida en el desplegable ('' = ninguna)
 let searchTimeout = null
 
 const normalizarPatente = (pat) => pat.replace(/[^a-zA-Z0-9]/g, '').toUpperCase()
@@ -173,6 +177,7 @@ const buscarPatente = async () => {
 const buscarClientes = () => {
   form.value.cliente = form.value.cliente.toUpperCase()
   unidadesCliente.value = []
+  unidadElegida.value = ''
   clearTimeout(searchTimeout)
   if (form.value.cliente.length < 2) {
     clientesSugeridos.value = []
@@ -188,6 +193,7 @@ const buscarClientes = () => {
 const seleccionarCliente = async (cliente) => {
   form.value.cliente = cliente.nombre
   clientesSugeridos.value = []
+  unidadElegida.value = ''
   try {
     unidadesCliente.value = await fetchJSON(`/unidades/cliente/${cliente.id}`)
   } catch (e) {
@@ -199,9 +205,21 @@ const seleccionarUnidad = (unidad) => {
   form.value.patente = unidad.patente
   form.value.unidad = unidad.unidad
   if (unidad.ultimo_kilometraje) form.value.kilometraje = unidad.ultimo_kilometraje
-  unidadesCliente.value = []
   toast.info(`Vehículo ${unidad.patente} cargado`, 2000)
 }
+
+// Al elegir en el desplegable. Volver a "— vehículos registrados —" no hace nada
+// (los campos ya cargados se editan a mano, como siempre).
+const onElegirUnidad = (patente) => {
+  const unidad = unidadesCliente.value.find(u => u.patente === patente)
+  if (unidad) seleccionarUnidad(unidad)
+}
+
+// Si después de elegir un vehículo la persona edita la patente a mano, el
+// desplegable deja de mostrar un vehículo que ya no es el cargado.
+watch(() => form.value.patente, (p) => {
+  if (unidadElegida.value && p !== unidadElegida.value) unidadElegida.value = ''
+})
 
 const crearOT = async () => {
   if (tieneBonificacion.value && !descuentoMotivo.value.trim()) {
@@ -233,6 +251,7 @@ const crearOT = async () => {
     porcentajeDescuento.value = 0
     descuentoMotivo.value = ''
     unidadesCliente.value = []
+    unidadElegida.value = ''
     emit('ot-creada')
   } catch (err) { toast.error('Error al crear la OT: ' + errMsg(err)) } 
   finally { enviando.value = false }
@@ -248,12 +267,4 @@ const crearOT = async () => {
 }
 .autocomplete-list li { padding: 8px 12px; cursor: pointer; border-bottom: 1px solid var(--border-soft); display: flex; justify-content: space-between;}
 .autocomplete-list li:hover { background: var(--primary-light); color: var(--primary); }
-
-.unidades-cliente { margin-top: 8px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.unidades-cliente-label { font-size: 0.78rem; color: var(--muted); width: 100%; }
-.btn-unidad-sugerida {
-  border: 1px solid var(--border); background: var(--border-soft); color: var(--primary);
-  padding: 4px 10px; border-radius: 14px; font-size: 0.8rem; cursor: pointer;
-}
-.btn-unidad-sugerida:hover { background: var(--primary-light); }
 </style>
