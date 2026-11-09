@@ -6,15 +6,23 @@
       
       <div v-if="loading" class="loading-state"><div class="spinner"></div>Cargando datos...</div>
       <form v-else @submit.prevent="$emit('confirm', form)">
+        <!-- Solo aparece si hay otro mecánico en la actividad que va a escribir el aporte -->
+        <label v-if="puedeSerAuxiliar" class="auxiliar-check">
+          <input type="checkbox" v-model="form.esAuxiliar" />
+          <span><strong>Fui auxiliar en esta tarea</strong> — mi compañero escribe el aporte; mi tiempo igual queda registrado.</span>
+        </label>
+
         <div class="form-group mb-15">
-          <label>Causa del desperfecto * <span style="color:var(--primary); font-weight:normal;">(Compartida en toda la OT)</span></label>
-          <textarea v-model="form.causa" rows="3" class="form-control" required placeholder="Describa el origen del problema..."></textarea>
+          <label>Causa del desperfecto <span v-if="!form.esAuxiliar">*</span> <span style="color:var(--primary); font-weight:normal;">(Compartida en toda la OT)</span></label>
+          <textarea v-model="form.causa" rows="3" class="form-control" :required="!form.esAuxiliar" placeholder="Describa el origen del problema..."></textarea>
         </div>
-        <div class="form-group mb-15">
+        <div v-if="!form.esAuxiliar" class="form-group mb-15">
           <label>Reparación realizada * <span style="color:var(--primary); font-weight:normal;">(Tu aporte individual)</span></label>
           <textarea v-model="form.reparacion" rows="3" class="form-control" required placeholder="Describa el trabajo que ejecutaste..."></textarea>
         </div>
-        <button type="submit" class="btn btn-success w-100 mt-10">Guardar y {{ modoInformar ? 'Enviar Informe' : 'Finalizar' }}</button>
+        <button type="submit" class="btn btn-success w-100 mt-10">
+          {{ form.esAuxiliar ? 'Finalizar como auxiliar' : `Guardar y ${modoInformar ? 'Enviar Informe' : 'Finalizar'}` }}
+        </button>
       </form>
     </div>
   </div>
@@ -26,12 +34,14 @@ import { useApi } from '../../composables/useApi'
 
 const props = defineProps({ 
   otId: { type: String, required: true }, 
-  modoInformar: { type: Boolean, default: false } 
+  modoInformar: { type: Boolean, default: false },
+  // true si hay al menos otro mecánico en la actividad que NO es auxiliar
+  puedeSerAuxiliar: { type: Boolean, default: false }
 })
 const emit = defineEmits(['close', 'confirm'])
 const { fetchJSON } = useApi()
 
-const form = ref({ causa: '', reparacion: '' })
+const form = ref({ causa: '', reparacion: '', esAuxiliar: false })
 const loading = ref(true)
 
 onMounted(async () => {
@@ -48,4 +58,12 @@ onMounted(async () => {
 })
 </script>
 
-<style scoped> .mb-15 { margin-bottom: 15px; } </style>
+<style scoped>
+.mb-15 { margin-bottom: 15px; }
+.auxiliar-check {
+  display: flex; gap: 10px; align-items: flex-start; cursor: pointer;
+  background: var(--border-soft); border: 1px solid var(--border); border-radius: 6px;
+  padding: 10px; margin-bottom: 15px; font-size: 0.9rem;
+}
+.auxiliar-check input { width: 18px; height: 18px; margin-top: 2px; flex-shrink: 0; }
+</style>

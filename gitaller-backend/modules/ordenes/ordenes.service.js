@@ -291,13 +291,14 @@ async function obtenerExplicacionCompleta(ot) {
     // actividad_mecanicos.tiempo_real. El segundo SELECT cubre actividades
     // viejas que no tienen filas en actividad_mecanicos.
     const tiempos_mecanicos = await all(`
-        SELECT t.legajo, l.nombre, ROUND(SUM(t.horas), 4) AS horas
+        SELECT t.legajo, l.nombre, ROUND(SUM(t.horas), 4) AS horas,
+               MIN(t.aux) AS es_auxiliar  -- 1 solo si fue auxiliar en TODAS sus actividades de la OT
         FROM (
-            SELECT am.legajo_mecanico AS legajo, am.tiempo_real AS horas
+            SELECT am.legajo_mecanico AS legajo, am.tiempo_real AS horas, am.es_auxiliar AS aux
             FROM actividad_mecanicos am JOIN actividades a ON a.id = am.actividad_id
             WHERE a.ot = ?
             UNION ALL
-            SELECT a.legajo_mecanico AS legajo, a.tiempo_real AS horas
+            SELECT a.legajo_mecanico AS legajo, a.tiempo_real AS horas, 0 AS aux
             FROM actividades a
             WHERE a.ot = ? AND a.legajo_mecanico IS NOT NULL
               AND NOT EXISTS (SELECT 1 FROM actividad_mecanicos am WHERE am.actividad_id = a.id)

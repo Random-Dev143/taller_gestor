@@ -109,7 +109,7 @@
       </div>
 
     <ModalPausarTarea v-if="showModalPausa" @close="showModalPausa = false" @confirm="ejecutarPausa" />
-    <ModalFinalizarTarea v-if="showModalFinalizar" :otId="tareaActiva.ot" :modoInformar="esModoInformar" @close="showModalFinalizar = false" @confirm="ejecutarFinalizacion" />
+    <ModalFinalizarTarea v-if="showModalFinalizar" :otId="tareaActiva.ot" :modoInformar="esModoInformar" :puedeSerAuxiliar="(tareaActiva.otros_no_auxiliares || 0) > 0" @close="showModalFinalizar = false" @confirm="ejecutarFinalizacion" />
   </div>
   </div>
 </template>
@@ -254,27 +254,41 @@ const ejecutarPausa = async (motivo) => {
 
 const ejecutarFinalizacion = async (datos) => {
   try {
-    // 1. Guardar/Actualizar la causa colaborativa de la OT (Método PUT)
-    await fetchJSON(`/ordenes/${tareaActiva.value.ot}/explicacion`, {
-      method: 'PUT',
-      body: JSON.stringify({ causa: datos.causa })
-    })
+    const esAuxiliar = !!datos.esAuxiliar
+    const puedeSerAuxiliar = (tareaActiva.value.otros_no_auxiliares || 0) > 0
+    // Solo se manda el flag si la opción estaba disponible (si no, el pedido queda como siempre).
+    const bodyEstado = { nuevo_estado: 'Finalizada', legajo_mecanico: legajo.value }
+    if (puedeSerAuxiliar) bodyEstado.es_auxiliar = esAuxiliar
 
-    // 2. Guardar el aporte de reparación individual (Método POST)
-    await fetchJSON(`/ordenes/${tareaActiva.value.ot}/aportes`, {
-      method: 'POST',
-      body: JSON.stringify({ legajo: legajo.value, actividades: datos.reparacion, horas: 0 })
-    })
+    if (esAuxiliar) {
+      // AUXILIAR: no escribe aporte. Primero se cierra su parte (el backend valida que haya
+      // otro mecánico que escriba el aporte); la causa solo se guarda si la completó.
+      await fetchJSON(`/actividades/${tareaActiva.value.id}/estado`, { method: 'POST', body: JSON.stringify(bodyEstado) })
+      if ((datos.causa || '').trim()) {
+        await fetchJSON(`/ordenes/${tareaActiva.value.ot}/explicacion`, { method: 'PUT', body: JSON.stringify({ causa: datos.causa }) })
+      }
+      toast.success('Tu parte quedó finalizada como auxiliar')
+    } else {
+      // 1. Guardar/Actualizar la causa colaborativa de la OT (Método PUT)
+      await fetchJSON(`/ordenes/${tareaActiva.value.ot}/explicacion`, {
+        method: 'PUT',
+        body: JSON.stringify({ causa: datos.causa })
+      })
 
-    // 3. Marcar TU parte de la tarea como Finalizada. Si tenías una sesión en curso, el
-    // backend la cierra; si no (venías de "Pausada" o de una tarea cerrada por el jefe),
-    // simplemente registra que terminaste, sin afectar a tus compañeros de equipo.
-    await fetchJSON(`/actividades/${tareaActiva.value.id}/estado`, {
-      method: 'POST',
-      body: JSON.stringify({ nuevo_estado: 'Finalizada', legajo_mecanico: legajo.value })
-    })
+      // 2. Guardar el aporte de reparación individual (Método POST)
+      await fetchJSON(`/ordenes/${tareaActiva.value.ot}/aportes`, {
+        method: 'POST',
+        body: JSON.stringify({ legajo: legajo.value, actividades: datos.reparacion, horas: 0 })
+      })
 
-    toast.success(esModoInformar.value ? 'Informe registrado correctamente' : 'Tu parte de la tarea quedó finalizada')
+      // 3. Marcar TU parte de la tarea como Finalizada. Si tenías una sesión en curso, el
+      // backend la cierra; si no (venías de "Pausada" o de una tarea cerrada por el jefe),
+      // simplemente registra que terminaste, sin afectar a tus compañeros de equipo.
+      await fetchJSON(`/actividades/${tareaActiva.value.id}/estado`, { method: 'POST', body: JSON.stringify(bodyEstado) })
+
+      toast.success(esModoInformar.value ? 'Informe registrado correctamente' : 'Tu parte de la tarea quedó finalizada')
+    }
+
     showModalFinalizar.value = false
     cargarTareas()
   } catch (err) { toast.error(errMsg(err)) }

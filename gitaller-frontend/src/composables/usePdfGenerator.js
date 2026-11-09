@@ -87,7 +87,7 @@ export function usePdfGenerator() {
       const tiemposValidos = (tiempos_mecanicos || []).filter(t => Number(t.horas) > 0)
       if (tiemposValidos.length) {
         const detalle = tiemposValidos
-          .map(t => `${escaparHtml(t.nombre || t.legajo)}: <b>${formatearDuracion(t.horas)}</b>`)
+          .map(t => `${escaparHtml(t.nombre || t.legajo)}${t.es_auxiliar ? ' (auxiliar)' : ''}: <b>${formatearDuracion(t.horas)}</b>`)
           .join(' &nbsp;|&nbsp; ')
         textoActividades += `<div style="margin-top: 8px; padding-top: 6px; border-top: 1px dashed #999;">Tiempo trabajado &rarr; ${detalle}</div>`
       }

@@ -62,7 +62,7 @@ async function corregirTiempo(id, { inicio, fin }) {
 
 // POR MECÁNICO: cada integrante del equipo tiene su propio play/pausa/finalizar,
 // totalmente independiente del resto.
-async function cambiarEstadoMiembro(id, { nuevo_estado, motivo, legajo_mecanico }) {
+async function cambiarEstadoMiembro(id, { nuevo_estado, motivo, legajo_mecanico, es_auxiliar }) {
     if (!legajo_mecanico) {
         const error = new Error('Falta indicar qué mecánico está operando la tarea');
         error.status = 400;
@@ -78,6 +78,26 @@ async function cambiarEstadoMiembro(id, { nuevo_estado, motivo, legajo_mecanico 
 
         if (nuevo_estado === 'Finalizada' && actividad.ot === '0000' && actividad.es_rutina) {
             throw new Error('Las tareas rutinarias no se cierran: quedan siempre disponibles para operar.');
+        }
+
+        // Mecánico auxiliar: solo se evalúa al finalizar y solo si el cliente envió el flag
+        // (si no viene, no se toca nada: el flujo anterior queda idéntico).
+        // Reglas: tiene que haber al menos OTRO mecánico en la actividad que NO sea
+        // auxiliar, porque alguien tiene que escribir el aporte de la reparación.
+        if (nuevo_estado === 'Finalizada' && es_auxiliar !== undefined && es_auxiliar !== null) {
+            const marcar = es_auxiliar === true || es_auxiliar === 1 || es_auxiliar === '1';
+            if (marcar) {
+                const otros = await get(
+                    `SELECT COUNT(*) AS n FROM actividad_mecanicos WHERE actividad_id = ? AND legajo_mecanico != ? AND es_auxiliar = 0`,
+                    [id, legajo_mecanico]
+                );
+                if (!otros || otros.n < 1) {
+                    const error = new Error('Solo podés marcarte como auxiliar si hay otro mecánico en la actividad que escriba el aporte.');
+                    error.status = 400;
+                    throw error;
+                }
+            }
+            await run(`UPDATE actividad_mecanicos SET es_auxiliar = ? WHERE actividad_id = ? AND legajo_mecanico = ?`, [marcar ? 1 : 0, id, legajo_mecanico]);
         }
 
         if (nuevo_estado === 'En Curso') {
@@ -189,6 +209,8 @@ async function listarPorMecanico(legajo) {
     return all(`
         SELECT a.*, 
                am.estado AS mi_estado, am.tiempo_real AS mi_tiempo_real, am.informe AS mi_informe,
+               am.es_auxiliar AS soy_auxiliar,
+               (SELECT COUNT(*) FROM actividad_mecanicos am3 WHERE am3.actividad_id = a.id AND am3.legajo_mecanico != am.legajo_mecanico AND am3.es_auxiliar = 0) AS otros_no_auxiliares,
                (SELECT ta.inicio FROM tiempos_actividad ta WHERE ta.actividad_id = a.id AND ta.legajo_mecanico = am.legajo_mecanico AND ta.fin IS NULL ORDER BY ta.id DESC LIMIT 1) AS mi_sesion_inicio,
                o.patente, u.unidad, c.nombre AS cliente,
                (SELECT GROUP_CONCAT(l.nombre, ', ') FROM actividad_mecanicos am2 JOIN legajos l ON am2.legajo_mecanico = l.legajo WHERE am2.actividad_id = a.id) AS equipo
@@ -275,6 +297,13 @@ async function actualizar(id, { legajos_mecanicos, descripcion, tiempo_estimado,
             }
 
             await run(`UPDATE actividades SET legajo_mecanico = ? WHERE id = ?`, [legajos_mecanicos[0], id]);
+
+            // Siempre tiene que quedar al menos un mecánico NO auxiliar (el que escribe el
+            // aporte). Si el cambio de equipo dejó solo auxiliares (ej. se quitó al otro), se limpia.
+            const sinAux = await get(`SELECT COUNT(*) AS n FROM actividad_mecanicos WHERE actividad_id = ? AND es_auxiliar = 0`, [id]);
+            if (!sinAux || sinAux.n === 0) {
+                await run(`UPDATE actividad_mecanicos SET es_auxiliar = 0 WHERE actividad_id = ?`, [id]);
+            }
 
             if (tiempo_real !== undefined && tiempo_real !== null && !Number.isNaN(Number(tiempo_real))) {
                 const rep = legajos_mecanicos[0];
