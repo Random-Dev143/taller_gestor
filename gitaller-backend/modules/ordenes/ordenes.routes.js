@@ -57,6 +57,35 @@ router.put('/:ot/descuento/autorizar', async (req, res) => {
     }
 });
 
+// Anulación de OTs — solo con el permiso granular 'ot_anular' (jefe de taller).
+const puedeAnular = (req, res) => {
+    const permisosUsuario = (req.usuario && req.usuario.permisos) || [];
+    if (permisosUsuario.includes('ot_anular')) return true;
+    res.status(403).json({ error: 'No tiene permiso para anular órdenes de trabajo.' });
+    return false;
+};
+
+router.post('/:ot/anular', async (req, res) => {
+    if (!puedeAnular(req, res)) return;
+    try {
+        const quien = req.usuario.nombre_completo || req.usuario.legajo || req.usuario.email;
+        res.json(await ordenesService.anularOrden(req.params.ot, req.body && req.body.motivo, quien));
+    } catch (error) {
+        if (error.status) return res.status(error.status).json({ error: error.message });
+        throw error;
+    }
+});
+
+router.post('/:ot/reactivar', async (req, res) => {
+    if (!puedeAnular(req, res)) return;
+    try {
+        res.json(await ordenesService.reactivarOrden(req.params.ot));
+    } catch (error) {
+        if (error.status) return res.status(error.status).json({ error: error.message });
+        throw error;
+    }
+});
+
 const cambiarEstadoHandler = async (req, res) => {
     res.json(await ordenesService.cambiarEstadoOrden(req.params.ot, req.body.estado));
 };
@@ -78,6 +107,48 @@ router.post('/:ot/aportes', async (req, res) => {
 
 router.get('/:ot/explicacion', async (req, res) => {
     res.json(await ordenesService.obtenerExplicacionCompleta(req.params.ot));
+});
+
+// ─── Corrección de aportes habilitada por el Jefe (migración 017) ───
+// Aportes que el Jefe habilitó para que el mecánico los corrija (lo que ve en su pantalla).
+router.get('/aportes/habilitados/:legajo', async (req, res) => {
+    res.json(await ordenesService.listarAportesCorregibles(req.params.legajo));
+});
+
+// Habilitar / cancelar la corrección: solo quien puede gestionar todas las tareas (el Jefe).
+// Se reutiliza ese permiso a propósito: crear uno nuevo obligaría a asignarlo a mano en Roles.
+router.put('/aportes/:id/habilitar', async (req, res) => {
+    const permisosUsuario = (req.usuario && req.usuario.permisos) || [];
+    if (!permisosUsuario.includes('tarea_gestionar_todas')) {
+        return res.status(403).json({ error: 'Solo el Jefe de Taller puede habilitar la corrección de un aporte.' });
+    }
+    if (typeof req.body.habilitar !== 'boolean') {
+        return res.status(400).json({ error: 'Debe indicar si se habilita (true) o se cancela (false).' });
+    }
+    const quien = req.usuario.legajo || req.usuario.nombre_completo || req.usuario.email;
+    res.json(await ordenesService.habilitarCorreccionAporte(req.params.id, req.body.habilitar, quien));
+});
+
+// El mecánico corrige su propio aporte (una sola vez por habilitación).
+router.put('/aportes/:id/corregir', async (req, res) => {
+    res.json(await ordenesService.corregirAporte(req.params.id, req.body));
+});
+
+// ─── Panel de garantías (migración 018) ───
+// Listado: las últimas 30 OT de garantía finalizadas, o la búsqueda por OT / patente / proforma.
+router.get('/garantias/reclamos', async (req, res) => {
+    res.json(await ordenesService.listarGarantias(req.query));
+});
+
+// Carga/modificación del reclamo de una OT. Requiere ot_editar (modificar montos de la OT):
+// se reutiliza ese permiso para no obligar a asignar uno nuevo a mano en Roles.
+router.put('/garantias/reclamos/:ot', async (req, res) => {
+    const permisosUsuario = (req.usuario && req.usuario.permisos) || [];
+    if (!permisosUsuario.includes('ot_editar')) {
+        return res.status(403).json({ error: 'No tenés permiso para cargar datos de reclamo de garantía.' });
+    }
+    const quien = req.usuario.legajo || req.usuario.nombre_completo || req.usuario.email;
+    res.json(await ordenesService.guardarReclamoGarantia(req.params.ot, req.body, quien));
 });
 
 router.put('/aportes/:id', async (req, res) => {

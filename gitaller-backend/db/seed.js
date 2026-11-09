@@ -50,6 +50,7 @@ async function inicializarRolesYPermisos() {
         { clave: 'ot_editar', modulo: 'Órdenes de Trabajo', desc: 'Modificar la cabecera de la OT y montos.' },
         { clave: 'ot_cambiar_estado', modulo: 'Órdenes de Trabajo', desc: 'Forzar manualmente el estado de la orden.' },
         { clave: 'ot_controlar', modulo: 'Órdenes de Trabajo', desc: 'Ejecutar el Control de Calidad Final.' },
+        { clave: 'ot_anular', modulo: 'Órdenes de Trabajo', desc: 'Anular (y reactivar) órdenes de trabajo.' },
         { clave: 'ot_autorizar_descuento', modulo: 'Órdenes de Trabajo', desc: 'Aprobar o rechazar bonificaciones/descuentos cargados sobre una OT.' },
         // Tareas y Tiempos
         { clave: 'tarea_ver_propias', modulo: 'Tareas Operativas', desc: 'Ver exclusivamente las tareas asignadas a uno mismo.' },
@@ -59,10 +60,12 @@ async function inicializarRolesYPermisos() {
         // Agenda
         { clave: 'agenda_ver', modulo: 'Agenda', desc: 'Consultar listado de clientes y vehículos.' },
         { clave: 'agenda_gestionar', modulo: 'Agenda', desc: 'Crear y editar clientes y vehículos.' },
+        { clave: 'agenda_importar', modulo: 'Agenda', desc: 'Importar clientes y unidades desde planillas Excel y aprobar los cambios.' },
         // Informes
         { clave: 'informe_financiero', modulo: 'Informes', desc: 'Acceso a métricas de dinero y facturación.' },
         { clave: 'informe_operativo', modulo: 'Informes', desc: 'Acceso a métricas de RRHH y eficacia.' },
         { clave: 'informe_taller', modulo: 'Informes', desc: 'Acceso a volumetría y cuellos de botella.' },
+        { clave: 'informe_nps', modulo: 'Informes', desc: 'Generar la planilla quincenal de NPS (datos de contacto de clientes).' },
         // Personal
         { clave: 'legajo_ver', modulo: 'Personal', desc: 'Ver el listado del personal registrado.' },
         { clave: 'legajo_gestionar', modulo: 'Personal', desc: 'Crear altas/bajas de mecánicos y subir firmas.' },

@@ -114,6 +114,8 @@ async function procesarReanudacionAutomatica() {
     }
 }
 
+const { verificarInformeAutomatico } = require('../services/informe-automatico.service');
+
 function iniciarCron() {
     console.log('⏱️ Cron job de automatización iniciado.');
     
@@ -122,6 +124,10 @@ function iniciarCron() {
         
         cronEjecutando = true;
         try {
+            // Informe NPS quincenal: independiente del horario laboral y de la
+            // deduplicación por hora de las pausas, por eso va antes de ambos.
+            await verificarInformeAutomatico();
+
             const ahora = new Date();
             const horaActual = ahora.getHours();
             const timeKey = `${ahora.getFullYear()}-${ahora.getMonth()}-${ahora.getDate()}-${horaActual}`;

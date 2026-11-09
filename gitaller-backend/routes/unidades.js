@@ -1,6 +1,22 @@
 const express = require('express');
 const router = express.Router();
 const { run, all, get, withTransaction } = require('../config/database');
+const { limpiarCuit } = require('../modules/importacion/normalizacion');
+
+// Chasis: se guarda en mayúsculas y sin espacios. "X111111" es el valor que usa la
+// planilla de NPS para "no se conoce", así que se guarda vacío.
+const normalizarChasis = (v) => {
+    const c = String(v == null ? '' : v).toUpperCase().replace(/\s+/g, '');
+    return c === 'X111111' ? '' : c;
+};
+// undefined = no se envió (no se toca); '' = borrar; otro valor = debe ser un CUIT válido.
+const validarCuit = (v) => {
+    if (v === undefined) return undefined;
+    if (String(v).trim() === '') return '';
+    const c = limpiarCuit(v);
+    if (!c) { const e = new Error('El CUIT no es válido (deben ser 11 dígitos).'); e.status = 400; throw e; }
+    return c;
+};
 
 router.get('/clientes/buscar', async (req, res) => {
     const q = `%${(req.query.q || '').toUpperCase()}%`;
@@ -22,18 +38,19 @@ router.get('/cliente/:clienteId', async (req, res) => {
 });
 
 router.get('/', async (req, res) => {
-    res.json(await all(`SELECT u.*, c.nombre AS cliente FROM unidades u JOIN clientes c ON u.cliente_id = c.id ORDER BY u.id DESC`));
+    res.json(await all(`SELECT u.*, c.nombre AS cliente, c.cuit AS cliente_cuit FROM unidades u JOIN clientes c ON u.cliente_id = c.id ORDER BY u.id DESC`));
 });
 
 router.get('/:patente', async (req, res) => {
-    const unidad = await get(`SELECT u.*, c.nombre AS cliente FROM unidades u JOIN clientes c ON u.cliente_id = c.id WHERE u.patente = ?`, [req.params.patente]);
+    const unidad = await get(`SELECT u.*, c.nombre AS cliente, c.cuit AS cliente_cuit FROM unidades u JOIN clientes c ON u.cliente_id = c.id WHERE u.patente = ?`, [req.params.patente]);
     if (!unidad) return res.status(404).json({ error: 'Unidad no encontrada' });
     res.json(unidad);
 });
 
 router.post('/', async (req, res) => {
-    const { patente, cliente, unidad, telefono, correo, contacto_nombre, contacto_apellido } = req.body;
+    const { patente, cliente, unidad, telefono, correo, contacto_nombre, contacto_apellido, chasis, cuit } = req.body;
     if (!patente || !cliente || !unidad) return res.status(400).json({ error: 'Faltan datos' });
+    const cuitNuevo = validarCuit(cuit);
 
     await withTransaction(async () => {
         let cli = await get(`SELECT id FROM clientes WHERE nombre = ?`, [cliente.toUpperCase()]);
@@ -41,25 +58,61 @@ router.post('/', async (req, res) => {
             await run(`INSERT INTO clientes (nombre) VALUES (?)`, [cliente.toUpperCase()]);
             cli = await get(`SELECT id FROM clientes WHERE nombre = ?`, [cliente.toUpperCase()]);
         }
-        await run(`INSERT INTO unidades (patente, cliente_id, unidad, telefono, correo, contacto_nombre, contacto_apellido) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            [patente, cli.id, unidad, telefono || '', correo || '', contacto_nombre || '', contacto_apellido || '']);
+        if (cuitNuevo) await run(`UPDATE clientes SET cuit = ? WHERE id = ?`, [cuitNuevo, cli.id]);
+        await run(`INSERT INTO unidades (patente, cliente_id, unidad, telefono, correo, contacto_nombre, contacto_apellido, chasis) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [patente, cli.id, unidad, telefono || '', correo || '', contacto_nombre || '', contacto_apellido || '', normalizarChasis(chasis)]);
     });
     res.json({ status: 'Unidad creada' });
 });
 
+// Edición de una unidad (corregir errores de tipeo en patente, cliente, unidad o contacto).
+//
+// - La patente SÍ se puede corregir. ordenes.patente referencia unidades.patente con
+//   ON UPDATE CASCADE, así que el cambio se propaga solo a todas las OT de la unidad.
+// - Si la patente nueva ya pertenece a OTRA unidad, se rechaza (no se fusionan unidades).
+// - Si la patente que llega es igual a la guardada, no se toca ni se "normaliza": hay
+//   datos viejos con formato distinto y no queremos disparar un renombre sin que nadie lo pida.
 router.put('/:id', async (req, res) => {
-    const { patente, cliente, unidad, telefono, correo, contacto_nombre, contacto_apellido } = req.body;
+    const fallo = (status, mensaje) => { const e = new Error(mensaje); e.status = status; return e; };
+    const texto = (v) => (v === undefined || v === null ? '' : String(v).trim());
+    const { telefono, correo, contacto_nombre, contacto_apellido, chasis, cuit } = req.body;
+    const cuitNuevo = validarCuit(cuit); // undefined = no se envió; '' = borrar; inválido = 400
+    const cliente = texto(req.body.cliente).toUpperCase();
+    const unidad = texto(req.body.unidad);
+
+    const actual = await get(`SELECT * FROM unidades WHERE id = ?`, [req.params.id]);
+    if (!actual) throw fallo(404, 'Unidad no encontrada');
+    if (!cliente) throw fallo(400, 'Indicá el cliente.');
+    if (!unidad) throw fallo(400, 'Indicá la unidad (marca/modelo).');
+
+    let patenteNueva = actual.patente;
+    const patenteRecibida = texto(req.body.patente);
+    if (patenteRecibida && patenteRecibida !== actual.patente) {
+        patenteNueva = patenteRecibida.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+        if (patenteNueva.length < 3) throw fallo(400, 'La patente es demasiado corta o tiene caracteres inválidos.');
+        if (actual.patente === 'INT000') throw fallo(400, 'La unidad interna del sistema (INT000) no puede cambiar de patente.');
+        if (patenteNueva !== actual.patente) {
+            const duplicada = await get(
+                `SELECT u.patente, c.nombre AS cliente FROM unidades u JOIN clientes c ON u.cliente_id = c.id WHERE u.patente = ? AND u.id != ?`,
+                [patenteNueva, req.params.id]
+            );
+            if (duplicada) throw fallo(409, `Ya existe una unidad con la patente ${patenteNueva} (cliente ${duplicada.cliente}). No se puede repetir.`);
+        }
+    }
 
     await withTransaction(async () => {
-        let cli = await get(`SELECT id FROM clientes WHERE nombre = ?`, [cliente.toUpperCase()]);
+        let cli = await get(`SELECT id FROM clientes WHERE nombre = ?`, [cliente]);
         if (!cli) {
-            await run(`INSERT INTO clientes (nombre) VALUES (?)`, [cliente.toUpperCase()]);
-            cli = await get(`SELECT id FROM clientes WHERE nombre = ?`, [cliente.toUpperCase()]);
+            await run(`INSERT INTO clientes (nombre) VALUES (?)`, [cliente]);
+            cli = await get(`SELECT id FROM clientes WHERE nombre = ?`, [cliente]);
         }
-        await run(`UPDATE unidades SET patente = ?, cliente_id = ?, unidad = ?, telefono = ?, correo = ?, contacto_nombre = ?, contacto_apellido = ? WHERE id = ?`,
-            [patente, cli.id, unidad, telefono || '', correo || '', contacto_nombre || '', contacto_apellido || '', req.params.id]);
+        if (cuitNuevo !== undefined) await run(`UPDATE clientes SET cuit = ? WHERE id = ?`, [cuitNuevo, cli.id]);
+        await run(`UPDATE unidades SET patente = ?, cliente_id = ?, unidad = ?, telefono = ?, correo = ?, contacto_nombre = ?, contacto_apellido = ?, chasis = COALESCE(?, chasis) WHERE id = ?`,
+            [patenteNueva, cli.id, unidad, telefono || '', correo || '', contacto_nombre || '', contacto_apellido || '', chasis === undefined ? null : normalizarChasis(chasis), req.params.id]);
     });
-    res.json({ status: 'Unidad actualizada' });
+
+    const { n } = await get(`SELECT COUNT(*) AS n FROM ordenes WHERE patente = ?`, [patenteNueva]);
+    res.json({ status: 'Unidad actualizada', patente: patenteNueva, patente_cambiada: patenteNueva !== actual.patente, ordenes_de_la_unidad: n });
 });
 
 router.delete('/:id', async (req, res) => {

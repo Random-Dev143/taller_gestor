@@ -54,6 +54,8 @@
   --row-ready-border: var(--success);
   --row-stale-bg: #fdf1f1;
   --row-stale-border: var(--danger);
+  --row-anulada-bg: #f8d0d4;
+  --row-anulada-border: #b3202f;
 
   /* Status tags (píldoras de estado) */
   --status-progress-bg: #d4edda; --status-progress-text: #155724;
@@ -112,6 +114,8 @@
   --row-ready-bg: rgba(39, 174, 96, 0.14);
   --row-ready-border: var(--success);
   --row-stale-bg: rgba(230, 90, 104, 0.14);
+  --row-anulada-bg: rgba(220, 53, 69, 0.34);
+  --row-anulada-border: #ff5c6c;
   --row-stale-border: var(--danger);
 
   --status-progress-bg: rgba(39, 174, 96, 0.2);  --status-progress-text: #8ee6ad;

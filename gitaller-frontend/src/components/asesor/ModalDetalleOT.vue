@@ -149,6 +149,11 @@
            <li v-for="ap in data.aportes" :key="ap.id">
                 <strong>{{ ap.nombre || ap.legajo }}</strong> ({{ formatearFechaAporte(ap.fecha_aporte) }})<br/>
                 <span style="white-space: pre-wrap;">{{ ap.actividades }}</span> <em>(Horas: {{ ap.horas }})</em>
+                <div v-if="ap.correccion_habilitada" class="aporte-estado aporte-estado--pendiente">✏️ Corrección habilitada: esperando que {{ ap.nombre || ap.legajo }} la haga</div>
+                <div v-else-if="ap.corregido_en" class="aporte-estado aporte-estado--ok" :title="'Texto original: ' + (ap.texto_original || '')">✔ Corregido el {{ formatearFechaAporte(ap.corregido_en) }}</div>
+                <button v-if="esJefe" v-can="'tarea_gestionar_todas'" class="btn btn-outline btn-sm mt-5" @click="toggleCorreccionAporte(ap)">
+                  {{ ap.correccion_habilitada ? 'Cancelar habilitación' : '✏️ Habilitar corrección' }}
+                </button>
             </li>
           </ul>
         </div>
@@ -204,6 +209,17 @@ const cerrarTareaInterna = async (actividad) => {
   } catch (err) {
     toast.error(errMsg(err))
   }
+}
+
+// El Jefe habilita (o cancela) que el mecánico corrija ESTE aporte, una sola vez.
+const toggleCorreccionAporte = async (ap) => {
+  const habilitar = !ap.correccion_habilitada
+  if (habilitar && !confirm(`¿Habilitar a ${ap.nombre || ap.legajo} para corregir este aporte? Podrá modificarlo una sola vez.`)) return
+  try {
+    await fetchJSON(`/ordenes/aportes/${ap.id}/habilitar`, { method: 'PUT', body: JSON.stringify({ habilitar }) })
+    toast.success(habilitar ? 'Corrección habilitada' : 'Habilitación cancelada')
+    await cargarDatos()
+  } catch (err) { toast.error(errMsg(err)) }
 }
 
 const getTiempos = (actId) => {
@@ -383,6 +399,10 @@ th { background: var(--border-soft); }
 .pill-progress { background: var(--success); }
 .pill-warn { background: var(--warning); }
 .pill-done { background: var(--muted); }
+.aporte-estado { font-size: 0.8rem; margin-top: 4px; }
+.aporte-estado--pendiente { color: var(--warning); }
+.aporte-estado--ok { color: var(--success); }
+.mt-5 { margin-top: 5px; }
 .aportes-list { list-style: none; padding: 0; margin: 0; }
 .aportes-list li { border-bottom: 1px solid var(--border-soft); padding: 10px 0; font-size: 0.95rem; }
 .btn { margin-right: 4px; }

@@ -4,6 +4,7 @@
       <h2>Agenda de Clientes y Unidades</h2>
       <input type="text" v-model="busqueda" placeholder="🔍 Buscar por patente, cliente o unidad..." class="form-control search-input" />
       <button class="btn btn-secondary btn-sm" @click="cargarAgenda">↻ Actualizar</button>
+      <button class="btn btn-outline btn-sm" v-can="'agenda_importar'" @click="mostrarImportar = true">📥 Importar planillas</button>
     </div>
 
     <div v-if="loading" class="loading-state"><div class="spinner"></div>Cargando agenda...</div>
@@ -31,15 +32,30 @@
             </thead>
             <tbody>
               <tr v-for="u in grupo.unidades" :key="u.id">
-                <td><strong>{{ u.patente }}</strong></td>
+                <td>
+                  <div v-if="editandoId === u.id" class="edit-group">
+                    <label class="edit-label">Patente:</label>
+                    <input v-model="editForm.patente" class="edit-input" style="text-transform: uppercase;" autocomplete="off" />
+                    <small v-if="patenteCambio(u)" class="aviso-patente">Se actualizará en todas las OT de esta unidad.</small>
+                  </div>
+                  <strong v-else>{{ u.patente }}</strong>
+                </td>
                 <td>
                   <div v-if="editandoId === u.id" class="edit-group">
                     <label class="edit-label">Cliente (Transferir):</label>
                     <input v-model="editForm.cliente" class="edit-input mb-1" />
+                    <label class="edit-label">CUIT (del cliente):</label>
+                    <input v-model="editForm.cuit" placeholder="30-12345678-9" class="edit-input mb-1" />
                     <label class="edit-label">Unidad:</label>
-                    <input v-model="editForm.unidad" class="edit-input" />
+                    <input v-model="editForm.unidad" class="edit-input mb-1" />
+                    <label class="edit-label">Chasis:</label>
+                    <input v-model="editForm.chasis" class="edit-input" />
                   </div>
-                  <span v-else>{{ u.unidad }}</span>
+                  <div v-else>
+                    <div>{{ u.unidad }}</div>
+                    <div class="text-muted dato-sec" v-if="u.chasis">Chasis: {{ u.chasis }}</div>
+                    <div class="text-muted dato-sec" v-if="u.cliente_cuit">CUIT: {{ u.cliente_cuit }}</div>
+                  </div>
                 </td>
                 <td>
                   <template v-if="editandoId === u.id">
@@ -56,7 +72,7 @@
                 </td>
                 <td style="white-space: nowrap; vertical-align: top;">
                   <template v-if="editandoId === u.id">
-                    <button class="btn btn-success btn-sm mb-1 w-100" v-can="'agenda_gestionar'" @click="confirmarEdicion(u.id, u.patente)">Guardar</button>
+                    <button class="btn btn-success btn-sm mb-1 w-100" v-can="'agenda_gestionar'" @click="confirmarEdicion(u)">Guardar</button>
                     <button class="btn btn-secondary btn-sm w-100" @click="cancelarEdicion">Cancelar</button>
                   </template>
                   <template v-else>
@@ -79,6 +95,8 @@
         <div class="form-group"><label>Patente *</label><input type="text" v-model="form.patente" required /></div>
         <div class="form-group"><label>Cliente *</label><input type="text" v-model="form.cliente" required /></div>
         <div class="form-group"><label>Unidad *</label><input type="text" v-model="form.unidad" required /></div>
+        <div class="form-group"><label>CUIT del cliente</label><input type="text" v-model="form.cuit" placeholder="30-12345678-9" /></div>
+        <div class="form-group"><label>Chasis</label><input type="text" v-model="form.chasis" /></div>
         <div class="form-group"><label>Nombre del Contacto</label><input type="text" v-model="form.contacto_nombre" /></div>
         <div class="form-group"><label>Apellido del Contacto</label><input type="text" v-model="form.contacto_apellido" /></div>
         <div class="form-group"><label>Teléfono</label><input type="text" v-model="form.telefono" /></div>
@@ -86,6 +104,8 @@
       </div>
       <button type="submit" class="btn btn-success" v-can="'agenda_gestionar'" :disabled="enviando">Guardar en agenda</button>
     </form>
+
+    <ImportarPlanillasModal v-if="mostrarImportar" @close="mostrarImportar = false" @cambios="cargarAgenda" />
 
     <ModalHistorialCliente
       v-if="historialSeleccionado"
@@ -101,17 +121,20 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useAgenda } from '../../composables/useAgenda'
 import ModalHistorialCliente from './ModalHistorialCliente.vue'
+import ImportarPlanillasModal from './ImportarPlanillasModal.vue'
 
 const { unidadesRaw, loading, cargarAgenda, crearCliente, guardarEdicion } = useAgenda()
 
+const mostrarImportar = ref(false)
 const historialSeleccionado = ref(null)
 const verHistorial = (u) => { historialSeleccionado.value = u }
 
 const busqueda = ref('')
 const enviando = ref(false)
-const form = ref({ patente: '', cliente: '', unidad: '', telefono: '', correo: '', contacto_nombre: '', contacto_apellido: '' })
+const form = ref({ patente: '', cliente: '', unidad: '', telefono: '', correo: '', contacto_nombre: '', contacto_apellido: '', cuit: '', chasis: '' })
 const editandoId = ref(null)
-const editForm = ref({ cliente: '', unidad: '', telefono: '', correo: '', contacto_nombre: '', contacto_apellido: '' })
+const editForm = ref({ patente: '', cliente: '', unidad: '', telefono: '', correo: '', contacto_nombre: '', contacto_apellido: '', cuit: '', chasis: '' })
+const clienteOriginal = ref('')
 
 const expandedClients = ref(new Set())
 
@@ -168,19 +191,31 @@ const enviarNuevoCliente = async () => {
   enviando.value = true
   const ok = await crearCliente(form.value)
   if (ok) {
-    form.value = { patente: '', cliente: '', unidad: '', telefono: '', correo: '', contacto_nombre: '', contacto_apellido: '' }
+    form.value = { patente: '', cliente: '', unidad: '', telefono: '', correo: '', contacto_nombre: '', contacto_apellido: '', cuit: '', chasis: '' }
   }
   enviando.value = false
 }
 
 const iniciarEdicion = (u) => {
   editandoId.value = u.id
-  editForm.value = { cliente: u.cliente, unidad: u.unidad, telefono: u.telefono, correo: u.correo, contacto_nombre: u.contacto_nombre, contacto_apellido: u.contacto_apellido }
+  clienteOriginal.value = u.cliente
+  editForm.value = { patente: u.patente, cliente: u.cliente, unidad: u.unidad, telefono: u.telefono, correo: u.correo, contacto_nombre: u.contacto_nombre, contacto_apellido: u.contacto_apellido, cuit: u.cliente_cuit || '', chasis: u.chasis || '' }
 }
 const cancelarEdicion = () => { editandoId.value = null }
 
-const confirmarEdicion = async (id, patente) => {
-  const ok = await guardarEdicion(id, patente, editForm.value)
+// ¿La persona cambió la patente? (se compara sin símbolos ni mayúsculas, igual que el servidor)
+const normalizar = (p) => String(p || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase()
+const patenteCambio = (u) => editForm.value.patente.trim() !== '' && editForm.value.patente.trim() !== u.patente
+  && normalizar(editForm.value.patente) !== u.patente
+
+const confirmarEdicion = async (u) => {
+  // Cambiar la patente toca el historial de la unidad: pedimos confirmación explícita.
+  if (patenteCambio(u) && !confirm(`¿Confirmás cambiar la patente ${u.patente} por ${normalizar(editForm.value.patente)}?\n\nSe actualizará en todas las órdenes de trabajo de esta unidad.`)) return
+  // Si se transfiere la unidad a otro cliente, el CUIT que se ve en pantalla es el del
+  // cliente ANTERIOR: no se envía para no pisar el CUIT del cliente destino.
+  const payload = { ...editForm.value }
+  if (payload.cliente.trim().toUpperCase() !== String(clienteOriginal.value).trim().toUpperCase()) delete payload.cuit
+  const ok = await guardarEdicion(u.id, editForm.value.patente, payload)
   if (ok) cancelarEdicion()
 }
 
@@ -192,6 +227,8 @@ onMounted(cargarAgenda)
 .search-input { max-width: 300px; }
 .edit-input { padding: 4px; border: 1px solid var(--primary); border-radius: 4px; width: 100%; }
 .mb-1 { margin-bottom: 4px; }
+.aviso-patente { display: block; margin-top: 4px; color: var(--warning); font-size: 0.75rem; }
+.dato-sec { font-size: 0.8rem; }
 
 /* Estilos del Acordeón Agrupado */
 .client-group {

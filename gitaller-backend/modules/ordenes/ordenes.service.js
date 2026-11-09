@@ -91,6 +91,27 @@ async function listar(query) {
     return { data: rows, total, page, limit, totalPages: Math.max(1, Math.ceil(total / limit)) };
 }
 
+// Anulación de OTs: la hace el jefe de taller (permiso 'ot_anular'). No borra
+// nada: marca la OT, guarda quién/cuándo/por qué y alimenta el motivo
+// "Anulada" de la planilla de NPS. Se puede revertir con reactivarOrden.
+async function anularOrden(ot, motivo, usuario) {
+    const orden = await get(`SELECT ot, anulada FROM ordenes WHERE ot = ?`, [ot]);
+    if (!orden) throw Object.assign(new Error('OT no encontrada'), { status: 404 });
+    if (ot === '0000') throw Object.assign(new Error('La OT interna 0000 no se puede anular.'), { status: 400 });
+    if (orden.anulada) throw Object.assign(new Error('La OT ya está anulada.'), { status: 409 });
+    await run(`UPDATE ordenes SET anulada = 1, anulada_motivo = ?, anulada_por = ?, anulada_en = CURRENT_TIMESTAMP WHERE ot = ?`,
+        [String(motivo || '').trim(), usuario || '', ot]);
+    return { status: 'OT anulada', ot };
+}
+
+async function reactivarOrden(ot) {
+    const orden = await get(`SELECT ot, anulada FROM ordenes WHERE ot = ?`, [ot]);
+    if (!orden) throw Object.assign(new Error('OT no encontrada'), { status: 404 });
+    if (!orden.anulada) throw Object.assign(new Error('La OT no está anulada.'), { status: 409 });
+    await run(`UPDATE ordenes SET anulada = 0, anulada_motivo = '', anulada_por = '', anulada_en = NULL WHERE ot = ?`, [ot]);
+    return { status: 'OT reactivada', ot };
+}
+
 async function historialPorPatente(patente) {
     return all(`SELECT o.ot, c.nombre AS cliente, u.unidad, o.fecha_apertura, o.fecha_cierre, o.estado_actual, o.monto_repuestos, o.monto_mano_obra, o.monto_repuestos_garantia, o.monto_mano_obra_garantia, o.es_garantia FROM ordenes o JOIN unidades u ON o.patente = u.patente JOIN clientes c ON u.cliente_id = c.id WHERE o.patente = ? ORDER BY CAST(o.ot AS INTEGER) DESC`, [patente]);
 }
@@ -212,6 +233,17 @@ async function actualizar(ot, body) {
             `UPDATE ordenes SET patente = COALESCE(?, patente), kilometraje = COALESCE(?, kilometraje), fecha_apertura = COALESCE(?, fecha_apertura), fecha_cierre = COALESCE(?, fecha_cierre), es_garantia = COALESCE(?, es_garantia), es_no_iveco = COALESCE(?, es_no_iveco), tiempo_asignado_horas = COALESCE(?, tiempo_asignado_horas), tiempo_facturado_horas = COALESCE(?, tiempo_facturado_horas), monto_repuestos = COALESCE(?, monto_repuestos), monto_mano_obra = COALESCE(?, monto_mano_obra), monto_repuestos_garantia = COALESCE(?, monto_repuestos_garantia), monto_mano_obra_garantia = COALESCE(?, monto_mano_obra_garantia), monto_descuento = COALESCE(?, monto_descuento), descuento_motivo = COALESCE(?, descuento_motivo), descuento_estado = COALESCE(?, descuento_estado), descuento_autorizado_por = CASE WHEN ? = 1 THEN NULL ELSE descuento_autorizado_por END, descuento_autorizado_en = CASE WHEN ? = 1 THEN NULL ELSE descuento_autorizado_en END WHERE ot = ?`,
             [patente, kilometraje, fecha_apertura, fecha_cierre, es_garantia !== undefined ? (es_garantia ? 1 : 0) : null, es_no_iveco !== undefined ? (es_no_iveco ? 1 : 0) : null, tiempo_asignado_horas, tiempo_facturado_horas, monto_repuestos, monto_mano_obra, monto_repuestos_garantia, monto_mano_obra_garantia, seEnviaDescuento ? montoDescuentoSeguro : null, seEnviaDescuento ? (descuento_motivo || '').trim() : null, descuentoEstadoNuevo, limpiarAutorizacion ? 1 : 0, limpiarAutorizacion ? 1 : 0, ot]
         );
+        // Motivo de descarte manual para la planilla de NPS. Solo se admite "Otros"
+        // (el resto de los motivos se calculan solos, ver services/nps-motivos.js).
+        if (body.motivo_descarte_manual !== undefined) {
+            const manual = String(body.motivo_descarte_manual || '').trim();
+            if (manual !== '' && manual !== 'Otros') {
+                const error = new Error('El motivo manual solo puede ser "Otros" o quedar vacío.');
+                error.status = 400;
+                throw error;
+            }
+            await run(`UPDATE ordenes SET motivo_descarte_manual = ? WHERE ot = ?`, [manual, ot]);
+        }
     });
 
     return { status: 'OT actualizada' };
@@ -322,8 +354,158 @@ async function actualizarAporte(id, { actividades, horas }) {
     return { status: 'Aporte corregido exitosamente' };
 }
 
+// ─── CORRECCIÓN DE APORTES HABILITADA POR EL JEFE ────────────────────
+// Flujo: el Jefe habilita un aporte puntual -> su autor lo corrige UNA vez -> vuelve a
+// quedar bloqueado. (actualizarAporte, de arriba, es el viejo PUT sin reglas y se deja como está.)
+const falla = (status, mensaje) => { const e = new Error(mensaje); e.status = status; return e; };
+
+// El Jefe habilita (o cancela la habilitación de) la corrección de un aporte.
+async function habilitarCorreccionAporte(id, habilitar, quien) {
+    const aporte = await get(`SELECT id FROM aportes WHERE id = ?`, [id]);
+    if (!aporte) throw falla(404, 'Aporte no encontrado');
+
+    if (habilitar) {
+        await run(`UPDATE aportes SET correccion_habilitada = 1, correccion_habilitada_por = ?, correccion_habilitada_en = CURRENT_TIMESTAMP WHERE id = ?`, [quien || null, id]);
+    } else {
+        await run(`UPDATE aportes SET correccion_habilitada = 0 WHERE id = ?`, [id]);
+    }
+    return { status: habilitar ? 'Corrección habilitada' : 'Habilitación cancelada', correccion_habilitada: habilitar ? 1 : 0 };
+}
+
+// Aportes de un mecánico que el Jefe habilitó para corregir (lo que ve en su pantalla).
+async function listarAportesCorregibles(legajo) {
+    return all(`
+        SELECT ap.id, ap.ot, ap.actividades, ap.fecha_aporte, ap.correccion_habilitada_en,
+               o.patente, u.unidad, c.nombre AS cliente,
+               (SELECT l.nombre FROM legajos l WHERE l.legajo = ap.correccion_habilitada_por) AS habilitado_por_nombre
+        FROM aportes ap
+        JOIN ordenes o ON o.ot = ap.ot
+        JOIN unidades u ON u.patente = o.patente
+        JOIN clientes c ON c.id = u.cliente_id
+        WHERE ap.legajo = ? AND ap.correccion_habilitada = 1
+        ORDER BY ap.correccion_habilitada_en DESC, ap.id DESC
+    `, [legajo]);
+}
+
+// El mecánico corrige SU aporte. Solo se puede si el Jefe lo habilitó, y se usa una vez.
+async function corregirAporte(id, { legajo, actividades }) {
+    const texto = (actividades === undefined || actividades === null) ? '' : String(actividades).trim();
+    if (!legajo) throw falla(400, 'Falta indicar el mecánico.');
+    if (!texto) throw falla(400, 'El aporte no puede quedar vacío.');
+
+    await withTransaction(async () => {
+        const aporte = await get(`SELECT * FROM aportes WHERE id = ?`, [id]);
+        if (!aporte) throw falla(404, 'Aporte no encontrado');
+        if (aporte.legajo !== legajo) throw falla(403, 'Solo podés corregir tus propios aportes.');
+        if (!aporte.correccion_habilitada) throw falla(403, 'El Jefe de Taller no habilitó la corrección de este aporte.');
+        // Si no cambió nada no se gasta la habilitación (así no se pierde por un clic de más).
+        if (texto === String(aporte.actividades || '').trim()) throw falla(400, 'No hiciste ningún cambio en el texto.');
+
+        // WHERE correccion_habilitada = 1: si dos pedidos llegan a la vez, solo uno la consume.
+        const r = await run(
+            `UPDATE aportes SET actividades = ?, texto_original = COALESCE(texto_original, actividades), corregido_en = CURRENT_TIMESTAMP, correccion_habilitada = 0 WHERE id = ? AND correccion_habilitada = 1`,
+            [texto, id]
+        );
+        if (!r.changes) throw falla(403, 'La habilitación ya fue usada.');
+    });
+    return { status: 'Aporte corregido' };
+}
+
+// ─── PANEL DE GARANTÍAS (migración 018) ──────────────────────────────
+// "Número de garantía" = número de OT. El panel lista las OT de garantía FINALIZADAS y
+// permite cargar/ver los datos del reclamo (fecha, monto solicitado, monto pagado, proforma).
+
+const escaparLike = (t) => t.replace(/[\\%_]/g, (c) => '\\' + c);
+
+// Sin búsqueda: las últimas 30 (por fecha de cierre). Con búsqueda: se busca en TODAS las
+// garantías finalizadas (si no, una vieja no se podría encontrar), con un tope de 100.
+async function listarGarantias(query = {}) {
+    const termino = String(query.busqueda || '').trim();
+    const limite = termino
+        ? 100
+        : Math.min(100, Math.max(1, parseInt(query.limit) || 30));
+
+    let where = `WHERE o.ot != '0000' AND o.es_garantia = 1 AND o.estado_actual = 'Finalizada'`;
+    const params = [];
+    if (termino) {
+        const like = `%${escaparLike(termino)}%`;
+        where += ` AND (o.ot LIKE ? ESCAPE '\\' OR o.patente LIKE ? ESCAPE '\\' OR g.numero_proforma LIKE ? ESCAPE '\\')`;
+        params.push(like, like, like);
+    }
+
+    const base = `
+        FROM ordenes o
+        JOIN unidades u ON u.patente = o.patente
+        JOIN clientes c ON c.id = u.cliente_id
+        LEFT JOIN garantias_reclamos g ON g.ot = o.ot
+        ${where}`;
+
+    const { total } = await get(`SELECT COUNT(*) AS total ${base}`, params);
+    const data = await all(`
+        SELECT o.ot, c.nombre AS cliente, o.patente, u.unidad, o.fecha_cierre,
+               (COALESCE(o.monto_repuestos_garantia, 0) + COALESCE(o.monto_mano_obra_garantia, 0)) AS monto_ot_garantia,
+               g.fecha_reclamo, g.monto_solicitado, g.monto_pagado, g.numero_proforma, g.actualizado_en
+        ${base}
+        ORDER BY COALESCE(o.fecha_cierre, o.fecha_apertura) DESC, o.ot DESC
+        LIMIT ?`, [...params, limite]);
+
+    return { data, total, limite, busqueda: termino };
+}
+
+// Alta/modificación del reclamo de una OT de garantía. Un campo que NO viene en el pedido
+// se conserva; uno que viene vacío/null se borra.
+async function guardarReclamoGarantia(ot, body = {}, quien = null) {
+    const orden = await get(`SELECT ot, es_garantia FROM ordenes WHERE ot = ?`, [ot]);
+    if (!orden) throw falla(404, 'OT no encontrada');
+    if (!orden.es_garantia) throw falla(400, 'La OT no está marcada como garantía.');
+
+    const actual = (await get(`SELECT * FROM garantias_reclamos WHERE ot = ?`, [ot])) || {};
+    const trae = (k) => Object.prototype.hasOwnProperty.call(body, k);
+    const vacio = (v) => v === undefined || v === null || String(v).trim() === '';
+
+    let fecha = actual.fecha_reclamo ?? null;
+    if (trae('fecha_reclamo')) {
+        if (vacio(body.fecha_reclamo)) fecha = null;
+        else {
+            const f = String(body.fecha_reclamo).trim();
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(f) || isNaN(Date.parse(f)) || new Date(f).toISOString().slice(0, 10) !== f) {
+                throw falla(400, 'La fecha de reclamo no es válida (formato AAAA-MM-DD).');
+            }
+            fecha = f;
+        }
+    }
+
+    const monto = (clave, etiqueta, previo) => {
+        if (!trae(clave)) return previo ?? null;
+        if (vacio(body[clave])) return null;
+        const n = Number(typeof body[clave] === 'string' ? body[clave].replace(',', '.') : body[clave]);
+        if (!Number.isFinite(n) || n < 0) throw falla(400, `${etiqueta} debe ser un número mayor o igual a 0.`);
+        return Math.round(n * 100) / 100;
+    };
+    const solicitado = monto('monto_solicitado', 'El monto solicitado', actual.monto_solicitado);
+    const pagado = monto('monto_pagado', 'El monto pagado', actual.monto_pagado);
+
+    let proforma = actual.numero_proforma ?? null;
+    if (trae('numero_proforma')) {
+        proforma = vacio(body.numero_proforma) ? null : String(body.numero_proforma).trim();
+        if (proforma && proforma.length > 60) throw falla(400, 'El número de proforma es demasiado largo (máx. 60).');
+    }
+
+    await run(`
+        INSERT INTO garantias_reclamos (ot, fecha_reclamo, monto_solicitado, monto_pagado, numero_proforma, actualizado_por, actualizado_en)
+        VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(ot) DO UPDATE SET fecha_reclamo = excluded.fecha_reclamo, monto_solicitado = excluded.monto_solicitado,
+            monto_pagado = excluded.monto_pagado, numero_proforma = excluded.numero_proforma,
+            actualizado_por = excluded.actualizado_por, actualizado_en = CURRENT_TIMESTAMP`,
+        [ot, fecha, solicitado, pagado, proforma, quien]);
+
+    return { status: 'Reclamo guardado', ot, fecha_reclamo: fecha, monto_solicitado: solicitado, monto_pagado: pagado, numero_proforma: proforma };
+}
+
 module.exports = {
-    listar, historialPorPatente, obtenerDetalle, crear, actualizar, autorizarDescuento,
+    listarGarantias, guardarReclamoGarantia,
+    listar, historialPorPatente, obtenerDetalle, crear, actualizar, autorizarDescuento, anularOrden, reactivarOrden,
     cambiarEstadoOrden, actualizarExplicacion, controlar, registrarAporte,
-    obtenerExplicacionCompleta, actualizarAporte
+    obtenerExplicacionCompleta, actualizarAporte,
+    habilitarCorreccionAporte, listarAportesCorregibles, corregirAporte
 };

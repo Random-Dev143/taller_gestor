@@ -28,6 +28,25 @@ describe('Empaquetado con pkg', () => {
         expect(assets).toContain('db/migrations/**/*.js');
     });
 
+    test('la plantilla de la planilla NPS está declarada como asset y existe en disco', () => {
+        // services/reporte-nps.service.js la lee en runtime con fs (no con require):
+        // si no está en pkg.assets, el .exe falla recién al generar el informe.
+        const assets = (pkgJson.pkg && pkgJson.pkg.assets) || [];
+        expect(assets).toContain('templates/**/*');
+        expect(fs.existsSync(path.join(RAIZ, 'templates', 'planilla_nps.xlsx'))).toBe(true);
+    });
+
+    test('exceljs no arrastra dependencias que pkg no puede empaquetar (traverse fijado en 0.3.9)', () => {
+        // exceljs -> unzipper -> binary -> chainsaw -> traverse. La 0.3.10 de traverse
+        // agrega una cadena de paquetes con "exports" que pkg no incluye en el .exe
+        // ("Cannot find module .../generator-function/index.js" al generar la planilla NPS).
+        expect((pkgJson.overrides || {}).traverse).toBe('0.3.9');
+        // Se resuelve desde chainsaw (que es quien lo pide): npm puede dejarlo anidado.
+        const desdeChainsaw = path.dirname(require.resolve('chainsaw'));
+        const v = require(require.resolve('traverse/package.json', { paths: [desdeChainsaw] })).version;
+        expect(v).toBe('0.3.9');
+    });
+
     test('hay migraciones en disco que ese glob cubre', () => {
         const archivos = fs.readdirSync(path.join(RAIZ, 'db', 'migrations')).filter(f => f.endsWith('.js'));
         expect(archivos.length).toBeGreaterThan(0);

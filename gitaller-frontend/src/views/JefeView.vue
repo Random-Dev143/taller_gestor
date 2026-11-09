@@ -46,6 +46,7 @@
           @view-detail="abrirDetalle"
           @edit-ot="abrirEdicion"
           @export-pdf="generarExplicacionPDF"
+          @refrescar="cargarDatos"
         />
         <PaginationBar :page="page" :total-pages="totalPages" :total="total" @cambiar-pagina="irAPagina" />
       </template>

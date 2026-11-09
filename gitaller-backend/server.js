@@ -151,6 +151,12 @@ app.use('/api/feriados', requireAuth(['ausencia_justificar', 'rol_gestionar']), 
 // Informes y Estadísticas
 app.use('/api/informes', requireAuth(['informe_financiero', 'informe_operativo', 'informe_taller']), require('./routes/informes'));
 
+// Planilla quincenal de NPS (permiso propio: incluye datos de contacto de clientes)
+app.use('/api/reporte-nps', requireAuth(['informe_nps']), require('./routes/reporte-nps'));
+
+// Importación de clientes/unidades desde planillas Excel (con aprobación de cambios)
+app.use('/api/importacion', requireAuth(['agenda_importar']), require('./modules/importacion/importacion.routes'));
+
 // Configuración y Administración del Sistema
 app.use('/api/usuarios', requireAuth(['usuario_gestionar']), require('./routes/usuarios'));
 app.use('/api/roles', requireAuth(['rol_gestionar']), require('./routes/roles')); // <-- NUEVA RUTA PARA ROLES

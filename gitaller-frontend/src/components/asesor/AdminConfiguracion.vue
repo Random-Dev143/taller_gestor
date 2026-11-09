@@ -94,6 +94,34 @@
 
     <hr style="margin: 30px 0;">
 
+    <h3>Informe NPS (planilla quincenal)</h3>
+    <p class="text-muted" style="font-size: 0.85rem; margin-top: 4px;">
+      Cada 1 y 16 el sistema genera solo la planilla del período anterior y la <strong>guarda</strong> en esta carpeta (no la envía a nadie).
+    </p>
+    <form @submit.prevent="guardarInformes">
+      <div class="form-grid">
+        <div class="form-group" style="grid-column: span 2;">
+          <label>Carpeta donde se guardan los informes</label>
+          <div style="display: flex; gap: 8px;">
+            <input type="text" v-model="informes.carpeta_informes" placeholder="Ej: C:\Informes\NPS" style="flex: 1;" />
+            <button type="button" class="btn btn-sm btn-secondary" @click="elegirCarpeta">Examinar...</button>
+          </div>
+          <small class="text-muted">La ruta debe existir en la PC donde corre el servidor. Si no existe, se crea.</small>
+        </div>
+        <div class="form-group"><label>Código de Concesionario</label><input type="text" v-model="informes.nps_concesionario" required /></div>
+        <div class="form-group"><label>Código de Sede</label><input type="text" v-model="informes.nps_sede" required /></div>
+        <div class="form-group" style="grid-column: span 2;">
+          <label style="display: flex; align-items: center; gap: 8px;">
+            <input type="checkbox" v-model="informes.informe_auto_activo" style="width: auto;" />
+            Generar el informe automáticamente cada quincena
+          </label>
+        </div>
+      </div>
+      <button type="submit" class="btn btn-success" :disabled="guardandoInformes">{{ guardandoInformes ? 'Guardando...' : 'Guardar ajustes del informe' }}</button>
+    </form>
+
+    <hr style="margin: 30px 0;">
+
     <h3>Logotipo del Taller</h3>
     <div style="display: flex; align-items: center; gap: 20px; margin-top: 15px;">
       <div style="width: 150px; height: 80px; border: 1px dashed var(--border); display: flex; align-items: center; justify-content: center; background: var(--border-soft); border-radius: 8px;">
@@ -153,7 +181,35 @@ onMounted(async () => {
     sabado_hora_cierre: c.sabado_hora_cierre ?? 13
   }
   puertoOriginal.value = form.value.puerto_servidor
+  cargarInformes()
 })
+
+// ─── Informe NPS ───
+const guardandoInformes = ref(false)
+const informes = ref({ carpeta_informes: '', nps_concesionario: '7', nps_sede: '20', informe_auto_activo: true })
+
+const cargarInformes = async () => {
+  try { informes.value = await fetchJSON('/configuracion/informes') } catch (err) { toast.error(errMsg(err)) }
+}
+
+const elegirCarpeta = async () => {
+  const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__ !== undefined
+  if (!isTauri) { toast.info('Escriba la ruta de la carpeta en el campo de texto.'); return }
+  try {
+    const { open } = await import('@tauri-apps/plugin-dialog')
+    const carpeta = await open({ directory: true, multiple: false })
+    if (carpeta) informes.value.carpeta_informes = carpeta
+  } catch (err) { toast.error(errMsg(err)) }
+}
+
+const guardarInformes = async () => {
+  guardandoInformes.value = true
+  try {
+    await fetchJSON('/configuracion/informes', { method: 'PUT', body: JSON.stringify(informes.value) })
+    toast.success('Ajustes del informe guardados')
+  } catch (err) { toast.error(errMsg(err)) }
+  finally { guardandoInformes.value = false }
+}
 
 const guardarConfig = async () => {
   guardando.value = true

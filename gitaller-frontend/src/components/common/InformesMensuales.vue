@@ -10,6 +10,8 @@
       </div>
     </div>
 
+    <PlanillaNpsPanel />
+
     <div class="dashboard-controls">
       <div class="date-group">
         <label>Desde:</label>
@@ -378,6 +380,7 @@ import { useChartConfig } from '../../composables/useChartConfig'
 import { useDashboardExporter } from '../../composables/useDashboardExporter'
 import DeltaBadge from './DeltaBadge.vue'
 import TableroOperativo from '../informes/TableroOperativo.vue'
+import PlanillaNpsPanel from '../informes/PlanillaNpsPanel.vue'
 
 ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale, LineElement, PointElement, ArcElement)
 

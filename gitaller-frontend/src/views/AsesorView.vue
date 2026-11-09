@@ -3,6 +3,15 @@
     <NavBar brand="👔 Asesor" :tabs="tabs" v-model:activeTab="activeTab" />
 
     <div v-if="activeTab === 'asesor-ots-activas' || activeTab === 'asesor-ots-finalizadas'" class="card">
+      <!-- Dentro de Finalizadas: el histórico de siempre o el seguimiento de reclamos de garantía -->
+      <div v-if="activeTab === 'asesor-ots-finalizadas'" class="subtabs">
+        <button class="btn btn-sm" :class="subTabFinalizadas === 'ordenes' ? 'btn-primary' : 'btn-outline'" @click="subTabFinalizadas = 'ordenes'">📋 Órdenes</button>
+        <button class="btn btn-sm" :class="subTabFinalizadas === 'garantias' ? 'btn-primary' : 'btn-outline'" @click="subTabFinalizadas = 'garantias'">🛡️ Garantías</button>
+      </div>
+
+      <PanelGarantias v-if="activeTab === 'asesor-ots-finalizadas' && subTabFinalizadas === 'garantias'" />
+
+      <template v-else>
       <div class="header-row">
         <h2>{{ activeTab === 'asesor-ots-activas' ? 'Órdenes en Taller' : 'Histórico Finalizadas' }}</h2>
         <label v-if="activeTab === 'asesor-ots-finalizadas'" class="check-facturacion">
@@ -33,8 +42,10 @@
           @view-detail="abrirDetalle"
           @edit-ot="abrirEdicion"
           @export-pdf="generarExplicacionPDF"
+          @refrescar="cargarOTs"
         />
         <PaginationBar :page="page" :total-pages="totalPages" :total="total" @cambiar-pagina="irAPagina" />
+      </template>
       </template>
     </div>
 
@@ -68,6 +79,7 @@ import PaginationBar from '../components/common/PaginationBar.vue'
 import NuevaOT from '../components/asesor/NuevaOT.vue'
 import AdminLegajos from '../components/asesor/AdminLegajos.vue'
 import AgendaClientes from '../components/asesor/AgendaClientes.vue'
+import PanelGarantias from '../components/asesor/PanelGarantias.vue'
 import InformesMensuales from '../components/common/InformesMensuales.vue'
 import ModalDetalleOT from '../components/asesor/ModalDetalleOT.vue'
 import ModalEditarOT from '../components/asesor/ModalEditarOT.vue'
@@ -78,6 +90,7 @@ const { fetchJSON } = useApi()
 const toast = useToast()
 
 const activeTab = ref('asesor-ots-activas')
+const subTabFinalizadas = ref('ordenes') // dentro de Finalizadas: 'ordenes' | 'garantias'
 const ots = ref([])
 const loading = ref(true)
 const busqueda = ref('')
@@ -165,6 +178,7 @@ watch(activeTab, () => {
   filtroGarantia.value = ''
   fechaDesde.value = fechaLocalISO(DIAS_POR_DEFECTO)
   fechaHasta.value = ''
+  subTabFinalizadas.value = 'ordenes'
   cargarOTs()
 })
 
@@ -222,5 +236,6 @@ onMounted(cargarOTs)
 .header-row h2 { margin: 0; margin-right: auto; }
 .search-input { max-width: 300px; }
 .check-facturacion { display: flex; align-items: center; gap: 6px; font-size: 0.9rem; white-space: nowrap; }
+.subtabs { display: flex; gap: 8px; margin-bottom: 14px; }
 .select-garantia { width: auto; min-width: 150px; }
 </style>

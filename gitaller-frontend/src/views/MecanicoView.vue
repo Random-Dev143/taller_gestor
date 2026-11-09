@@ -2,6 +2,22 @@
   <div class="view-mecanico">
     <NavBar brand="🛠️ Mi Panel - Taller" :tabs="tabs" v-model:activeTab="activeTab" logoutText="Cambiar legajo" customLogout @logout="cambiarLegajo" />
 
+    <!-- Aportes que el Jefe habilitó para corregir. Va fuera del bloque de tareas a propósito:
+         tiene que verse aunque el mecánico no tenga ninguna tarea pendiente. -->
+    <div v-if="aportesCorregibles.length" class="card card-correccion">
+      <h2>✏️ Aportes para corregir</h2>
+      <p class="correccion-ayuda">El Jefe de Taller te habilitó a corregir {{ aportesCorregibles.length === 1 ? 'este aporte' : 'estos aportes' }}. Podés modificar cada uno <strong>una sola vez</strong>.</p>
+      <div v-for="ap in aportesCorregibles" :key="ap.id" class="correccion-item">
+        <div class="correccion-cabecera">
+          <strong>OT {{ ap.ot }}</strong> · {{ ap.patente }} · {{ ap.unidad }} <span class="correccion-cliente">({{ ap.cliente }})</span>
+        </div>
+        <textarea v-model="textosCorreccion[ap.id]" rows="4" class="form-control" :disabled="guardandoAporte === ap.id"></textarea>
+        <button class="btn btn-success btn-sm mt-8" :disabled="guardandoAporte === ap.id" @click="guardarCorreccionAporte(ap)">
+          {{ guardandoAporte === ap.id ? 'Guardando...' : 'Guardar corrección' }}
+        </button>
+      </div>
+    </div>
+
     <div class="card">
       <div class="header-row">
         <h2>Tareas Asignadas</h2>
@@ -186,6 +202,38 @@ const tarjetaClass = (tarea) => ({
   'Finalizada': 'tarea-card--done'
 }[tarea.mi_estado] || 'tarea-card--info')
 
+// ─── Aportes que el Jefe habilitó para corregir (migración 017) ───
+// Se piden junto con las tareas en cada refresco. Si falla, se ignora en silencio:
+// es un extra y nunca debe afectar a la lista de tareas.
+const aportesCorregibles = ref([])
+const textosCorreccion = ref({})   // id de aporte -> texto en edición
+const guardandoAporte = ref(null)
+
+const cargarAportesCorregibles = async () => {
+  try {
+    const lista = await fetchJSON(`/ordenes/aportes/habilitados/${encodeURIComponent(legajo.value)}`)
+    aportesCorregibles.value = Array.isArray(lista) ? lista : []
+    for (const ap of aportesCorregibles.value) {
+      if (textosCorreccion.value[ap.id] === undefined) textosCorreccion.value[ap.id] = ap.actividades
+    }
+  } catch (_) { /* silencioso a propósito */ }
+}
+
+const guardarCorreccionAporte = async (ap) => {
+  const texto = (textosCorreccion.value[ap.id] || '').trim()
+  if (!texto) return toast.error('El aporte no puede quedar vacío')
+  if (texto === (ap.actividades || '').trim()) return toast.info('No hiciste ningún cambio en el texto')
+  if (!confirm('Vas a guardar la corrección. Después el aporte vuelve a quedar bloqueado. ¿Confirmás?')) return
+  guardandoAporte.value = ap.id
+  try {
+    await fetchJSON(`/ordenes/aportes/${ap.id}/corregir`, { method: 'PUT', body: JSON.stringify({ legajo: legajo.value, actividades: texto }) })
+    toast.success('Aporte corregido')
+    delete textosCorreccion.value[ap.id]
+    await cargarAportesCorregibles()
+  } catch (err) { toast.error(errMsg(err)) }
+  finally { guardandoAporte.value = null }
+}
+
 const cargarTareas = async (silencioso = false) => {
   if (!silencioso) loading.value = true
   try {
@@ -196,6 +244,7 @@ const cargarTareas = async (silencioso = false) => {
   } finally {
     if (!silencioso) loading.value = false
   }
+  cargarAportesCorregibles()
 }
 
 const cambiarEstado = async (tarea, estado) => {
@@ -518,4 +567,10 @@ onUnmounted(() => {
 .ot-header__info { text-align: right; }
 .ot-header__unidad { font-weight: 600; margin-top: 6px; }
 .patente-badge { background: #111; color: white; padding: 4px 10px; border-radius: 6px; font-family: monospace; font-size: 1.1rem; display: inline-block; }
+.card-correccion { border-left: 4px solid var(--warning); margin-bottom: 15px; }
+.correccion-ayuda { font-size: 0.9rem; color: var(--muted); margin: 4px 0 12px; }
+.correccion-item { border-top: 1px solid var(--border-soft); padding: 12px 0; }
+.correccion-cabecera { margin-bottom: 6px; font-size: 0.95rem; }
+.correccion-cliente { color: var(--muted); }
+.mt-8 { margin-top: 8px; }
 </style>

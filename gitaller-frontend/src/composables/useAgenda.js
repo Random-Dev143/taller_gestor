@@ -40,8 +40,10 @@ export function useAgenda() {
 
   const guardarEdicion = async (id, patente, editForm) => {
     try {
-      await fetchJSON(`/unidades/${id}`, { method: 'PUT', body: JSON.stringify({ patente, ...editForm }) })
-      toast.success('Actualizado')
+      const res = await fetchJSON(`/unidades/${id}`, { method: 'PUT', body: JSON.stringify({ ...editForm, patente }) })
+      toast.success(res?.patente_cambiada
+        ? `Patente corregida a ${res.patente} (${res.ordenes_de_la_unidad} OT actualizadas)`
+        : 'Actualizado')
       await cargarAgenda()
       return true
     } catch (err) {

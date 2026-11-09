@@ -36,6 +36,14 @@
             </select>
           </div>
           <div class="form-group">
+            <label>Motivo de descarte NPS (manual)</label>
+            <select v-model="form.motivo_descarte_manual">
+              <option value="">Automático</option>
+              <option value="Otros">Otros</option>
+            </select>
+            <small class="text-muted">Solo para casos que ninguna regla automática cubre.</small>
+          </div>
+          <div class="form-group">
             <label>Horas Asignadas (Proyectadas)</label>
             <input type="number" step="0.1" min="0" v-model="form.tiempo_asignado_horas" />
           </div>
@@ -135,7 +143,7 @@ const esFinalizada = ref(false)
 const form = ref({ 
   cliente: '', patente: '', unidad: '', kilometraje: '', 
   fecha_apertura: '', fecha_cierre: '',
-  tiempo_asignado_horas: 0, tiempo_empleado_horas: 0, tiempo_facturado_horas: 0, es_garantia: 0, es_no_iveco: 0,
+  tiempo_asignado_horas: 0, tiempo_empleado_horas: 0, tiempo_facturado_horas: 0, es_garantia: 0, es_no_iveco: 0, motivo_descarte_manual: '',
   monto_repuestos: 0, monto_mano_obra: 0, monto_repuestos_garantia: 0, monto_mano_obra_garantia: 0
 })
 
@@ -186,6 +194,7 @@ onMounted(async () => {
       tiempo_facturado_horas: parseNum(data.tiempo_facturado_horas),
       es_garantia: data.es_garantia ? 1 : 0,
       es_no_iveco: data.es_no_iveco ? 1 : 0,
+      motivo_descarte_manual: data.motivo_descarte_manual || '',
       monto_repuestos: parseNum(data.monto_repuestos),
       monto_mano_obra: parseNum(data.monto_mano_obra),
       monto_repuestos_garantia: parseNum(data.monto_repuestos_garantia),
@@ -221,6 +230,7 @@ const guardarCambios = async () => {
       tiempo_asignado_horas: parseNum(form.value.tiempo_asignado_horas),
       tiempo_facturado_horas: parseNum(form.value.tiempo_facturado_horas),
       es_no_iveco: form.value.es_no_iveco,
+      motivo_descarte_manual: form.value.motivo_descarte_manual,
       monto_repuestos: parseNum(form.value.monto_repuestos),
       monto_mano_obra: parseNum(form.value.monto_mano_obra),
       monto_repuestos_garantia: form.value.es_garantia === 1 ? parseNum(form.value.monto_repuestos_garantia) : 0,

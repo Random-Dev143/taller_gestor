@@ -15,10 +15,11 @@
         <tr v-if="data.length === 0">
           <td colspan="10" class="empty-state">No hay órdenes de trabajo para mostrar</td>
         </tr>
-        <tr v-for="ot in data" :key="ot.ot" :class="{ 'row-ready': esLista(ot), 'row-stale': esEstancada(ot) }">
+        <tr v-for="ot in data" :key="ot.ot" :class="{ 'row-anulada': !!ot.anulada, 'row-ready': !ot.anulada && esLista(ot), 'row-stale': !ot.anulada && esEstancada(ot) }">
           <td data-label="OT">
-            <strong>{{ ot.ot }}</strong>
-            <span v-if="esEstancada(ot)" class="badge-antiguedad" :title="`Abierta hace ${diasAbierta(ot)} días`">
+            <strong :class="{ 'ot-anulada': !!ot.anulada }">{{ ot.ot }}</strong>
+            <span v-if="ot.anulada" class="badge-anulada" :title="ot.anulada_motivo ? `Motivo: ${ot.anulada_motivo}` : 'OT anulada'">ANULADA</span>
+            <span v-if="!ot.anulada && esEstancada(ot)" class="badge-antiguedad" :title="`Abierta hace ${diasAbierta(ot)} días`">
               ⏳ {{ diasAbierta(ot) }}d
             </span>
           </td>
@@ -62,14 +63,32 @@
             <button class="btn btn-secondary btn-sm" v-can="'ot_ver_detalle'" @click="$emit('view-detail', ot.ot)">Detalle</button>
             <button class="btn btn-sm" v-can="'ot_editar'" @click="$emit('edit-ot', ot.ot)">Editar</button>
             <button class="btn btn-outline btn-sm" v-can="'ot_ver_detalle'" @click="$emit('export-pdf', ot.ot)">📄 PDF</button>
+            <button v-if="!ot.anulada" class="btn btn-danger btn-sm" v-can="'ot_anular'" @click="pedirAnulacion(ot)">Anular</button>
+            <button v-else class="btn btn-secondary btn-sm" v-can="'ot_anular'" @click="reactivar(ot)">Reactivar</button>
           </td>
         </tr>
       </tbody>
     </table>
+
+    <div v-if="anulando" class="modal-overlay" @click.self="anulando = null">
+      <div class="modal-content" style="max-width: 440px;">
+        <h3>Anular OT {{ anulando.ot }}</h3>
+        <p class="text-muted">La OT queda marcada en rojo y figura como "Anulada" en la planilla de NPS. Se puede reactivar después.</p>
+        <label>Motivo (opcional)</label>
+        <textarea v-model="motivoAnulacion" class="form-control" rows="3" maxlength="200"></textarea>
+        <div style="display: flex; gap: 10px; margin-top: 14px;">
+          <button class="btn btn-danger" :disabled="procesando" @click="confirmarAnulacion">{{ procesando ? 'Anulando...' : 'Anular OT' }}</button>
+          <button class="btn btn-secondary" @click="anulando = null">Cancelar</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
+import { ref } from 'vue'
+import { useApi } from '../../composables/useApi'
+import { useToast, errMsg } from '../../composables/useToast'
 const props = defineProps({
   data: { type: Array, required: true },
   esJefe: { type: Boolean, default: false },
@@ -77,7 +96,34 @@ const props = defineProps({
   sortBy: { type: String, default: '' },
   sortDir: { type: String, default: 'desc' }
 })
-defineEmits(['update-status', 'view-detail', 'edit-ot', 'control-ot', 'open-assign-modal', 'export-pdf', 'sort-change'])
+const emit = defineEmits(['update-status', 'view-detail', 'edit-ot', 'control-ot', 'open-assign-modal', 'export-pdf', 'sort-change', 'refrescar'])
+
+// ─── Anulación (solo con el permiso 'ot_anular', el botón se oculta si no lo tiene) ───
+const { fetchJSON } = useApi()
+const toast = useToast()
+const anulando = ref(null)
+const motivoAnulacion = ref('')
+const procesando = ref(false)
+
+const pedirAnulacion = (ot) => { anulando.value = ot; motivoAnulacion.value = '' }
+const confirmarAnulacion = async () => {
+  procesando.value = true
+  try {
+    await fetchJSON(`/ordenes/${anulando.value.ot}/anular`, { method: 'POST', body: JSON.stringify({ motivo: motivoAnulacion.value }) })
+    toast.success(`OT ${anulando.value.ot} anulada`)
+    anulando.value = null
+    emit('refrescar')
+  } catch (err) { toast.error(errMsg(err)) }
+  finally { procesando.value = false }
+}
+const reactivar = async (ot) => {
+  if (!confirm(`¿Reactivar la OT ${ot.ot}?`)) return
+  try {
+    await fetchJSON(`/ordenes/${ot.ot}/reactivar`, { method: 'POST', body: '{}' })
+    toast.success(`OT ${ot.ot} reactivada`)
+    emit('refrescar')
+  } catch (err) { toast.error(errMsg(err)) }
+}
 
 // Columnas ordenables. Garantía/Controlada quedan afuera porque son
 // booleanas y ordenarlas no aporta demasiado; se pueden sumar igual
@@ -158,6 +204,15 @@ const esEstancada = (ot) => ot.estado_actual !== 'Finalizada' && diasAbierta(ot)
 
 .row-ready { background-color: var(--row-ready-bg) !important; border-left: 5px solid var(--row-ready-border); }
 .row-ready td { background-color: transparent !important; }
+
+/* OT anulada por el jefe de taller: rojo fuerte (más que "estancada") y número tachado */
+.row-anulada { background-color: var(--row-anulada-bg) !important; border-left: 5px solid var(--row-anulada-border); }
+.row-anulada td { background-color: transparent !important; }
+.ot-anulada { text-decoration: line-through; }
+.badge-anulada {
+  display: inline-block; margin-left: 8px; font-size: 0.7rem; font-weight: 800; letter-spacing: 0.4px;
+  background: var(--row-anulada-border); color: #fff; padding: 2px 8px; border-radius: 10px; white-space: nowrap;
+}
 
 .badge-antiguedad {
   display: inline-block; margin-left: 8px; font-size: 0.72rem; font-weight: 700;
