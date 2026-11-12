@@ -53,6 +53,8 @@
 </template>
 
 <script setup>
+import { utcAInputLocal, fechaParaGuardar } from '../../utils/fechas'
+import { redondear1 } from '../../utils/horas'
 import { ref, onMounted, computed } from 'vue'
 
 const props = defineProps({ 
@@ -65,18 +67,25 @@ const emit = defineEmits(['close', 'confirm'])
 const isEdit = computed(() => !!props.actividadEdit)
 const form = ref({ id: null, legajos: [], descripcion: '', tiempo_estimado: 1, tiempo_real: 0, fecha_inicio: '', fecha_fin: '', es_rutina: false })
 
+const fechasOriginales = { inicio: null, fin: null }
+let tiempoRealMostrado = 0
+
 onMounted(() => {
   if (props.actividadEdit) {
-    const formatForInput = (d) => d ? new Date(d).toISOString().slice(0, 16) : ''
+    // El tiempo real viene calculado con todos sus decimales: se MUESTRA redondeado al décimo
+    // pero el valor exacto queda en la base (solo se envía si la persona lo modifica).
+    fechasOriginales.inicio = props.actividadEdit.fecha_inicio
+    fechasOriginales.fin = props.actividadEdit.fecha_fin
+    tiempoRealMostrado = redondear1(props.actividadEdit.tiempo_real)
     
     form.value = {
       id: props.actividadEdit.id,
       legajos: props.actividadEdit.legajos_mecanicos ? props.actividadEdit.legajos_mecanicos.split(',') : [],
       descripcion: props.actividadEdit.descripcion,
       tiempo_estimado: props.actividadEdit.tiempo_estimado,
-      tiempo_real: props.actividadEdit.tiempo_real,
-      fecha_inicio: formatForInput(props.actividadEdit.fecha_inicio),
-      fecha_fin: formatForInput(props.actividadEdit.fecha_fin)
+      tiempo_real: tiempoRealMostrado,
+      fecha_inicio: utcAInputLocal(props.actividadEdit.fecha_inicio),
+      fecha_fin: utcAInputLocal(props.actividadEdit.fecha_fin)
     }
   }
 })
@@ -92,13 +101,14 @@ const submitAsignacion = () => {
   const payload = {
     ...form.value,
     tiempo_estimado: parseNum(form.value.tiempo_estimado),
-    tiempo_real: isEdit.value ? parseNum(form.value.tiempo_real) : undefined,
-    fecha_inicio: (isEdit.value && form.value.fecha_inicio) 
-                    ? form.value.fecha_inicio.replace('T', ' ') 
+    // Solo se envía si la persona lo cambió: así el valor calculado (con todos sus decimales)
+    // no se pisa con el redondeado que se ve en pantalla.
+    tiempo_real: (isEdit.value && parseNum(form.value.tiempo_real) !== tiempoRealMostrado)
+                    ? parseNum(form.value.tiempo_real)
                     : undefined,
-    fecha_fin: (isEdit.value && form.value.fecha_fin) 
-                    ? form.value.fecha_fin.replace('T', ' ') 
-                    : undefined,
+    // Hora local -> UTC; si no se tocó el campo se reenvía el original sin cambios.
+    fecha_inicio: isEdit.value ? fechaParaGuardar(form.value.fecha_inicio, fechasOriginales.inicio) : undefined,
+    fecha_fin: isEdit.value ? fechaParaGuardar(form.value.fecha_fin, fechasOriginales.fin) : undefined,
     legajos_mecanicos: form.value.legajos
   };
   

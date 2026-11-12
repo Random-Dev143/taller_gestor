@@ -125,6 +125,7 @@
 </template>
 
 <script setup>
+import { utcAInputLocal, fechaParaGuardar } from '../../utils/fechas'
 import { ref, computed, onMounted } from 'vue'
 import { useApi } from '../../composables/useApi'
 import { useToast, errMsg } from '../../composables/useToast'
@@ -177,18 +178,23 @@ const parseNum = (val) => {
   return isNaN(num) ? 0 : num;
 }
 
-const formatForInput = (d) => d ? d.replace(' ', 'T').slice(0, 16) : ''
+// Las fechas están en UTC en la base: se muestran y editan en hora local, y al guardar
+// se vuelven a UTC. Si el campo no se toca se reenvía el original sin cambios.
+const fechasOriginales = { apertura: null, cierre: null }
 
 onMounted(async () => {
   try {
     const data = await fetchJSON(`/ordenes/${props.otId}`)
     esFinalizada.value = data.estado_actual === 'Finalizada'
     
+    fechasOriginales.apertura = data.fecha_apertura
+    fechasOriginales.cierre = data.fecha_cierre
+
     form.value = {
       cliente: data.cliente, patente: data.patente, unidad: data.unidad,
       kilometraje: data.kilometraje || '', 
-      fecha_apertura: formatForInput(data.fecha_apertura),
-      fecha_cierre: formatForInput(data.fecha_cierre),
+      fecha_apertura: utcAInputLocal(data.fecha_apertura),
+      fecha_cierre: utcAInputLocal(data.fecha_cierre),
       tiempo_asignado_horas: parseNum(data.tiempo_asignado_horas),
       tiempo_empleado_horas: parseNum(data.tiempo_empleado_horas),
       tiempo_facturado_horas: parseNum(data.tiempo_facturado_horas),
@@ -225,8 +231,8 @@ const guardarCambios = async () => {
     const payload = { 
       ...form.value, 
       patente: normalizarPatente(form.value.patente),
-      fecha_apertura: form.value.fecha_apertura ? form.value.fecha_apertura.replace('T', ' ') : undefined,
-      fecha_cierre: form.value.fecha_cierre ? form.value.fecha_cierre.replace('T', ' ') : undefined,
+      fecha_apertura: fechaParaGuardar(form.value.fecha_apertura, fechasOriginales.apertura),
+      fecha_cierre: fechaParaGuardar(form.value.fecha_cierre, fechasOriginales.cierre),
       tiempo_asignado_horas: parseNum(form.value.tiempo_asignado_horas),
       tiempo_facturado_horas: parseNum(form.value.tiempo_facturado_horas),
       es_no_iveco: form.value.es_no_iveco,

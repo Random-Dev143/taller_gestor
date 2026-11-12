@@ -230,7 +230,11 @@ const crearOT = async () => {
   enviando.value = true
   try {
     form.value.patente = normalizarPatente(form.value.patente)
-    if (!form.value.fecha_apertura) form.value.fecha_apertura = new Date().toISOString()
+    // La hora tipeada es local: se envía como instante UTC explícito (con "Z") para que no dependa
+    // del huso horario del servidor.
+    form.value.fecha_apertura = form.value.fecha_apertura
+      ? new Date(form.value.fecha_apertura).toISOString()
+      : new Date().toISOString()
 
     // Si desmarcan garantía, forzamos los montos de garantía a 0 para no arrastrar basura
     if (form.value.es_garantia === 0) {

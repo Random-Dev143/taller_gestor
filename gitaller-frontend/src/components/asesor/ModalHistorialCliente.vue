@@ -37,6 +37,7 @@
 </template>
 
 <script setup>
+import { parseUtc } from '../../utils/fechas'
 import { ref, computed, onMounted } from 'vue'
 import { useApi } from '../../composables/useApi'
 import { useToast, errMsg } from '../../composables/useToast'
@@ -55,7 +56,7 @@ const historial = ref([])
 const loading = ref(true)
 
 const formatCurrency = (val) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(val || 0)
-const formatFecha = (f) => f ? new Date(f).toLocaleDateString('es-AR') : '—'
+const formatFecha = (f) => (parseUtc(f) ? parseUtc(f).toLocaleDateString('es-AR') : '—')
 
 const totalFacturado = computed(() =>
   historial.value.reduce((acc, ot) => acc + (ot.monto_repuestos || 0) + (ot.monto_mano_obra || 0), 0)

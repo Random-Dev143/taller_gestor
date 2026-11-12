@@ -66,60 +66,69 @@
         <!-- SECCIÓN OTs DE CLIENTES -->
         <div v-if="activeTab === 'mecanico-ot'" v-show="tareasCliente.length > 0">
           <h3 style="color: var(--primary-dark); border-bottom: 1px solid var(--border-soft); padding-bottom: 8px;">Órdenes de Trabajo</h3>
-          <div class="grid-tareas">
-            
-            <!-- TARJETA MADRE POR OT -->
-            <div v-for="orden in ordenesAgrupadas" :key="orden.ot" class="card-tarea" style="grid-column: 1 / -1; padding: 20px;">
-              
-              <!-- Cabecera de la OT agrupada -->
-              <div class="ot-header">
-                <h3 class="ot-header__titulo">OT {{ orden.ot }}</h3>
-                <div class="ot-header__info">
-                    <span class="patente-badge">{{ orden.patente }}</span>
-                    <div class="ot-header__unidad">{{ orden.unidad }}</div>
-                    <div class="tarea-cliente">{{ orden.cliente }}</div>
+          <!-- Una tarjeta por OT, al estilo de la sala de espera. La OT donde está trabajando
+               ahora va primera y en verde; el resto, de la más vieja a la más nueva. -->
+          <div class="grid-ot">
+            <article v-for="orden in ordenesAgrupadas" :key="orden.ot" class="ot-card" :class="claseOrden(orden)">
+              <header class="ot-card__top">
+                <span class="ot-card__num">#{{ orden.ot }}</span>
+                <span class="patente-badge">{{ orden.patente }}</span>
+              </header>
+              <div class="ot-card__unidad">{{ orden.unidad }}</div>
+              <div class="ot-card__cliente">{{ orden.cliente }}</div>
+
+              <div v-if="orden.activa" class="ot-card__ahora">⏺ TRABAJANDO AHORA</div>
+
+              <div class="ot-card__tiempos">
+                <div>
+                  <span class="tiempo-label">Asignado</span>
+                  <strong>{{ redondear1(orden.asignado) }} h</strong>
                 </div>
-              </div>
-              
-              <!-- Lista de subtareas internas -->
-              <div
-                v-for="tarea in orden.tareas"
-                :key="tarea.id"
-                class="tarea-card"
-                :class="tarjetaClass(tarea)"
-              >
-                <div class="tarea-card__top">
-                  <p class="tarea-card__desc">{{ tarea.descripcion }}</p>
-                  <span class="mi-estado-chip" :class="estadoClass(tarea.mi_estado)">{{ tarea.mi_estado }}</span>
-                </div>
-
-                <div class="tarea-card__meta">
-                  <span>⏱ Est. {{ tarea.tiempo_estimado }} hs</span>
-                  <span v-if="tarea.mi_estado === 'En Curso'">· <strong class="tiempo-vivo">{{ tiempoVivo(tarea) }}</strong> ⏺</span>
-                  <span v-else>· Mis horas: <strong>{{ (tarea.mi_tiempo_real || 0).toFixed(2) }}</strong></span>
-                </div>
-                <div class="tarea-card__equipo">👥 {{ tarea.equipo }}</div>
-                <div class="tarea-card__tarea-general">Estado general de la tarea: <strong>{{ tarea.estado }}</strong></div>
-
-                <p v-if="tarea.estado === 'Finalizada' && tarea.mi_estado !== 'Finalizada'" class="aviso-compañero">
-                  <span class="aviso-compañero__icono">⚠</span>
-                  <span><strong>Un compañero ya cerró esta tarea.</strong> Podés reanudar si falta algo, o solo completar tu informe.</span>
-                </p>
-
-                <!-- Botones de acción: actúan sobre TU propio estado, independiente del resto del equipo -->
-                <div class="acciones-tarea">
-                  <button v-if="tarea.mi_estado === 'Asignada'" v-can="'tarea_operar'" @click="cambiarEstado(tarea, 'En Curso')" class="btn btn-primary btn-lg">▶ Iniciar</button>
-                  <button v-if="tarea.mi_estado === 'Pausada'" v-can="'tarea_operar'" @click="cambiarEstado(tarea, 'En Curso')" class="btn btn-primary btn-lg">▶ Reanudar</button>
-
-                  <button v-if="tarea.mi_estado === 'En Curso'" v-can="'tarea_operar'" @click="abrirPausa(tarea)" class="btn btn-warning btn-lg">⏸ Pausar</button>
-                  <button v-if="['En Curso', 'Pausada'].includes(tarea.mi_estado)" v-can="'tarea_operar'" @click="abrirFinalizar(tarea)" class="btn btn-success btn-lg">✔ Finalizar mi parte</button>
-
-                  <!-- La tarea completa fue cerrada por el Jefe: solo queda completar el informe -->
-                  <button v-if="tarea.estado === 'Cerrada por Jefe' && tarea.mi_estado !== 'Finalizada'" v-can="'tarea_operar'" @click="abrirInformar(tarea)" class="btn btn-primary btn-lg">📝 Informar</button>
+                <div>
+                  <span class="tiempo-label">Ocupado</span>
+                  <strong :class="{ 'tiempo-vivo': orden.activa }">{{ formatoHoras(horasOcupadasOrden(orden, ahora)) }}</strong>
                 </div>
               </div>
 
-            </div>
+              <!-- Mis actividades en esta OT. La descripción ocupa un solo renglón; al tocar la fila se despliega completa. -->
+              <ul class="ot-card__tareas">
+                <li v-for="tarea in orden.tareas" :key="tarea.id" class="fila-tarea" :class="tarjetaClass(tarea)">
+                  <button type="button" class="fila-tarea__cabecera" :aria-expanded="abierta(tarea)" @click="alternar(tarea)">
+                    <span class="mi-estado-chip" :class="estadoClass(tarea.mi_estado)">{{ tarea.mi_estado }}</span>
+                    <span class="fila-tarea__desc" :class="{ 'fila-tarea__desc--completa': abierta(tarea) }">{{ tarea.descripcion }}</span>
+                    <span class="fila-tarea__flecha" aria-hidden="true">{{ abierta(tarea) ? '▴' : '▾' }}</span>
+                  </button>
+
+                  <div class="fila-tarea__meta">
+                    <span>⏱ Est. {{ redondear1(tarea.tiempo_estimado) }} h</span>
+                    <span v-if="tarea.mi_estado === 'En Curso'">· <strong class="tiempo-vivo">{{ tiempoVivo(tarea) }}</strong> ⏺</span>
+                    <span v-else>· Mis horas: <strong>{{ formatoHoras(tarea.mi_tiempo_real) }}</strong></span>
+                  </div>
+
+                  <div v-if="abierta(tarea)" class="fila-tarea__detalle">
+                    <div class="tarea-card__equipo">👥 {{ tarea.equipo }}</div>
+                    <div class="tarea-card__tarea-general">Estado general de la tarea: <strong>{{ tarea.estado }}</strong></div>
+                  </div>
+
+                  <p v-if="tarea.estado === 'Finalizada' && tarea.mi_estado !== 'Finalizada'" class="aviso-compañero">
+                    <span class="aviso-compañero__icono">⚠</span>
+                    <span><strong>Un compañero ya cerró esta tarea.</strong> Podés reanudar si falta algo, o solo completar tu informe.</span>
+                  </p>
+
+                  <!-- Botones de acción: actúan sobre TU propio estado, independiente del resto del equipo -->
+                  <div class="acciones-tarea">
+                    <button v-if="tarea.mi_estado === 'Asignada'" v-can="'tarea_operar'" @click="cambiarEstado(tarea, 'En Curso')" class="btn btn-primary btn-lg">▶ Iniciar</button>
+                    <button v-if="tarea.mi_estado === 'Pausada'" v-can="'tarea_operar'" @click="cambiarEstado(tarea, 'En Curso')" class="btn btn-primary btn-lg">▶ Reanudar</button>
+
+                    <button v-if="tarea.mi_estado === 'En Curso'" v-can="'tarea_operar'" @click="abrirPausa(tarea)" class="btn btn-warning btn-lg">⏸ Pausar</button>
+                    <button v-if="['En Curso', 'Pausada'].includes(tarea.mi_estado)" v-can="'tarea_operar'" @click="abrirFinalizar(tarea)" class="btn btn-success btn-lg">✔ Finalizar mi parte</button>
+
+                    <!-- La tarea completa fue cerrada por el Jefe: solo queda completar el informe -->
+                    <button v-if="tarea.estado === 'Cerrada por Jefe' && tarea.mi_estado !== 'Finalizada'" v-can="'tarea_operar'" @click="abrirInformar(tarea)" class="btn btn-primary btn-lg">📝 Informar</button>
+                  </div>
+                </li>
+              </ul>
+            </article>
           </div>
         </div>
       </div>
@@ -131,6 +140,8 @@
 </template>
 
 <script setup>
+import { agruparOrdenes, horasOcupadasOrden } from '../utils/ordenesMecanico'
+import { formatoHoras, horasVivas, redondear1 } from '../utils/horas'
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useApi } from '../composables/useApi'
@@ -172,19 +183,7 @@ const segundosDesdeActualizacion = computed(() => {
 
 // Horas trabajadas en vivo: lo ya acumulado (mi_tiempo_real) + lo transcurrido
 // desde que arrancó la sesión actual (mi_sesion_inicio), mostrado como HH:MM:SS.
-const tiempoVivo = (tarea) => {
-  let horas = tarea.mi_tiempo_real || 0
-  if (tarea.mi_sesion_inicio) {
-    const inicioUTC = new Date(tarea.mi_sesion_inicio.replace(' ', 'T') + 'Z').getTime()
-    const transcurridoMs = Math.max(0, ahora.value - inicioUTC)
-    horas += transcurridoMs / 3600000
-  }
-  const totalSeg = Math.floor(horas * 3600)
-  const h = Math.floor(totalSeg / 3600)
-  const m = Math.floor((totalSeg % 3600) / 60)
-  const s = totalSeg % 60
-  return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
-}
+const tiempoVivo = (tarea) => formatoHoras(horasVivas(tarea, ahora.value))
 
 const estadoClass = (estado) => ({
   'Pendiente': 'badge-info',
@@ -349,21 +348,17 @@ const cambiarLegajo = () => {
 }
 const tareasCliente = computed(() => tareas.value.filter(t => t.ot !== '0000'))
 
-const ordenesAgrupadas = computed(() => {
-  const mapa = new Map()
-  tareasCliente.value.forEach(tarea => {
-    if (!mapa.has(tarea.ot)) {
-      mapa.set(tarea.ot, {
-        ot: tarea.ot,
-        patente: tarea.patente,
-        unidad: tarea.unidad,
-        cliente: tarea.cliente,
-        tareas: []
-      })
-    }
-    mapa.get(tarea.ot).tareas.push(tarea)
-  })
-  return Array.from(mapa.values())
+// Una tarjeta por OT: la que tiene trabajo activo primero, el resto de la más vieja a la más nueva.
+const ordenesAgrupadas = computed(() => agruparOrdenes(tareasCliente.value))
+
+// Filas desplegadas (se recuerdan aunque la pantalla se actualice sola cada 45 s).
+const abiertas = ref({})
+const abierta = (tarea) => !!abiertas.value[tarea.id]
+const alternar = (tarea) => { abiertas.value[tarea.id] = !abierta(tarea) }
+
+const claseOrden = (orden) => ({
+  'ot-card--activa': orden.activa,
+  'ot-card--pausada': !orden.activa && orden.tareas.some(t => t.mi_estado === 'Pausada')
 })
 
 const tareasInternas = computed(() => tareas.value.filter(t => t.ot === '0000'))
@@ -460,34 +455,11 @@ onUnmounted(() => {
 .badge-progress { background: var(--success); color: white; }
 .badge-warn { background: var(--warning); color: white; }
 
-/* --- Tarjeta de subtarea: legible primero en celular --- */
-.tarea-card {
-  padding: 14px;
-  border: 1px solid var(--border);
-  border-left: 5px solid var(--muted);
-  border-radius: 10px;
-  margin-bottom: 12px;
-  background: var(--hover-row);
-}
-.tarea-card--info { border-left-color: var(--primary); }
-.tarea-card--progress { border-left-color: var(--success); }
-.tarea-card--warn { border-left-color: var(--warning); }
-.tarea-card--done { border-left-color: var(--muted); }
+.fila-tarea.tarea-card--info { border-left-color: var(--primary); }
+.fila-tarea.tarea-card--progress { border-left-color: var(--success); }
+.fila-tarea.tarea-card--warn { border-left-color: var(--warning); }
+.fila-tarea.tarea-card--done { border-left-color: var(--muted); }
 
-.tarea-card__top {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 10px;
-  margin-bottom: 8px;
-}
-.tarea-card__desc {
-  margin: 0;
-  font-size: 1.05rem;
-  line-height: 1.35;
-  font-weight: 600;
-  color: var(--text);
-}
 .mi-estado-chip {
   flex-shrink: 0;
   padding: 4px 10px;
@@ -497,14 +469,6 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
-.tarea-card__meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 8px;
-  font-size: 0.85rem;
-  color: var(--muted);
-  margin-bottom: 4px;
-}
 .tarea-card__equipo {
   font-size: 0.85rem;
   color: var(--primary);
@@ -547,26 +511,46 @@ onUnmounted(() => {
    de tocar con el pulgar y no hay riesgo de tocar el botón equivocado. */
 @media (max-width: 640px) {
   .grid-tareas { grid-template-columns: 1fr; }
+  .ot-card { padding: 12px; }
   .acciones-tarea { flex-direction: column; }
   .acciones-tarea .btn-lg { width: 100%; }
-  .tarea-card__desc { font-size: 1rem; }
-  .ot-header { flex-direction: column; align-items: flex-start !important; }
-  .ot-header__info { text-align: left !important; }
 }
 
-.ot-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 10px;
-  border-bottom: 2px solid var(--border-soft);
-  padding-bottom: 15px;
-  margin-bottom: 15px;
+.patente-badge { background: #fff; color: #111; border: 2px solid #111; padding: 2px 10px; border-radius: 6px; font-family: monospace; font-weight: 700; font-size: 1.1rem; display: inline-block; letter-spacing: 1px; }
+/* --- Tarjeta por OT (estilo sala de espera) --- */
+.grid-ot { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 16px; margin-top: 12px; align-items: start; }
+.ot-card {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 16px;
+  border: 1px solid var(--border-soft);
+  border-left: 8px solid var(--muted);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
 }
-.ot-header__titulo { font-size: 1.3rem; margin: 0; }
-.ot-header__info { text-align: right; }
-.ot-header__unidad { font-weight: 600; margin-top: 6px; }
-.patente-badge { background: #111; color: white; padding: 4px 10px; border-radius: 6px; font-family: monospace; font-size: 1.1rem; display: inline-block; }
+.ot-card--pausada { border-left-color: var(--warning); }
+/* Trabajo activo: verde, como las tarjetas "En Proceso" de la sala de espera */
+.ot-card--activa { border-color: var(--row-ready-border); border-left-color: var(--success); background: var(--row-ready-bg); }
+.ot-card__top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.ot-card__num { font-weight: 800; font-size: 1.4rem; color: var(--muted); }
+.ot-card__unidad { font-weight: 700; font-size: 1.1rem; line-height: 1.25; }
+.ot-card__cliente { color: var(--muted); font-size: 0.85rem; font-weight: 500; text-transform: uppercase; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ot-card__ahora { background: var(--success); color: #fff; font-weight: 800; letter-spacing: 0.5px; text-align: center; padding: 6px 10px; border-radius: 8px; font-size: 0.85rem; }
+.ot-card__tiempos { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; background: var(--hover-row); border-radius: 8px; padding: 10px 12px; margin-top: 4px; }
+.ot-card__tiempos strong { display: block; font-size: 1.2rem; font-variant-numeric: tabular-nums; }
+.tiempo-label { display: block; font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; }
+.ot-card__tareas { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+
+.fila-tarea { border: 1px solid var(--border); border-left-width: 5px; border-radius: 10px; padding: 10px 12px; background: var(--surface); }
+.fila-tarea__cabecera { display: flex; align-items: center; gap: 8px; width: 100%; background: none; border: 0; padding: 0; text-align: left; cursor: pointer; color: var(--text); font: inherit; }
+.fila-tarea__desc { flex: 1; min-width: 0; font-weight: 600; font-size: 1rem; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fila-tarea__desc--completa { white-space: normal; overflow: visible; }
+.fila-tarea__flecha { flex-shrink: 0; color: var(--muted); }
+.fila-tarea__meta { display: flex; flex-wrap: wrap; gap: 4px 8px; margin: 6px 0 4px; font-size: 0.85rem; color: var(--muted); }
+.fila-tarea__detalle { margin: 6px 0; padding: 8px 0 2px; border-top: 1px dashed var(--border); }
+.fila-tarea .aviso-compañero { margin: 8px 0 0; }
+.fila-tarea .acciones-tarea { margin-top: 8px; }
+
 .card-correccion { border-left: 4px solid var(--warning); margin-bottom: 15px; }
 .correccion-ayuda { font-size: 0.9rem; color: var(--muted); margin: 4px 0 12px; }
 .correccion-item { border-top: 1px solid var(--border-soft); padding: 12px 0; }

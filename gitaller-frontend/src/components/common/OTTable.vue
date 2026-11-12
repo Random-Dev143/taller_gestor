@@ -87,6 +87,7 @@
 
 <script setup>
 import { ref } from 'vue'
+import { diasDesde } from '../../utils/fechas'
 import { useApi } from '../../composables/useApi'
 import { useToast, errMsg } from '../../composables/useToast'
 const props = defineProps({
@@ -167,9 +168,7 @@ const UMBRAL_DIAS_ESTANCADA = 7
 
 const diasAbierta = (ot) => {
   if (!ot.fecha_apertura) return 0
-  const apertura = new Date(ot.fecha_apertura)
-  const ahora = new Date()
-  return Math.floor((ahora - apertura) / (1000 * 60 * 60 * 24))
+  return diasDesde(ot.fecha_apertura)
 }
 
 const esEstancada = (ot) => ot.estado_actual !== 'Finalizada' && diasAbierta(ot) > UMBRAL_DIAS_ESTANCADA

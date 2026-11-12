@@ -212,7 +212,7 @@ async function listarPorMecanico(legajo) {
                am.es_auxiliar AS soy_auxiliar,
                (SELECT COUNT(*) FROM actividad_mecanicos am3 WHERE am3.actividad_id = a.id AND am3.legajo_mecanico != am.legajo_mecanico AND am3.es_auxiliar = 0) AS otros_no_auxiliares,
                (SELECT ta.inicio FROM tiempos_actividad ta WHERE ta.actividad_id = a.id AND ta.legajo_mecanico = am.legajo_mecanico AND ta.fin IS NULL ORDER BY ta.id DESC LIMIT 1) AS mi_sesion_inicio,
-               o.patente, u.unidad, c.nombre AS cliente,
+               o.patente, o.fecha_apertura, u.unidad, c.nombre AS cliente,
                (SELECT GROUP_CONCAT(l.nombre, ', ') FROM actividad_mecanicos am2 JOIN legajos l ON am2.legajo_mecanico = l.legajo WHERE am2.actividad_id = a.id) AS equipo
         FROM actividad_mecanicos am
         JOIN actividades a ON a.id = am.actividad_id
@@ -220,7 +220,7 @@ async function listarPorMecanico(legajo) {
         JOIN unidades u ON o.patente = u.patente
         JOIN clientes c ON u.cliente_id = c.id
         WHERE am.legajo_mecanico = ? AND am.estado != 'Finalizada'
-        ORDER BY a.id
+        ORDER BY o.fecha_apertura, a.id
     `, [legajo]);
 }
 
