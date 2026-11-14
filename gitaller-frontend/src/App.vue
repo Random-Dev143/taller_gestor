@@ -14,7 +14,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { getVersion } from '@tauri-apps/api/app';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { check } from '@tauri-apps/plugin-updater';
-import { relaunch } from '@tauri-apps/plugin-process';
+import { relaunch, exit } from '@tauri-apps/plugin-process';
 import { useConfigStore } from './stores/useConfigStore';
 import { useApi } from './composables/useApi'; 
 import { useToast } from './composables/useToast'; 
@@ -22,6 +22,26 @@ import { useToast } from './composables/useToast';
 const configStore = useConfigStore();
 const { API_BASE, fetchJSON } = useApi(); 
 const toast = useToast(); 
+
+// Cierre de la app ────────────────────────────────────────────────
+// Con onCloseRequested se cancela el cierre normal (preventDefault) para poder hacer el
+// checkpoint antes. Por eso la ventana hay que cerrarla "a mano": destroy() necesita el permiso
+// `core:window:allow-destroy` en src-tauri/capabilities/default.json (sin él, la X queda muerta).
+// Si aun así fallara, exit() (permiso `process:default`) cierra la app entera y Rust detiene el backend.
+let cerrando = false;
+const cerrarVentana = async () => {
+  try {
+    await getCurrentWindow().destroy();
+  } catch (err) {
+    console.error('destroy() falló, se cierra con exit():', err);
+    try {
+      await exit(0);
+    } catch (err2) {
+      console.error('exit() también falló:', err2);
+      cerrando = false; // que un nuevo clic en la X pueda reintentar
+    }
+  }
+};
 
 onMounted(async () => {
   const temaGuardado = localStorage.getItem('theme');
@@ -103,6 +123,9 @@ onMounted(async () => {
     // el finally, pase lo que pase con el fetch.
     getCurrentWindow().onCloseRequested(async (event) => {
       event.preventDefault();
+      // Un segundo clic en la X mientras ya se está cerrando no debe lanzar otro checkpoint.
+      if (cerrando) return;
+      cerrando = true;
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 2000);
       try {
@@ -113,12 +136,13 @@ onMounted(async () => {
         console.warn('Checkpoint de cierre no se pudo confirmar (se sigue cerrando igual, el checkpoint periódico ya cubre esto):', err);
       } finally {
         clearTimeout(timeoutId);
-        await getCurrentWindow().destroy();
+        await cerrarVentana();
       }
     });
 
     // --- PERRO GUARDIÁN (Watchdog) DINÁMICO ---
     setInterval(async () => {
+      if (cerrando) return; // cerrando la app: no revivir el backend
       try {
         const pingUrl = API_BASE.replace('/api', '/status'); 
         

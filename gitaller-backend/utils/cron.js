@@ -65,11 +65,30 @@ async function hacerBackupDB() {
     try {
         if (!fs.existsSync(BACKUPS_DIR)) fs.mkdirSync(BACKUPS_DIR, { recursive: true });
 
+        // Restos de un backup interrumpido (por ejemplo, la app se cerró a la mitad): se borran los
+        // .tmp de más de 1 hora. Los más recientes se respetan: pueden ser de un backup en curso.
+        for (const f of fs.readdirSync(BACKUPS_DIR)) {
+            if (!f.startsWith('taller_') || !f.endsWith('.db.tmp')) continue;
+            const ruta = path.join(BACKUPS_DIR, f);
+            try { if (Date.now() - fs.statSync(ruta).mtimeMs > 60 * 60 * 1000) fs.unlinkSync(ruta); } catch (_) { /* otro proceso lo borró */ }
+        }
+
         const ahora = new Date();
         const stamp = ahora.toISOString().replace(/[:.]/g, '-');
         const destino = path.join(BACKUPS_DIR, `taller_${stamp}.db`);
+        const temporal = `${destino}.tmp`;
 
-        await run(`VACUUM INTO '${destino}'`);
+        // VACUUM INTO escribe directo al archivo destino: si el proceso se corta a mitad (cierre de la
+        // app, corte de luz) quedaría un .db incompleto que la rotación contaría como "el más nuevo" y
+        // desplazaría a un backup bueno. Por eso se escribe en un .tmp y SOLO al terminar se renombra
+        // (el renombrado es atómico): un backup con nombre .db siempre está completo.
+        try {
+            await run(`VACUUM INTO '${temporal.replace(/'/g, "''")}'`);
+            fs.renameSync(temporal, destino);
+        } catch (e) {
+            try { if (fs.existsSync(temporal)) fs.unlinkSync(temporal); } catch (_) { /* nada más que hacer */ }
+            throw e;
+        }
         console.log(`[SISTEMA] Backup creado: ${destino}`);
 
         const archivos = fs.readdirSync(BACKUPS_DIR)

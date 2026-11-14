@@ -31,7 +31,9 @@ beforeAll(async () => {
     token = await loginAdmin();
     await crearOt({ ot: OT.iveco, cliente: `CLI NPS ${sufijo}`, patente: `NP1${sufijo}`, chasis: '8ATA01PF0TX135202', cuit: '30-71234567-8', telefono: '02664-111111', correo: 'x@y.com' });
     await crearOt({ ot: OT.ivecoSinChasis, cliente: `SIN DATOS NPS ${sufijo}`, patente: `NP2${sufijo}` });
-    await crearOt({ ot: OT.otraMarca, cliente: `CLI NPS ${sufijo}`, patente: `NP3${sufijo}`, unidad: 'Javal AUTOS, H6', noIveco: true, garantia: true });
+    await crearOt({ ot: OT.otraMarca, cliente: `CLI NPS ${sufijo}`, patente: `NP3${sufijo}`, unidad: 'Javal AUTOS, H6', noIveco: true, garantia: true, cerrar: false });
+    // (se deja abierta a propósito: una OT de garantía FINALIZADA aparecería en el panel de garantías y, al correr
+    // los tests en paralelo, podría alterar el orden que verifica garantias-panel.test.js. "Otra marca" gana sobre "Abierta".)
     await crearOt({ ot: OT.interna, cliente: `IVEMAR NPS ${sufijo}`, patente: `NP4${sufijo}` });
     await crearOt({ ot: OT.anulada, cliente: `CLI NPS ${sufijo}`, patente: `NP5${sufijo}` });
     await crearOt({ ot: OT.otros, cliente: `CLI NPS ${sufijo}`, patente: `NP6${sufijo}` });
