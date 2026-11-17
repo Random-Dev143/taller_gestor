@@ -18,113 +18,169 @@
       </div>
     </div>
 
-    <div class="card">
-      <div class="header-row">
-        <h2>Tareas Asignadas</h2>
-        <div style="display:flex; align-items:center; gap:8px; flex-wrap: wrap;">
-          <span class="legajo-pill">Legajo: <strong>{{ legajo }}</strong></span>
-          <button class="btn btn-outline btn-sm" @click="cargarTareas(false)" :disabled="loading" title="Actualizar ahora">🔄</button>
-        </div>
-      </div>
-      <p class="ultima-actualizacion" v-if="ultimaActualizacion">Actualizado hace {{ segundosDesdeActualizacion }}s · se actualiza solo cada 45s</p>
+    <div v-if="loading" class="loading-state">
+      <div class="spinner"></div>
+      Cargando tareas...
+    </div>
 
-      <div v-if="loading" class="loading-state">
-        <div class="spinner"></div>
-        Cargando tareas...
-      </div>
+    <div v-else-if="tareas.length === 0" class="empty-state">
+      No tiene tareas asignadas por el momento.
+    </div>
 
-      <div v-else-if="tareas.length === 0" class="empty-state">
-        No tiene tareas asignadas por el momento.
-      </div>
+    <template v-else>
+      <!-- ═══ 1. BARRA SUPERIOR: la tarea en curso, siempre a la vista, en una sola línea ═══ -->
+      <section v-if="tareaEnCurso" class="activa-bar" aria-live="polite">
+        <span class="estado-linea estado-linea--fuerte"><span class="dot dot--activa"></span>EN CURSO</span>
+        <button v-if="tareaEnCurso.ot !== '0000'" type="button" class="activa-bar__ot" title="Ir a esta OT" @click="irAOrden(tareaEnCurso)">
+          #{{ tareaEnCurso.ot }} <span class="patente-badge patente-badge--mini">{{ tareaEnCurso.patente }}</span>
+        </button>
+        <span v-else class="activa-bar__ot">Tarea interna</span>
+        <span class="activa-bar__desc" :title="tareaEnCurso.descripcion">{{ tareaEnCurso.descripcion }}</span>
+        <span class="activa-bar__tiempos">
+          <span class="tiempo"><small>Trabajado</small><strong class="num num--vivo">{{ tiempoVivo(tareaEnCurso) }}</strong></span>
+          <span v-if="Number(tareaEnCurso.tiempo_estimado) > 0" class="tiempo">
+            <small>{{ disponibleEnCurso < 0 ? 'Excedido' : 'Disponible' }}</small>
+            <strong class="num" :class="{ 'num--alerta': disponibleEnCurso < 0 }">{{ formatoHoras(Math.abs(disponibleEnCurso)) }}</strong>
+          </span>
+        </span>
+        <span class="activa-bar__acciones">
+          <template v-if="tareaEnCurso.ot !== '0000'">
+            <button v-can="'tarea_operar'" class="act-btn" @click="abrirPausa(tareaEnCurso)">⏸ Pausar</button>
+            <button v-can="'tarea_operar'" class="act-btn act-btn--success" @click="abrirFinalizar(tareaEnCurso)">✔ Finalizar mi parte</button>
+          </template>
+          <template v-else>
+            <button v-can="'tarea_operar'" class="act-btn" @click="toggleTareaInterna(tareaEnCurso)">⏸ Pausar</button>
+            <button v-if="!tareaEnCurso.es_rutina" v-can="'tarea_operar'" class="act-btn act-btn--success" @click="finalizarTareaInterna(tareaEnCurso)">✔ Finalizar</button>
+          </template>
+        </span>
+      </section>
+      <section v-else class="activa-bar activa-bar--libre">
+        <span class="estado-linea"><span class="dot dot--hecha"></span>Sin tarea en curso</span>
+        <span class="activa-bar__desc">Elegí una OT y presioná <strong>Iniciar</strong> o <strong>Reanudar</strong>.</span>
+      </section>
 
-     <div v-else>
-        <!-- SECCIÓN TAREAS INTERNAS -->
-        <div v-if="activeTab === 'mecanico-interna'" v-show="tareasInternas.length > 0" class="seccion">
-          <h3 class="seccion__titulo">Rutinas y tareas internas</h3>
-          <div class="grid-ot">
-            <article v-for="tarea in tareasInternas" :key="tarea.id" class="ot-card" :class="tarea.mi_estado === 'En Curso' ? 'ot-card--activa' : 'ot-card--pausada'">
-              <header class="ot-card__top">
-                <span class="estado-linea"><span class="dot" :class="dotClass(tarea.mi_estado)"></span>{{ tarea.mi_estado }}</span>
-                <span v-if="tarea.es_rutina" class="etiqueta" title="Tarea rutinaria: siempre disponible, no se cierra">🔁 Rutina</span>
-              </header>
-              <h4 class="ot-card__unidad">{{ tarea.descripcion }}</h4>
-              <div class="ot-card__cliente">Asignado por Jefe de Taller</div>
-              <div class="acciones-tarea">
-                <button v-if="tarea.mi_estado !== 'En Curso'" v-can="'tarea_operar'" @click="toggleTareaInterna(tarea)" class="act-btn act-btn--primary">▶ Iniciar{{ tarea.es_rutina ? ' rutina' : '' }}</button>
-                <button v-else v-can="'tarea_operar'" @click="toggleTareaInterna(tarea)" class="act-btn">⏸ Pausar</button>
-                <!-- Solo las extraordinarias se pueden cerrar; las rutinas nunca -->
-                <button v-if="!tarea.es_rutina && ['En Curso', 'Pausada'].includes(tarea.mi_estado)" v-can="'tarea_operar'" @click="finalizarTareaInterna(tarea)" class="act-btn">✔ Finalizar</button>
-              </div>
-            </article>
+      <!-- ═══ 2 y 3. LISTA DE OT (lateral en escritorio, solapas en celular) + DETALLE ═══ -->
+      <div v-if="activeTab === 'mecanico-ot'" class="panel">
+        <aside class="lista">
+          <div class="lista__cabecera">
+            <span class="legajo-pill">Legajo <strong>{{ legajo }}</strong></span>
+            <span class="lista__titulo">Mis OT ({{ ordenesAgrupadas.length }})</span>
+            <button class="act-btn act-btn--icono" @click="cargarTareas(false)" :disabled="loading" title="Actualizar ahora" aria-label="Actualizar ahora">🔄</button>
           </div>
-        </div>
 
-        <!-- SECCIÓN OTs DE CLIENTES -->
-        <div v-if="activeTab === 'mecanico-ot'" v-show="tareasCliente.length > 0" class="seccion">
-          <h3 class="seccion__titulo">Órdenes de trabajo</h3>
-          <!-- Una tarjeta por OT. La OT donde está trabajando ahora va primera; el resto, de la más vieja a la más nueva.
-               Un solo acento de color por tarjeta (borde izquierdo) y una sola línea de estado por tarea.
-               El detalle (equipo, estado general, estimado) vive en un modal. -->
-          <div class="grid-ot">
-            <article v-for="orden in ordenesAgrupadas" :key="orden.ot" class="ot-card" :class="claseOrden(orden)">
-              <header class="ot-card__top">
-                <span class="ot-card__num">#{{ orden.ot }}</span>
-                <span class="patente-badge">{{ orden.patente }}</span>
-              </header>
-              <h4 class="ot-card__unidad">{{ orden.unidad }}</h4>
-              <div class="ot-card__cliente" :title="orden.cliente">{{ orden.cliente }}</div>
+          <nav class="lista__items" aria-label="Órdenes de trabajo asignadas">
+            <button v-for="orden in ordenesAgrupadas" :key="orden.ot" type="button" class="ot-item"
+              :class="{ 'ot-item--sel': otActual && otActual.ot === orden.ot }"
+              :aria-current="otActual && otActual.ot === orden.ot ? 'true' : null"
+              @click="seleccion = orden.ot">
+              <span class="dot" :class="`dot--${estadoVisualOrden(orden)}`"></span>
+              <span class="ot-item__txt">
+                <span class="ot-item__l1"><strong>#{{ orden.ot }}</strong><span class="patente-badge patente-badge--mini">{{ orden.patente }}</span></span>
+                <span class="ot-item__l2">{{ orden.unidad }}</span>
+                <span class="ot-item__l3">{{ ESTADOS_VISUALES[estadoVisualOrden(orden)].texto }}</span>
+              </span>
+              <span v-if="orden.tareas.length > 1" class="ot-item__n" :title="`${orden.tareas.length} tareas`">{{ orden.tareas.length }}</span>
+            </button>
+          </nav>
 
-              <!-- Horas de la OT: un solo renglón + barra de avance (asignado vs. ocupado) -->
-              <div class="progreso">
-                <div class="progreso__texto">
-                  <span><strong class="num" :class="{ 'num--vivo': orden.activa }">{{ formatoHoras(horasOcupadasOrden(orden, ahora)) }}</strong> ocupadas</span>
-                  <span>de {{ redondear1(orden.asignado) }} h</span>
-                </div>
-                <div class="progreso__barra" role="progressbar" :aria-valuenow="porcentajeOrden(orden)" aria-valuemin="0" aria-valuemax="100">
-                  <span :class="{ 'progreso__relleno--excedido': porcentajeOrden(orden) >= 100 }" :style="{ width: Math.min(porcentajeOrden(orden), 100) + '%' }"></span>
-                </div>
+          <details class="leyenda" :open="esEscritorio">
+            <summary>Referencia de colores</summary>
+            <ul>
+              <li v-for="(e, clave) in ESTADOS_VISUALES" :key="clave" :title="e.ayuda">
+                <span class="dot" :class="`dot--${clave}`"></span>{{ e.texto }}
+              </li>
+            </ul>
+            <p v-if="ultimaActualizacion" class="leyenda__act">Actualizado hace {{ segundosDesdeActualizacion }}s · se actualiza solo cada 45s</p>
+          </details>
+        </aside>
+
+        <main class="detalle">
+          <div v-if="!otActual" class="empty-state">No tenés órdenes de trabajo asignadas por el momento.</div>
+          <template v-else>
+            <header class="det-cabecera">
+              <div class="det-cabecera__fila">
+                <span class="det-cabecera__num">#{{ otActual.ot }}</span>
+                <span class="patente-badge">{{ otActual.patente }}</span>
+                <span class="chip"><span class="dot" :class="`dot--${estadoVisualOrden(otActual)}`"></span>{{ ESTADOS_VISUALES[estadoVisualOrden(otActual)].texto }}</span>
               </div>
+              <h2 class="det-cabecera__unidad">{{ otActual.unidad }}</h2>
+              <div class="det-cabecera__cliente">{{ otActual.cliente }}</div>
+            </header>
 
-              <ul class="ot-card__tareas">
-                <li v-for="tarea in orden.tareas" :key="tarea.id" class="fila-tarea">
-                  <button type="button" class="fila-tarea__info" title="Ver detalle de la tarea" @click="verDetalle(tarea)">
-                    <span class="estado-linea"><span class="dot" :class="dotClass(tarea.mi_estado)"></span>{{ tarea.mi_estado }}</span>
-                    <span class="fila-tarea__desc">{{ tarea.descripcion }}</span>
-                    <!-- Con varias tareas en la OT, cada una muestra sus horas; con una sola ya está en la barra de arriba -->
-                    <span v-if="orden.tareas.length > 1" class="fila-tarea__meta">
-                      Est. {{ redondear1(tarea.tiempo_estimado) }} h ·
-                      <strong class="num" :class="{ 'num--vivo': tarea.mi_estado === 'En Curso' }">{{ tiempoVivo(tarea) }}</strong>
-                    </span>
-                    <span v-if="tarea.estado === 'Finalizada' && tarea.mi_estado !== 'Finalizada'" class="fila-tarea__aviso">⚠ Un compañero ya cerró esta tarea</span>
-                    <span class="fila-tarea__ver" aria-hidden="true">Detalle ›</span>
-                  </button>
+            <!-- Horas de la OT: asignado vs. ocupado -->
+            <div class="tiempos">
+              <div class="tiempos__dato"><small>Asignado</small><strong class="num">{{ redondear1(otActual.asignado) }} h</strong></div>
+              <div class="tiempos__dato"><small>Ocupado</small><strong class="num" :class="{ 'num--vivo': otActual.activa }">{{ formatoHoras(horasOcupadasOrden(otActual, ahora)) }}</strong></div>
+              <div class="tiempos__barra" role="progressbar" :aria-valuenow="porcentajeOrden(otActual)" aria-valuemin="0" aria-valuemax="100">
+                <span :class="{ 'tiempos__relleno--excedido': porcentajeOrden(otActual) >= 100 }" :style="{ width: Math.min(porcentajeOrden(otActual), 100) + '%' }"></span>
+              </div>
+            </div>
 
-                  <!-- Acciones sobre TU propio estado, independiente del resto del equipo.
-                       Un solo botón destacado por tarea; el resto, discretos. -->
-                  <div class="acciones-tarea">
-                    <button v-if="tarea.mi_estado === 'Asignada'" v-can="'tarea_operar'" @click="cambiarEstado(tarea, 'En Curso')" class="act-btn" :class="clasePrincipal(tarea, 'iniciar')">▶ Iniciar</button>
-                    <button v-if="tarea.mi_estado === 'Pausada'" v-can="'tarea_operar'" @click="cambiarEstado(tarea, 'En Curso')" class="act-btn" :class="clasePrincipal(tarea, 'iniciar')">▶ Reanudar</button>
-                    <button v-if="tarea.mi_estado === 'En Curso'" v-can="'tarea_operar'" @click="abrirPausa(tarea)" class="act-btn">⏸ Pausar</button>
-                    <button v-if="['En Curso', 'Pausada'].includes(tarea.mi_estado)" v-can="'tarea_operar'" @click="abrirFinalizar(tarea)" class="act-btn" :class="clasePrincipal(tarea, 'finalizar')">✔ Finalizar mi parte</button>
-                    <!-- La tarea completa fue cerrada por el Jefe: solo queda completar el informe -->
-                    <button v-if="tarea.estado === 'Cerrada por Jefe' && tarea.mi_estado !== 'Finalizada'" v-can="'tarea_operar'" @click="abrirInformar(tarea)" class="act-btn" :class="clasePrincipal(tarea, 'informar')">📝 Informar</button>
-                  </div>
-                </li>
-              </ul>
-            </article>
-          </div>
-        </div>
+            <h3 class="det-subtitulo">Mis tareas en esta OT ({{ otActual.tareas.length }})</h3>
+            <div class="tareas">
+              <article v-for="tarea in otActual.tareas" :key="tarea.id" class="tarea" :class="{ 'tarea--activa': tarea.mi_estado === 'En Curso' }">
+                <div class="tarea__estado">
+                  <span class="estado-linea"><span class="dot" :class="dotClass(tarea.mi_estado)"></span>{{ tarea.mi_estado }}</span>
+                  <span class="tarea__general">Estado general: <strong>{{ tarea.estado }}</strong></span>
+                </div>
+                <h4 class="tarea__desc">{{ tarea.descripcion }}</h4>
+
+                <dl class="tarea__datos">
+                  <div><dt>Estimado</dt><dd class="num">{{ redondear1(tarea.tiempo_estimado) }} h</dd></div>
+                  <div><dt>Mis horas</dt><dd class="num" :class="{ 'num--vivo': tarea.mi_estado === 'En Curso' }">{{ tiempoVivo(tarea) }}</dd></div>
+                  <div v-if="tarea.equipo" class="tarea__equipo"><dt>Equipo</dt><dd>{{ tarea.equipo }}</dd></div>
+                </dl>
+
+                <p v-if="tarea.estado === 'Finalizada' && tarea.mi_estado !== 'Finalizada'" class="tarea__aviso">
+                  <strong>Un compañero ya cerró esta tarea.</strong> Podés reanudar si falta algo, o solo completar tu informe.
+                </p>
+
+                <!-- Acciones sobre TU propio estado, independiente del resto del equipo.
+                     Un solo botón destacado por tarea; el resto, discretos. -->
+                <div class="acciones-tarea">
+                  <button v-if="tarea.mi_estado === 'Asignada'" v-can="'tarea_operar'" @click="cambiarEstado(tarea, 'En Curso')" class="act-btn" :class="clasePrincipal(tarea, 'iniciar')">▶ Iniciar</button>
+                  <button v-if="tarea.mi_estado === 'Pausada'" v-can="'tarea_operar'" @click="cambiarEstado(tarea, 'En Curso')" class="act-btn" :class="clasePrincipal(tarea, 'iniciar')">▶ Reanudar</button>
+                  <button v-if="tarea.mi_estado === 'En Curso'" v-can="'tarea_operar'" @click="abrirPausa(tarea)" class="act-btn">⏸ Pausar</button>
+                  <button v-if="['En Curso', 'Pausada'].includes(tarea.mi_estado)" v-can="'tarea_operar'" @click="abrirFinalizar(tarea)" class="act-btn" :class="clasePrincipal(tarea, 'finalizar')">✔ Finalizar mi parte</button>
+                  <!-- La tarea completa fue cerrada por el Jefe: solo queda completar el informe -->
+                  <button v-if="tarea.estado === 'Cerrada por Jefe' && tarea.mi_estado !== 'Finalizada'" v-can="'tarea_operar'" @click="abrirInformar(tarea)" class="act-btn" :class="clasePrincipal(tarea, 'informar')">📝 Informar</button>
+                </div>
+              </article>
+            </div>
+          </template>
+        </main>
       </div>
 
-    <ModalDetalleTarea v-if="tareaDetalle" :tarea="tareaDetalle" :ahora="ahora" @close="detalleId = null" />
+      <!-- ═══ Pestaña "Orden Interna" ═══ -->
+      <div v-else class="interna">
+        <h3 class="det-subtitulo">Rutinas y tareas internas</h3>
+        <div v-if="tareasInternas.length === 0" class="empty-state">No tenés tareas internas asignadas por el momento.</div>
+        <div v-else class="grid-interna">
+          <article v-for="tarea in tareasInternas" :key="tarea.id" class="tarea" :class="{ 'tarea--activa': tarea.mi_estado === 'En Curso' }">
+            <div class="tarea__estado">
+              <span class="estado-linea"><span class="dot" :class="dotClass(tarea.mi_estado)"></span>{{ tarea.mi_estado }}</span>
+              <span v-if="tarea.es_rutina" class="tarea__general" title="Tarea rutinaria: siempre disponible, no se cierra">🔁 Rutina</span>
+            </div>
+            <h4 class="tarea__desc">{{ tarea.descripcion }}</h4>
+            <p class="tarea__general">Asignado por Jefe de Taller</p>
+            <div class="acciones-tarea">
+              <button v-if="tarea.mi_estado !== 'En Curso'" v-can="'tarea_operar'" @click="toggleTareaInterna(tarea)" class="act-btn act-btn--primary">▶ Iniciar{{ tarea.es_rutina ? ' rutina' : '' }}</button>
+              <button v-else v-can="'tarea_operar'" @click="toggleTareaInterna(tarea)" class="act-btn">⏸ Pausar</button>
+              <!-- Solo las extraordinarias se pueden cerrar; las rutinas nunca -->
+              <button v-if="!tarea.es_rutina && ['En Curso', 'Pausada'].includes(tarea.mi_estado)" v-can="'tarea_operar'" @click="finalizarTareaInterna(tarea)" class="act-btn">✔ Finalizar</button>
+            </div>
+          </article>
+        </div>
+      </div>
+    </template>
+
     <ModalPausarTarea v-if="showModalPausa" @close="showModalPausa = false" @confirm="ejecutarPausa" />
     <ModalFinalizarTarea v-if="showModalFinalizar" :otId="tareaActiva.ot" :modoInformar="esModoInformar" :puedeSerAuxiliar="(tareaActiva.otros_no_auxiliares || 0) > 0" @close="showModalFinalizar = false" @confirm="ejecutarFinalizacion" />
-  </div>
   </div>
 </template>
 
 <script setup>
-import { agruparOrdenes, horasOcupadasOrden } from '../utils/ordenesMecanico'
+import { agruparOrdenes, horasOcupadasOrden, estadoVisualOrden, ESTADOS_VISUALES } from '../utils/ordenesMecanico'
 import { formatoHoras, horasVivas, redondear1 } from '../utils/horas'
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
@@ -133,7 +189,6 @@ import { useToast, errMsg } from '../composables/useToast'
 import NavBar from '../components/common/NavBar.vue'
 import ModalPausarTarea from '../components/mecanico/ModalPausarTarea.vue'
 import ModalFinalizarTarea from '../components/mecanico/ModalFinalizarTarea.vue'
-import ModalDetalleTarea from '../components/mecanico/ModalDetalleTarea.vue'
 
 
 const { fetchJSON } = useApi()
@@ -170,7 +225,7 @@ const segundosDesdeActualizacion = computed(() => {
 // desde que arrancó la sesión actual (mi_sesion_inicio), mostrado como HH:MM:SS.
 const tiempoVivo = (tarea) => formatoHoras(horasVivas(tarea, ahora.value))
 
-// Punto de color junto al estado (único indicador de estado por tarea)
+// Punto de color junto al estado de MI tarea (los de la OT salen de estadoVisualOrden)
 const dotClass = (estado) => ({
   'En Curso': 'dot--activa',
   'Pausada': 'dot--pausada',
@@ -341,22 +396,34 @@ const tareasCliente = computed(() => tareas.value.filter(t => t.ot !== '0000'))
 // Una tarjeta por OT: la que tiene trabajo activo primero, el resto de la más vieja a la más nueva.
 const ordenesAgrupadas = computed(() => agruparOrdenes(tareasCliente.value))
 
-// Detalle de tarea en modal. Se guarda el id (no el objeto) para que siga actualizado
-// cuando la pantalla se refresca sola cada 45 s.
-const detalleId = ref(null)
-const tareaDetalle = computed(() => tareas.value.find(t => t.id === detalleId.value) || null)
-const verDetalle = (tarea) => { detalleId.value = tarea.id }
+// ─── Lista lateral + detalle ───────────────────────────────────────────────
+// OT elegida a mano. Si no hay (o la OT ya no está, p. ej. porque la finalizaste), se muestra
+// la que está en curso y, si no hay, la primera de la lista. Se guarda el número de OT (no el
+// objeto) para que la selección sobreviva al refresco automático de 45 s.
+const seleccion = ref(null)
+const otActual = computed(() =>
+  ordenesAgrupadas.value.find(o => o.ot === seleccion.value) ||
+  ordenesAgrupadas.value.find(o => o.activa) ||
+  ordenesAgrupadas.value[0] || null)
+
+// Tarea que estoy haciendo ahora (el backend garantiza una sola "En Curso" por mecánico)
+const tareaEnCurso = computed(() => tareas.value.find(t => t.mi_estado === 'En Curso') || null)
+// Horas que quedan de lo estimado para esa tarea (negativo = excedido)
+const disponibleEnCurso = computed(() =>
+  tareaEnCurso.value ? (Number(tareaEnCurso.value.tiempo_estimado) || 0) - horasVivas(tareaEnCurso.value, ahora.value) : 0)
+
+const irAOrden = (tarea) => { seleccion.value = tarea.ot; activeTab.value = 'mecanico-ot' }
+
+// La leyenda de colores va abierta en escritorio y plegada en celular
+const mediaEscritorio = window.matchMedia('(min-width: 900px)')
+const esEscritorio = ref(mediaEscritorio.matches)
+const alCambiarPantalla = (e) => { esEscritorio.value = e.matches }
 
 // Avance de horas de la OT (ocupadas / asignadas), en %
 const porcentajeOrden = (orden) => {
   if (!orden.asignado) return 0
   return Math.round((horasOcupadasOrden(orden, ahora.value) / orden.asignado) * 100)
 }
-
-const claseOrden = (orden) => ({
-  'ot-card--activa': orden.activa,
-  'ot-card--pausada': !orden.activa && orden.tareas.some(t => t.mi_estado === 'Pausada')
-})
 
 const tareasInternas = computed(() => tareas.value.filter(t => t.ot === '0000'))
 
@@ -414,6 +481,7 @@ onMounted(() => {
     router.push({ name: 'mecanico-login' })
     return
   }
+  mediaEscritorio.addEventListener('change', alCambiarPantalla)
   cargarTareas()
 
   // Reloj en vivo (cronómetro + "actualizado hace Ns"): 1 tick por segundo
@@ -426,100 +494,179 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  mediaEscritorio.removeEventListener('change', alCambiarPantalla)
   if (relojInterval) clearInterval(relojInterval)
   if (autoRefreshInterval) clearInterval(autoRefreshInterval)
 })
 </script>
 
 <style scoped>
-.header-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 4px; }
-.header-row h2 { margin: 0; }
-.legajo-pill { background: var(--primary-light); color: var(--primary); padding: 4px 12px; border-radius: 20px; font-size: 0.85rem; }
-.ultima-actualizacion { margin: 0 0 10px; font-size: 0.75rem; color: var(--muted); }
-
-.seccion { margin-bottom: 24px; }
-.seccion__titulo { margin: 0 0 4px; padding-bottom: 8px; font-size: 0.8rem; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--border-soft); }
-
-.num { font-variant-numeric: tabular-nums; }
-.num--vivo { color: var(--success); }
-
-/* ── Tarjeta por OT ───────────────────────────────────────── */
-.grid-ot { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 16px; margin-top: 14px; align-items: start; }
-.ot-card {
-  display: flex; flex-direction: column; gap: 4px;
-  padding: 16px;
-  border: 1px solid var(--border-soft);
-  border-left: 4px solid var(--border);      /* único acento de color de la tarjeta */
-  border-radius: 12px;
-  background: var(--surface);
-  box-shadow: var(--shadow-sm);
+/* ════════════════════════════════════════════════════════════════
+   Layout: pantalla completa, sin scroll de página.
+   [NavBar]  [Barra de tarea en curso]  [Lista de OT | Detalle (scroll)]
+   ════════════════════════════════════════════════════════════════ */
+.view-mecanico {
+  display: flex; flex-direction: column;
+  /* rompe el .container (max-width + padding) para llegar a los bordes de la pantalla */
+  width: 100vw; height: 100vh; height: 100dvh;
+  margin: -20px 0 -20px calc(50% - 50vw);
+  overflow: hidden;
 }
-.ot-card--pausada { border-left-color: var(--warning); }
-.ot-card--activa { border-left-color: var(--success); }
-.ot-card__top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-.ot-card__num { font-weight: 700; font-size: 1.05rem; color: var(--muted); }
-.ot-card__unidad { margin: 6px 0 0; font-weight: 700; font-size: 1.05rem; line-height: 1.25; }
-.ot-card__cliente { color: var(--muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.view-mecanico > .navbar { flex: none; margin-bottom: 0; border-radius: 0; }
+.view-mecanico > .loading-state, .view-mecanico > .empty-state { flex: 1; }
 
-.patente-badge { background: #fff; color: #111; border: 2px solid #111; padding: 1px 9px; border-radius: 6px; font-family: monospace; font-weight: 700; font-size: 1rem; letter-spacing: 1px; }
-
-/* ── Avance de horas ──────────────────────────────────────── */
-.progreso { margin: 12px 0 4px; }
-.progreso__texto { display: flex; justify-content: space-between; gap: 8px; font-size: 0.8rem; color: var(--muted); margin-bottom: 6px; }
-.progreso__texto strong { color: var(--text); font-size: 0.95rem; }
-.progreso__texto strong.num--vivo { color: var(--success); }
-.progreso__barra { height: 6px; border-radius: 3px; background: var(--border-soft); overflow: hidden; }
-.progreso__barra span { display: block; height: 100%; background: var(--primary); border-radius: 3px; transition: width 0.4s; }
-.progreso__barra span.progreso__relleno--excedido { background: var(--warning); }
-
-/* ── Estado: punto + texto ────────────────────────────────── */
-.estado-linea { display: inline-flex; align-items: center; gap: 6px; font-size: 0.78rem; font-weight: 600; color: var(--text-soft); }
-.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
-.dot--activa { background: var(--success); box-shadow: 0 0 0 0 var(--success); animation: latido 1.8s ease-out infinite; }
-.dot--pausada { background: var(--warning); }
-.dot--pendiente { background: var(--primary); }
-@keyframes latido { 0% { box-shadow: 0 0 0 0 rgba(39, 174, 96, 0.55); } 70%, 100% { box-shadow: 0 0 0 7px rgba(39, 174, 96, 0); } }
-@media (prefers-reduced-motion: reduce) { .dot--activa { animation: none; } }
-.etiqueta { font-size: 0.75rem; color: var(--muted); }
-
-/* ── Tareas dentro de la OT: lista limpia, sin cajas anidadas ─ */
-.ot-card__tareas { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; }
-.fila-tarea { padding: 12px 0; border-top: 1px solid var(--border-soft); }
-.fila-tarea__info { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; width: 100%; padding: 0; background: none; border: 0; text-align: left; font: inherit; color: var(--text); cursor: pointer; }
-.fila-tarea__desc { font-weight: 600; font-size: 0.98rem; line-height: 1.35; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.fila-tarea__meta { font-size: 0.8rem; color: var(--muted); }
-.fila-tarea__aviso { font-size: 0.78rem; color: var(--status-urgente-text); }
-.fila-tarea__ver { font-size: 0.75rem; color: var(--primary); }
-.fila-tarea__info:hover .fila-tarea__ver, .fila-tarea__info:focus-visible .fila-tarea__ver { text-decoration: underline; }
-.fila-tarea__info:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; border-radius: 4px; }
-
-/* ── Botones: uno destacado, el resto discretos ───────────── */
-.acciones-tarea { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
-.act-btn {
-  flex: 1 1 120px; min-height: 40px; padding: 8px 12px;
-  border: 1px solid var(--border); border-radius: 8px;
-  background: transparent; color: var(--text);
-  font: inherit; font-size: 0.88rem; font-weight: 600; white-space: nowrap;
-  cursor: pointer; transition: background 0.15s, filter 0.15s;
-}
-.act-btn:hover { background: var(--hover-row); }
-.act-btn--primary { background: var(--primary); border-color: var(--primary); color: #fff; }
-.act-btn--success { background: var(--success); border-color: var(--success); color: #fff; }
-.act-btn--primary:hover, .act-btn--success:hover { filter: brightness(1.1); }
-.act-btn--primary:hover { background: var(--primary); }
-.act-btn--success:hover { background: var(--success); }
-.act-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
-
-/* ── Aportes para corregir ────────────────────────────────── */
-.card-correccion { border-left: 4px solid var(--warning); margin-bottom: 15px; }
+/* ── Aportes para corregir (se ve aunque no haya tareas) ──── */
+.card-correccion { flex: none; max-height: 40dvh; overflow-y: auto; border-left: 4px solid var(--warning); margin: 12px 16px 0; }
 .correccion-ayuda { font-size: 0.9rem; color: var(--muted); margin: 4px 0 12px; }
 .correccion-item { border-top: 1px solid var(--border-soft); padding: 12px 0; }
 .correccion-cabecera { margin-bottom: 6px; font-size: 0.95rem; }
 .correccion-cliente { color: var(--muted); }
 .mt-8 { margin-top: 8px; }
 
-@media (max-width: 640px) {
-  .ot-card { padding: 14px; }
-  .act-btn { flex-basis: 100%; min-height: 44px; }  /* más fácil de tocar con el pulgar */
+/* ── Piezas comunes ───────────────────────────────────────── */
+.num { font-variant-numeric: tabular-nums; }
+.num--vivo { color: var(--success); }
+.num--alerta { color: var(--warning); }
+.legajo-pill { background: var(--primary-light); color: var(--primary); padding: 3px 10px; border-radius: 20px; font-size: 0.78rem; white-space: nowrap; }
+.patente-badge { background: #fff; color: #111; border: 2px solid #111; padding: 1px 9px; border-radius: 6px; font-family: monospace; font-weight: 700; font-size: 1rem; letter-spacing: 1px; }
+.patente-badge--mini { border-width: 1px; padding: 0 6px; font-size: 0.78rem; letter-spacing: 0.5px; }
+
+/* Estado = punto de color + texto. Mismos colores en lista, detalle y leyenda. */
+.dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex-shrink: 0; display: inline-block; margin-right: 6px; }
+.dot--activa { background: var(--success); animation: latido 1.8s ease-out infinite; }
+.dot--pendiente { background: var(--primary); }
+.dot--pausada { background: var(--muted); }
+.dot--repuestos { background: var(--warning); }
+.dot--terceros { background: #8b5cf6; }
+.dot--hecha { background: var(--border); }
+@keyframes latido { 0% { box-shadow: 0 0 0 0 rgba(39, 174, 96, 0.55); } 70%, 100% { box-shadow: 0 0 0 7px rgba(39, 174, 96, 0); } }
+@media (prefers-reduced-motion: reduce) { .dot--activa { animation: none; } }
+.estado-linea { display: inline-flex; align-items: center; font-size: 0.8rem; font-weight: 600; color: var(--text-soft); white-space: nowrap; }
+.estado-linea--fuerte { color: var(--success); letter-spacing: 0.5px; }
+.chip { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 20px; background: var(--hover-row); font-size: 0.8rem; font-weight: 600; color: var(--text-soft); }
+
+/* ── Botones: uno destacado, el resto discretos ───────────── */
+.acciones-tarea { display: flex; gap: 8px; flex-wrap: wrap; }
+.act-btn {
+  flex: 1 1 130px; min-height: 40px; padding: 8px 14px;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: transparent; color: var(--text);
+  font: inherit; font-size: 0.88rem; font-weight: 600; white-space: nowrap;
+  cursor: pointer; transition: background 0.15s, filter 0.15s;
+}
+.act-btn:hover { background: var(--hover-row); }
+.act-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.act-btn--primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+.act-btn--success { background: var(--success); border-color: var(--success); color: #fff; }
+.act-btn--primary:hover { background: var(--primary); filter: brightness(1.1); }
+.act-btn--success:hover { background: var(--success); filter: brightness(1.1); }
+.act-btn--icono { flex: none; min-height: 32px; padding: 4px 10px; }
+.act-btn:focus-visible, .ot-item:focus-visible, .activa-bar__ot:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+/* ═══ 1. Barra de la tarea en curso ═══ */
+.activa-bar {
+  flex: none; display: flex; align-items: center; gap: 8px 18px; flex-wrap: nowrap;
+  padding: 10px 20px;
+  background: var(--row-ready-bg); border-bottom: 1px solid var(--row-ready-border); border-left: 6px solid var(--success);
+}
+.activa-bar--libre { background: var(--surface); border-bottom-color: var(--border-soft); border-left-color: var(--border); color: var(--muted); font-size: 0.9rem; }
+.activa-bar__ot { display: inline-flex; align-items: center; gap: 8px; padding: 0; background: none; border: 0; font: inherit; font-size: 1.1rem; font-weight: 800; color: var(--text); white-space: nowrap; cursor: pointer; }
+span.activa-bar__ot { cursor: default; font-size: 1rem; }
+.activa-bar__ot:hover { color: var(--primary); }
+.activa-bar__desc { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.activa-bar__tiempos { display: flex; gap: 20px; }
+.tiempo { display: flex; flex-direction: column; line-height: 1.15; }
+.tiempo small { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); }
+.tiempo strong { font-size: 1.15rem; }
+.activa-bar__acciones { display: flex; gap: 8px; }
+.activa-bar__acciones .act-btn { flex: none; }
+
+/* ═══ 2 y 3. Panel: lista lateral + detalle ═══ */
+.panel { flex: 1; min-height: 0; display: flex; }
+
+.lista { flex: none; width: 300px; display: flex; flex-direction: column; background: var(--surface); border-right: 1px solid var(--border-soft); min-height: 0; }
+.lista__cabecera { flex: none; display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--border-soft); }
+.lista__titulo { flex: 1; font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); text-align: right; }
+.lista__items { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
+
+.ot-item { display: flex; align-items: center; gap: 4px; width: 100%; padding: 12px 14px; background: none; border: 0; border-left: 4px solid transparent; border-bottom: 1px solid var(--border-soft); font: inherit; color: var(--text); text-align: left; cursor: pointer; }
+.ot-item:hover { background: var(--hover-row); }
+.ot-item--sel { background: var(--hover-row); border-left-color: var(--primary); }
+.ot-item__txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ot-item__l1 { display: flex; align-items: center; gap: 8px; }
+.ot-item__l2 { font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ot-item__l3 { font-size: 0.75rem; color: var(--muted); }
+.ot-item__n { flex: none; min-width: 20px; padding: 0 6px; border-radius: 10px; background: var(--border-soft); font-size: 0.72rem; font-weight: 700; text-align: center; }
+
+.leyenda { flex: none; padding: 10px 14px; border-top: 1px solid var(--border-soft); font-size: 0.78rem; color: var(--text-soft); }
+.leyenda summary { cursor: pointer; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; font-size: 0.7rem; color: var(--muted); }
+.leyenda ul { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.leyenda li { display: flex; align-items: center; }
+.leyenda__act { margin: 10px 0 0; font-size: 0.7rem; color: var(--muted); }
+
+/* Detalle: ocupa todo el resto de la pantalla y hace scroll por su cuenta */
+.detalle { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; padding: 20px 28px 40px; }
+.det-cabecera__fila { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.det-cabecera__num { font-size: 1.5rem; font-weight: 800; color: var(--muted); }
+.det-cabecera__unidad { margin: 8px 0 2px; font-size: 1.3rem; }
+.det-cabecera__cliente { color: var(--muted); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.3px; }
+
+.tiempos { display: grid; grid-template-columns: auto auto 1fr; align-items: center; gap: 8px 32px; margin: 18px 0 6px; padding: 14px 16px; background: var(--surface); border: 1px solid var(--border-soft); border-radius: 12px; }
+.tiempos__dato { display: flex; flex-direction: column; line-height: 1.2; }
+.tiempos__dato small, .tarea__datos dt { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); }
+.tiempos__dato strong { font-size: 1.3rem; }
+.tiempos__barra { height: 8px; border-radius: 4px; background: var(--border-soft); overflow: hidden; }
+.tiempos__barra span { display: block; height: 100%; background: var(--primary); border-radius: 4px; transition: width 0.4s; }
+.tiempos__barra span.tiempos__relleno--excedido { background: var(--warning); }
+
+.det-subtitulo { margin: 22px 0 10px; font-size: 0.8rem; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; color: var(--muted); }
+
+/* Tareas: una tarjeta simple por tarea, un solo acento (borde izquierdo si está en curso) */
+.tareas, .grid-interna { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); gap: 14px; align-items: start; }
+.tarea { display: flex; flex-direction: column; gap: 10px; padding: 16px; background: var(--surface); border: 1px solid var(--border-soft); border-left: 4px solid var(--border); border-radius: 12px; box-shadow: var(--shadow-sm); }
+.tarea--activa { border-left-color: var(--success); }
+.tarea__estado { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.tarea__general { margin: 0; font-size: 0.78rem; color: var(--muted); }
+.tarea__general strong { color: var(--text-soft); }
+.tarea__desc { margin: 0; font-size: 1.05rem; font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; }
+.tarea__datos { display: flex; flex-wrap: wrap; gap: 8px 28px; margin: 0; padding: 10px 0; border-top: 1px solid var(--border-soft); border-bottom: 1px solid var(--border-soft); }
+.tarea__datos dd { margin: 2px 0 0; font-weight: 600; }
+.tarea__equipo { flex-basis: 100%; }
+.tarea__aviso { margin: 0; padding: 8px 12px; border-left: 3px solid var(--warning); background: var(--hover-row); border-radius: 0 8px 8px 0; font-size: 0.85rem; }
+
+.interna { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 28px 40px; }
+
+/* ═══ Celular: la lista pasa arriba como solapas y el detalle ocupa el resto ═══ */
+@media (max-width: 899px) {
+  .activa-bar { flex-wrap: wrap; padding: 8px 12px; gap: 4px 12px; }
+  .activa-bar__desc { flex-basis: 100%; order: 3; white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; }
+  .activa-bar__tiempos { order: 2; margin-left: auto; gap: 14px; }
+  .activa-bar__acciones { order: 4; flex-basis: 100%; }
+  .activa-bar__acciones .act-btn { flex: 1; min-height: 44px; }
+
+  .panel { flex-direction: column; }
+  .lista { width: auto; flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--border-soft); }
+  .lista__cabecera { order: 1; flex: 1 1 100%; padding: 6px 12px; border-bottom: 0; }
+  .lista__items { order: 2; flex: 1 1 100%; flex-direction: row; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
+  .ot-item { flex: none; width: auto; min-width: 150px; max-width: 220px; padding: 8px 12px; border-left: 0; border-bottom: 4px solid transparent; border-right: 1px solid var(--border-soft); }
+  .ot-item--sel { border-bottom-color: var(--primary); }
+  .ot-item__l2 { display: none; }              /* en solapas: dot + #OT + patente + estado */
+  .leyenda { order: 3; flex: 1 1 100%; padding: 6px 12px; }
+  .leyenda ul { flex-direction: row; flex-wrap: wrap; gap: 4px 14px; }
+  .leyenda__act { display: none; }
+
+  .detalle, .interna { padding: 14px 12px 32px; }
+  .tiempos { grid-template-columns: 1fr 1fr; }
+  .tiempos__barra { grid-column: 1 / -1; }
+  .act-btn { min-height: 44px; flex-basis: 100%; }
+  .act-btn--icono { flex: none; min-height: 32px; padding: 2px 12px; }   /* gana a la regla de arriba */
+  .lista__titulo { white-space: nowrap; }
+
+  /* NavBar compacto: en celular no puede comerse media pantalla */
+  .view-mecanico > .navbar { flex-direction: row; align-items: center; padding: 6px 10px; gap: 4px 8px; }
+  .view-mecanico > .navbar :deep(.brand) { margin-top: 0; text-align: left; }
+  .view-mecanico > .navbar :deep(button) { padding: 4px 10px; font-size: 0.85rem; }
+  .view-mecanico > .navbar :deep(.brand) { font-size: 0.9rem; }
+  .view-mecanico > .navbar :deep(img) { display: none; }
 }
 </style>

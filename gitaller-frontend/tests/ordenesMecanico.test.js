@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 process.env.TZ = 'America/Argentina/Buenos_Aires'
-const { agruparOrdenes, horasOcupadasOrden } = await import('../src/utils/ordenesMecanico.js')
+const { agruparOrdenes, horasOcupadasOrden, estadoVisualOrden } = await import('../src/utils/ordenesMecanico.js')
 
 const t = (id, ot, apertura, estado = 'Asignada', extra = {}) => ({
   id, ot, fecha_apertura: apertura, mi_estado: estado, patente: 'AA111BB', unidad: 'U', cliente: 'C',
@@ -47,4 +47,13 @@ test('tiempo asignado = suma de lo estimado; ocupado = propias + sesión viva', 
 test('OT sin fecha de apertura va al final y no rompe el orden', () => {
   const r = agruparOrdenes([t(1, '100', null), t(2, '200', '2026-10-02 12:00:00')])
   assert.deepEqual(r.map(o => o.ot), ['200', '100'])
+})
+
+test('estado visual de la OT: activa > repuestos/terceros > pausada > por iniciar', () => {
+  const ev = (estado, extra) => estadoVisualOrden(agruparOrdenes([t(1, '100', '2026-10-01 12:00:00', estado, extra)])[0])
+  assert.equal(ev('En Curso', { estado_ot: 'Espera de Repuestos' }), 'activa')
+  assert.equal(ev('Pausada', { estado_ot: 'Espera de Repuestos' }), 'repuestos')
+  assert.equal(ev('Pausada', { estado_ot: 'Trabajos de Terceros' }), 'terceros')
+  assert.equal(ev('Pausada', { estado_ot: 'En Espera' }), 'pausada')
+  assert.equal(ev('Asignada'), 'pendiente')
 })
