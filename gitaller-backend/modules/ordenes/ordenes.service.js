@@ -154,13 +154,24 @@ async function obtenerDetalle(ot) {
 }
 
 async function crear(body) {
-    const { ot, cliente, patente, unidad, kilometraje, asesor_legajo, fecha_apertura, es_garantia, es_no_iveco, tiempo_asignado_horas, tiempo_facturado_horas, monto_repuestos, monto_mano_obra, monto_repuestos_garantia, monto_mano_obra_garantia, monto_descuento, descuento_motivo } = body;
+    const { ot, cliente, patente, unidad, kilometraje, asesor_legajo, fecha_apertura, es_garantia, es_no_iveco, tiempo_asignado_horas, tiempo_facturado_horas, monto_repuestos, monto_mano_obra, monto_repuestos_garantia, monto_mano_obra_garantia, monto_descuento, descuento_motivo, es_retrabajo, ot_retrabajo_origen } = body;
 
     const montoDescuentoSeguro = Number(monto_descuento) > 0 ? Number(monto_descuento) : 0;
     if (montoDescuentoSeguro > 0 && !(descuento_motivo && descuento_motivo.trim())) {
         const error = new Error('Para cargar un descuento/bonificación es obligatorio indicar el motivo.');
         error.status = 400;
         throw error;
+    }
+
+    // Retrabajo: la OT repite un trabajo anterior. La OT de origen es opcional, pero si se informa tiene que existir.
+    const origenRetrabajo = es_retrabajo ? String(ot_retrabajo_origen || '').trim() : '';
+    if (origenRetrabajo) {
+        const origen = await get(`SELECT ot FROM ordenes WHERE ot = ?`, [origenRetrabajo]);
+        if (!origen) {
+            const error = new Error(`La OT de origen del retrabajo (${origenRetrabajo}) no existe.`);
+            error.status = 400;
+            throw error;
+        }
     }
 
     await withTransaction(async () => {
@@ -181,8 +192,8 @@ async function crear(body) {
         const descuentoEstado = montoDescuentoSeguro > 0 ? 'pendiente' : 'ninguno';
 
         await run(
-            `INSERT INTO ordenes (ot, patente, kilometraje, asesor_legajo, fecha_apertura, es_garantia, es_no_iveco, tiempo_asignado_horas, tiempo_facturado_horas, monto_repuestos, monto_mano_obra, monto_repuestos_garantia, monto_mano_obra_garantia, monto_descuento, descuento_motivo, descuento_estado) VALUES (?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [ot, patente, kilometraje || '', asesor_legajo, fechaAperturaSegura, es_garantia ? 1 : 0, es_no_iveco ? 1 : 0, tiempo_asignado_horas || 0, tiempo_facturado_horas || 0, monto_repuestos || 0, monto_mano_obra || 0, monto_repuestos_garantia || 0, monto_mano_obra_garantia || 0, montoDescuentoSeguro, (descuento_motivo || '').trim(), descuentoEstado]
+            `INSERT INTO ordenes (ot, patente, kilometraje, asesor_legajo, fecha_apertura, es_garantia, es_no_iveco, tiempo_asignado_horas, tiempo_facturado_horas, monto_repuestos, monto_mano_obra, monto_repuestos_garantia, monto_mano_obra_garantia, monto_descuento, descuento_motivo, descuento_estado, es_retrabajo, ot_retrabajo_origen) VALUES (?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [ot, patente, kilometraje || '', asesor_legajo, fechaAperturaSegura, es_garantia ? 1 : 0, es_no_iveco ? 1 : 0, tiempo_asignado_horas || 0, tiempo_facturado_horas || 0, monto_repuestos || 0, monto_mano_obra || 0, monto_repuestos_garantia || 0, monto_mano_obra_garantia || 0, montoDescuentoSeguro, (descuento_motivo || '').trim(), descuentoEstado, es_retrabajo ? 1 : 0, origenRetrabajo]
         );
         await run(`INSERT INTO estados_historial (ot, estado, ts_desde) VALUES (?, 'En Espera', CURRENT_TIMESTAMP)`, [ot]);
     });

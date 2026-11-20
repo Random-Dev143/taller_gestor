@@ -9,7 +9,7 @@ const { validarCarpeta } = require('../services/carpeta-informes');
 router.get('/', async (req, res) => {
     const config = await get(`SELECT * FROM configuracion WHERE id = 1`);
     // La ruta de la carpeta de informes no es pública: se lee por GET /configuracion/informes (protegido).
-    if (config) delete config.carpeta_informes;
+    if (config) { delete config.carpeta_informes; delete config.carpeta_documentos; }
     res.json(config || { nombre_taller: 'GITaller', trabaja_corrido: 0, trabaja_sabados: 1, sabado_hora_apertura: 8, sabado_hora_cierre: 13 });
 });
 
@@ -36,6 +36,23 @@ router.put('/informes', requireAuth(['usuario_gestionar']), async (req, res) => 
     await run(`UPDATE configuracion SET nps_concesionario = ?, nps_sede = ?, carpeta_informes = ?, informe_auto_activo = ? WHERE id = 1`,
         [concesionario, sede, carpeta, req.body.informe_auto_activo === false || req.body.informe_auto_activo === 0 ? 0 : 1]);
     res.json({ status: 'Ajustes de informes actualizados' });
+});
+
+// Carpeta donde se guardan los PDFs del legajo digital de las OTs (solo Admin).
+// Se guarda la ruta base; en la base de cada documento va solo la ruta relativa.
+router.get('/documentos', requireAuth(['usuario_gestionar']), async (req, res) => {
+    const c = await get(`SELECT carpeta_documentos FROM configuracion WHERE id = 1`);
+    res.json({ carpeta_documentos: (c && c.carpeta_documentos) || '' });
+});
+
+router.put('/documentos', requireAuth(['usuario_gestionar']), async (req, res) => {
+    const carpeta = String(req.body.carpeta_documentos ?? '').trim();
+    if (carpeta) {
+        try { validarCarpeta(carpeta); }
+        catch (e) { return res.status(400).json({ error: `La carpeta no es válida o no se puede escribir en ella: ${e.message}` }); }
+    }
+    await run(`UPDATE configuracion SET carpeta_documentos = ? WHERE id = 1`, [carpeta]);
+    res.json({ status: 'Carpeta de documentos actualizada' });
 });
 
 // PUT PROTEGIDO (Solo Admin)

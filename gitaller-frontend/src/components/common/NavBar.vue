@@ -16,6 +16,7 @@
       @click="$emit('update:activeTab', tab.id)"
     >
       {{ tab.label }}
+      <span v-if="tab.badge" class="tab-badge" :title="tab.badgeTitle || ''" :aria-label="tab.badgeTitle || `${tab.badge} pendientes`">{{ tab.badge }}</span>
     </button>
     
     <!-- Espacio para inyectar elementos extra -->
@@ -89,6 +90,7 @@ const handleLogout = async () => {
 </script>
 
 <style scoped>
+.tab-badge { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 6px; border-radius: 9px; background: var(--danger); color: #fff; font-size: 0.72rem; font-weight: 700; line-height: 18px; text-align: center; }
 .navbar {
     display: flex;
     flex-wrap: wrap;

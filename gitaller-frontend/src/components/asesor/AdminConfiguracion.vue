@@ -122,6 +122,27 @@
 
     <hr style="margin: 30px 0;">
 
+    <h3>Documentos de las OT (legajo digital)</h3>
+    <p class="text-muted" style="font-size: 0.85rem; margin-top: 4px;">
+      Acá se guardan los PDF (presupuestos y otros) que se suben al legajo de cada OT, en una subcarpeta por OT.
+      Incluí esta carpeta en tu copia de seguridad: la base de datos solo guarda la ruta de cada archivo.
+    </p>
+    <form @submit.prevent="guardarDocumentos">
+      <div class="form-grid">
+        <div class="form-group" style="grid-column: span 2;">
+          <label>Carpeta donde se guardan los documentos</label>
+          <div style="display: flex; gap: 8px;">
+            <input type="text" v-model="documentos.carpeta_documentos" placeholder="Ej: D:\Taller\Documentos" style="flex: 1;" />
+            <button type="button" class="btn btn-sm btn-secondary" @click="elegirCarpetaDocumentos">Examinar...</button>
+          </div>
+          <small class="text-muted">La ruta debe existir en la PC donde corre el servidor. Si no existe, se crea.</small>
+        </div>
+      </div>
+      <button type="submit" class="btn btn-success" :disabled="guardandoDocumentos">{{ guardandoDocumentos ? 'Guardando...' : 'Guardar carpeta de documentos' }}</button>
+    </form>
+
+    <hr style="margin: 30px 0;">
+
     <h3>Logotipo del Taller</h3>
     <div style="display: flex; align-items: center; gap: 20px; margin-top: 15px;">
       <div style="width: 150px; height: 80px; border: 1px dashed var(--border); display: flex; align-items: center; justify-content: center; background: var(--border-soft); border-radius: 8px;">
@@ -182,6 +203,7 @@ onMounted(async () => {
   }
   puertoOriginal.value = form.value.puerto_servidor
   cargarInformes()
+  cargarDocumentos()
 })
 
 // ─── Informe NPS ───
@@ -200,6 +222,33 @@ const elegirCarpeta = async () => {
     const carpeta = await open({ directory: true, multiple: false })
     if (carpeta) informes.value.carpeta_informes = carpeta
   } catch (err) { toast.error(errMsg(err)) }
+}
+
+// ─── Carpeta de documentos del legajo digital ───
+const guardandoDocumentos = ref(false)
+const documentos = ref({ carpeta_documentos: '' })
+
+const cargarDocumentos = async () => {
+  try { documentos.value = await fetchJSON('/configuracion/documentos') } catch (err) { toast.error(errMsg(err)) }
+}
+
+const elegirCarpetaDocumentos = async () => {
+  const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__ !== undefined
+  if (!isTauri) { toast.info('Escriba la ruta de la carpeta en el campo de texto.'); return }
+  try {
+    const { open } = await import('@tauri-apps/plugin-dialog')
+    const carpeta = await open({ directory: true, multiple: false })
+    if (carpeta) documentos.value.carpeta_documentos = carpeta
+  } catch (err) { toast.error(errMsg(err)) }
+}
+
+const guardarDocumentos = async () => {
+  guardandoDocumentos.value = true
+  try {
+    await fetchJSON('/configuracion/documentos', { method: 'PUT', body: JSON.stringify(documentos.value) })
+    toast.success('Carpeta de documentos guardada')
+  } catch (err) { toast.error(errMsg(err)) }
+  finally { guardandoDocumentos.value = false }
 }
 
 const guardarInformes = async () => {

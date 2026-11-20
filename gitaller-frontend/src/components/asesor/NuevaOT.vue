@@ -64,6 +64,17 @@
           </select>
         </div>
         <div class="form-group">
+          <label>¿Retrabajo?</label>
+          <select v-model="form.es_retrabajo">
+            <option :value="0">No</option>
+            <option :value="1">Sí (repite un trabajo anterior)</option>
+          </select>
+        </div>
+        <div v-if="form.es_retrabajo === 1" class="form-group">
+          <label>OT original <small>(opcional)</small></label>
+          <input type="text" v-model="form.ot_retrabajo_origen" placeholder="Ej: 12345" />
+        </div>
+        <div class="form-group">
           <label>¿Es Otra Marca (No Iveco)?</label>
           <select v-model="form.es_no_iveco">
             <option :value="0">No (Es Iveco)</option>
@@ -140,7 +151,7 @@ const formatCurrency = (val) => new Intl.NumberFormat('es-AR', { style: 'currenc
 const formBase = {
   ot: '', patente: '', cliente: '', unidad: '', kilometraje: '',
   asesor_legajo: '', fecha_apertura: '', tiempo_asignado_horas: 0,
-  tiempo_facturado_horas: 0, es_garantia: 0, es_no_iveco: 0, 
+  tiempo_facturado_horas: 0, es_garantia: 0, es_no_iveco: 0, es_retrabajo: 0, ot_retrabajo_origen: '',
   monto_repuestos: 0, monto_mano_obra: 0, monto_repuestos_garantia: 0, monto_mano_obra_garantia: 0
 }
 

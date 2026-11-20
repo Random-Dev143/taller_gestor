@@ -142,6 +142,12 @@ app.use('/api/legajos', requireAuth(['legajo_ver', 'legajo_gestionar']), require
 // Órdenes de Trabajo (Si tiene al menos uno de estos permisos, pasa)
 app.use('/api/ordenes', requireAuth(['ot_ver_lista', 'ot_crear', 'ot_editar']), require('./modules/ordenes/ordenes.routes'));
 
+// Turnos (agenda del asesor) y legajo digital de la OT (PDFs). Cada endpoint exige
+// además su permiso específico dentro del router; acá solo se pide estar habilitado
+// para alguna de las funciones.
+app.use('/api/turnos', requireAuth(['turno_ver', 'turno_gestionar', 'ot_ver_detalle']), require('./modules/turnos/turnos.routes'));
+app.use('/api/ot-documentos', requireAuth(['turno_ver', 'turno_gestionar', 'ot_ver_detalle', 'ot_documento_subir']), require('./modules/turnos/documentos.routes'));
+
 // Tareas Operativas
 app.use('/api/actividades', requireAuth(['tarea_ver_propias', 'tarea_gestionar_todas']), require('./modules/actividades/actividades.routes'));
 

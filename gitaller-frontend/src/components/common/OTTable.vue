@@ -63,6 +63,7 @@
             <button class="btn btn-secondary btn-sm" v-can="'ot_ver_detalle'" @click="$emit('view-detail', ot.ot)">Detalle</button>
             <button class="btn btn-sm" v-can="'ot_editar'" @click="$emit('edit-ot', ot.ot)">Editar</button>
             <button class="btn btn-outline btn-sm" v-can="'ot_ver_detalle'" @click="$emit('export-pdf', ot.ot)">📄 PDF</button>
+            <button class="btn btn-outline btn-sm" v-can="'ot_ver_detalle'" @click="$emit('ver-legajo', ot.ot)" title="Turno, presupuestos y trabajos realizados">📁 Legajo</button>
             <button v-if="!ot.anulada" class="btn btn-danger btn-sm" v-can="'ot_anular'" @click="pedirAnulacion(ot)">Anular</button>
             <button v-else class="btn btn-secondary btn-sm" v-can="'ot_anular'" @click="reactivar(ot)">Reactivar</button>
           </td>
@@ -97,7 +98,7 @@ const props = defineProps({
   sortBy: { type: String, default: '' },
   sortDir: { type: String, default: 'desc' }
 })
-const emit = defineEmits(['update-status', 'view-detail', 'edit-ot', 'control-ot', 'open-assign-modal', 'export-pdf', 'sort-change', 'refrescar'])
+const emit = defineEmits(['update-status', 'view-detail', 'edit-ot', 'control-ot', 'open-assign-modal', 'export-pdf', 'ver-legajo', 'sort-change', 'refrescar'])
 
 // ─── Anulación (solo con el permiso 'ot_anular', el botón se oculta si no lo tiene) ───
 const { fetchJSON } = useApi()

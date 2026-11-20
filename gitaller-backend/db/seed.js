@@ -77,6 +77,10 @@ async function inicializarRolesYPermisos() {
         // montado en server.js (ver nota ahí). Al integrarlo no va a hacer
         // falta tocar esto — los permisos y el rol Administrador ya los
         // van a tener asignados desde el primer arranque post-hotfix.
+        { clave: 'turno_ver', modulo: 'Turnos', desc: 'Ver la agenda de turnos y la capacidad del taller.' },
+        { clave: 'turno_gestionar', modulo: 'Turnos', desc: 'Programar, reprogramar, cancelar y confirmar turnos; generar la OT desde un turno.' },
+        { clave: 'ot_documento_subir', modulo: 'Órdenes de Trabajo', desc: 'Subir presupuestos y PDFs al legajo digital de una OT y registrar su estado y monto.' },
+        { clave: 'ot_documento_borrar', modulo: 'Órdenes de Trabajo', desc: 'Dar de baja un documento del legajo digital (queda registrado quién y por qué).' },
         { clave: 'repuesto_ver', modulo: 'Repuestos', desc: 'Ver el catálogo de repuestos y el stock disponible.' },
         { clave: 'repuesto_gestionar', modulo: 'Repuestos', desc: 'Crear/editar piezas, cargar facturas y modificar inventario.' }
     ];

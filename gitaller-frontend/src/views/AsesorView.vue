@@ -42,6 +42,7 @@
           @view-detail="abrirDetalle"
           @edit-ot="abrirEdicion"
           @export-pdf="generarExplicacionPDF"
+          @ver-legajo="abrirLegajo"
           @refrescar="cargarOTs"
         />
         <PaginationBar :page="page" :total-pages="totalPages" :total="total" @cambiar-pagina="irAPagina" />
@@ -49,6 +50,9 @@
       </template>
     </div>
 
+    <div v-else-if="activeTab === 'asesor-turnos'" class="tab-content">
+      <PanelTurnos @resumen-cambio="cargarResumenTurnos" @ver-legajo="abrirLegajo" />
+    </div>
     <div v-else-if="activeTab === 'asesor-nueva'" class="tab-content">
       <NuevaOT @ot-creada="handleOTCreada" />
     </div>
@@ -62,13 +66,14 @@
       <InformesMensuales />
     </div>
 
+    <ModalLegajoOT v-if="legajoOt" :ot="legajoOt" @close="legajoOt = null" />
     <ModalDetalleOT v-if="showModalDetalle" :otId="otSeleccionada" @close="showModalDetalle = false" />
     <ModalEditarOT v-if="showModalEditar" :otId="otSeleccionada" @close="showModalEditar = false" @updated="cerrarModalesYRecargar" />
   </div>
 </template>
 
 <script setup>
-import { ref, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useApi } from '../composables/useApi'
 import { useToast, errMsg } from '../composables/useToast'
 import NavBar from '../components/common/NavBar.vue'
@@ -79,6 +84,8 @@ import PaginationBar from '../components/common/PaginationBar.vue'
 import NuevaOT from '../components/asesor/NuevaOT.vue'
 import AdminLegajos from '../components/asesor/AdminLegajos.vue'
 import AgendaClientes from '../components/asesor/AgendaClientes.vue'
+import PanelTurnos from '../components/asesor/PanelTurnos.vue'
+import ModalLegajoOT from '../components/asesor/ModalLegajoOT.vue'
 import PanelGarantias from '../components/asesor/PanelGarantias.vue'
 import InformesMensuales from '../components/common/InformesMensuales.vue'
 import ModalDetalleOT from '../components/asesor/ModalDetalleOT.vue'
@@ -118,14 +125,27 @@ const showModalDetalle = ref(false)
 const showModalEditar = ref(false)
 const otSeleccionada = ref(null)
 
-const tabs = [
+// Turnos confirmados a los que todavía no se les generó la OT: es el punto rojo de la pestaña.
+const confirmadosSinOt = ref(0)
+const legajoOt = ref(null)
+let timerResumen = null
+
+const cargarResumenTurnos = async () => {
+  try { confirmadosSinOt.value = (await fetchJSON('/turnos/resumen')).confirmados_sin_ot || 0 }
+  catch (e) { confirmadosSinOt.value = 0 } // sin permiso de turnos o sin conexión: no se muestra el contador
+}
+const abrirLegajo = (ot) => { legajoOt.value = String(ot) }
+
+const tabs = computed(() => [
   { id: 'asesor-ots-activas', label: 'OTs en Taller' },
   { id: 'asesor-ots-finalizadas', label: 'Finalizadas' },
+  { id: 'asesor-turnos', label: 'Turnos', badge: confirmadosSinOt.value || null,
+    badgeTitle: `${confirmadosSinOt.value} turno(s) confirmado(s) esperando que se genere la OT` },
   { id: 'asesor-nueva', label: 'Nueva OT' },
   { id: 'asesor-informes', label: 'Informes' },
   { id: 'asesor-legajos', label: 'Legajos' },
   { id: 'asesor-clientes', label: 'Clientes' }
-]
+])
 
 const estadoParaBackend = () => activeTab.value === 'asesor-ots-activas' ? 'activas' : 'finalizadas'
 
@@ -228,7 +248,12 @@ const abrirDetalle = (ot) => { otSeleccionada.value = ot; showModalDetalle.value
 const abrirEdicion = (ot) => { otSeleccionada.value = ot; showModalEditar.value = true; }
 const cerrarModalesYRecargar = () => { showModalEditar.value = false; cargarOTs(); }
 
-onMounted(cargarOTs)
+onMounted(() => {
+  cargarOTs()
+  cargarResumenTurnos()
+  timerResumen = setInterval(cargarResumenTurnos, 60000)
+})
+onBeforeUnmount(() => clearInterval(timerResumen))
 </script>
 
 <style scoped>
