@@ -1,8 +1,8 @@
 <template>
-  <div class="card">
+  <div class="flat">
     <div class="header-row">
-      <h2>Administrar Legajos</h2>
-      <button class="btn btn-secondary btn-sm" @click="cargarLegajos">↻ Actualizar</button>
+      <span class="toolbar-spacer"></span>
+      <button class="btn btn-secondary btn-sm" @click="cargarLegajos"><AppIcon name="refresh" /> Actualizar</button>
     </div>
 
     <div v-if="loading" class="loading-state"><div class="spinner"></div>Cargando legajos...</div>
@@ -158,6 +158,6 @@ onMounted(cargarLegajos)
 <style scoped>
 .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
 .header-row h2 { margin: 0; }
-.firma-img { max-height: 40px; border-radius: 4px; border: 1px solid #eee; }
+.firma-img { max-height: 40px; border-radius: 4px; border: 1px solid var(--border-soft); }
 .text-muted { color: var(--muted); font-style: italic; font-size: 0.85rem; }
 </style>

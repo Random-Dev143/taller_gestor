@@ -5,7 +5,7 @@
     <div class="card roles-list">
       <div class="header-row mb-15">
         <h3 style="margin: 0;">Roles del Sistema</h3>
-        <button class="btn btn-primary btn-sm" @click="limpiarFormulario">➕ Nuevo Rol</button>
+        <button class="btn btn-primary btn-sm" @click="limpiarFormulario"><AppIcon name="plus" /> Nuevo Rol</button>
       </div>
 
       <div v-if="loading" class="loading-state">Cargando...</div>
@@ -20,10 +20,10 @@
         >
           <div class="rol-info">
             <strong>{{ rol.nombre }}</strong>
-            <span v-if="rol.es_sistema" class="badge badge-warn ms-2" title="Rol nativo inborrable">🔒 Sistema</span>
+            <span v-if="rol.es_sistema" class="badge badge-warn ms-2" title="Rol nativo inborrable"><AppIcon name="lock" /> Sistema</span>
           </div>
           <div class="rol-actions" v-if="!rol.es_sistema">
-            <button class="btn-icon text-danger" @click.stop="eliminarRol(rol.id)" title="Eliminar Rol">🗑️</button>
+            <button class="btn-icon text-danger" @click.stop="eliminarRol(rol.id)" title="Eliminar Rol"><AppIcon name="trash" /></button>
           </div>
         </div>
       </div>
@@ -213,10 +213,10 @@ onMounted(cargarDatos)
 .list-item:hover { background: var(--primary-light); }
 .list-item.active {
   background: var(--primary);
-  color: white;
+  color: var(--on-primary);
   border-color: var(--primary);
 }
-.list-item.active .badge-warn { background: var(--warning); color: var(--text); }
+.list-item.active .badge-warn { background: var(--warning-light); color: var(--warning); }
 .btn-icon {
   background: none; border: none; font-size: 1.1rem; cursor: pointer; opacity: 0.7;
 }
@@ -233,7 +233,7 @@ onMounted(cargarDatos)
   border: 1px solid var(--border-soft);
 }
 .modulo-title {
-  margin-top: 0; margin-bottom: 12px; color: var(--primary); border-bottom: 2px solid var(--border-soft); padding-bottom: 5px;
+  margin-top: 0; margin-bottom: 12px; color: var(--primary-text); border-bottom: 2px solid var(--border-soft); padding-bottom: 5px;
 }
 .checkbox-label {
   display: flex; align-items: flex-start; gap: 10px; margin-bottom: 10px; cursor: pointer;

@@ -1,7 +1,7 @@
 <template>
-  <div class="card">
+  <div class="flat">
     <div class="header-row">
-      <h2>Gestión de Usuarios y Accesos</h2>
+      <span class="toolbar-spacer"></span>
       <div style="display: flex; gap: 10px;">
         <select v-model="filtroEstado" class="form-control" style="width: auto;" @change="cargarDatos(filtroEstado)">
           <option value="">Todos los estados</option>
@@ -9,7 +9,7 @@
           <option value="aprobado">Aprobados</option>
           <option value="suspendido">Suspendidos</option>
         </select>
-        <button class="btn btn-secondary btn-sm" @click="cargarDatos(filtroEstado)">↻ Actualizar</button>
+        <button class="btn btn-secondary btn-sm" @click="cargarDatos(filtroEstado)"><AppIcon name="refresh" /> Actualizar</button>
       </div>
     </div>
 
@@ -42,7 +42,7 @@
                     <option value="" disabled>Seleccione un perfil...</option>
                     <option v-for="r in rolesLista" :key="r.id" :value="r.id">{{ r.nombre }}</option>
                 </select>
-                <span v-else class="badge-sm" style="background: #0056a7;">{{ u.rol_nombre || 'Sin asignar' }}</span>
+                <span v-else class="badge-sm badge-rol">{{ u.rol_nombre || 'Sin asignar' }}</span>
             </td>
             <td>
               <select v-if="editandoId === u.id" v-model="formEdit.legajo" class="form-control" style="padding: 4px;">
@@ -60,13 +60,13 @@
               
               <!-- Modo Vista (Aprobar Rápido) -->
               <template v-else-if="u.estado === 'pendiente'">
-                <button class="btn btn-success btn-sm" v-can="'usuario_gestionar'" @click="iniciarEdicion(u)">✅ Aprobar y Asignar</button>
+                <button class="btn btn-success btn-sm" v-can="'usuario_gestionar'" @click="iniciarEdicion(u)"><AppIcon name="check" /> Aprobar y Asignar</button>
               </template>
 
               <!-- Modo Vista Normal -->
               <template v-else>
-                <button class="btn btn-sm" v-can="'usuario_gestionar'" @click="iniciarEdicion(u)">✏️ Editar</button>
-                <button v-if="u.estado !== 'suspendido'" class="btn btn-danger btn-sm" v-can="'usuario_gestionar'" @click="confirmarSuspension(u.id)">🚫 Suspender</button>
+                <button class="btn btn-sm" v-can="'usuario_gestionar'" @click="iniciarEdicion(u)"><AppIcon name="edit" /> Editar</button>
+                <button v-if="u.estado !== 'suspendido'" class="btn btn-danger btn-sm" v-can="'usuario_gestionar'" @click="confirmarSuspension(u.id)"><AppIcon name="x" /> Suspender</button>
                 <button v-else class="btn btn-outline btn-sm" v-can="'usuario_gestionar'" @click="confirmarReactivacion(u.id)">Reactivar</button>
               </template>
             </td>
@@ -134,9 +134,10 @@ onMounted(() => cargarDatos(filtroEstado.value))
 <style scoped>
 .header-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
 .header-row h2 { margin: 0; }
-.fila-pendiente td { background-color: #fffaf0; }
-.badge-warn { background: #b8860b; color: white; }
-.badge-success { background: #1d8a4f; color: white; }
-.badge-danger { background: #b22234; color: white; }
+.fila-pendiente td { background-color: var(--status-warn-bg); }
+.badge-rol { background: var(--primary-light); color: var(--primary-text); }
+.badge-warn { background: var(--status-warn-bg); color: var(--status-warn-text); }
+.badge-success { background: var(--status-progress-bg); color: var(--status-progress-text); }
+.badge-danger { background: var(--status-danger-bg); color: var(--status-danger-text); }
 .text-muted { color: var(--muted); }
 </style>

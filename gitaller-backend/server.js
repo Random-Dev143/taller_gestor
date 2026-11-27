@@ -146,6 +146,7 @@ app.use('/api/ordenes', requireAuth(['ot_ver_lista', 'ot_crear', 'ot_editar']), 
 // además su permiso específico dentro del router; acá solo se pide estar habilitado
 // para alguna de las funciones.
 app.use('/api/turnos', requireAuth(['turno_ver', 'turno_gestionar', 'ot_ver_detalle']), require('./modules/turnos/turnos.routes'));
+app.use('/api/analitica', requireAuth(['ot_ver_lista', 'turno_ver', 'tarea_gestionar_todas', 'informe_operativo', 'informe_financiero']), require('./modules/analitica/analitica.routes'));
 app.use('/api/ot-documentos', requireAuth(['turno_ver', 'turno_gestionar', 'ot_ver_detalle', 'ot_documento_subir']), require('./modules/turnos/documentos.routes'));
 
 // Tareas Operativas

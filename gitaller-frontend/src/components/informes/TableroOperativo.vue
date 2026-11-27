@@ -217,7 +217,7 @@ const chartDistribucion = computed(() => {
     labels: ['Productivo (hs)', 'Internas (hs)', 'Ocio (hs)'],
     datasets: [{
       data: [m.hs_productivas, m.hs_internas, m.tiempo_muerto],
-      backgroundColor: ['#1d8a4f', '#0056a7', '#b22234']
+      backgroundColor: ['#2e9e60', '#3b7ddd', '#d9534f']
     }]
   }
 })
@@ -230,8 +230,8 @@ const chartEficacia = computed(() => {
   return {
     labels: ['Eficacia'],
     datasets: [
-      { label: 'OT de cliente', data: [m.productividad_ot_porcentaje ?? 0], backgroundColor: '#0056a7' },
-      { label: 'Tareas internas', data: [m.productividad_interna_porcentaje ?? 0], backgroundColor: '#d4a017' }
+      { label: 'OT de cliente', data: [m.productividad_ot_porcentaje ?? 0], backgroundColor: '#3b7ddd' },
+      { label: 'Tareas internas', data: [m.productividad_interna_porcentaje ?? 0], backgroundColor: '#d79a1e' }
     ]
   }
 })
@@ -245,11 +245,11 @@ const chartEficiencia = computed(() => {
   const m = mecanicoFiltrado.value;
   const labels = ['Eficiencia OT']
   const data = [m.eficiencia_ot_porcentaje ?? 0]
-  const colores = ['#1d8a4f']
+  const colores = ['#2e9e60']
   if (m.eficiencia_interna_porcentaje !== null && m.eficiencia_interna_porcentaje !== undefined) {
     labels.push('Eficiencia Interna')
     data.push(m.eficiencia_interna_porcentaje)
-    colores.push('#d4a017')
+    colores.push('#d79a1e')
   }
   return {
     labels,
@@ -265,10 +265,10 @@ const nombresTipoDescanso = {
   permiso_previo: 'Después de permiso'
 }
 const coloresTipoDescanso = {
-  normal: '#94a3b8',
-  fin_de_semana: '#0056a7',
-  fin_de_semana_largo: '#1d8a4f',
-  permiso_previo: '#b8860b'
+  normal: '#8b95a5',
+  fin_de_semana: '#3b7ddd',
+  fin_de_semana_largo: '#2e9e60',
+  permiso_previo: '#d79a1e'
 }
 
 const vistaOcio = ref('semanal') // 'semanal' | 'mensual'
@@ -282,7 +282,7 @@ const chartPatrones = computed(() => {
     datasets: [{
       label: '% de ocio promedio',
       data: patronesDescanso.value.map(p => p.ocio_promedio_porcentaje),
-      backgroundColor: patronesDescanso.value.map(p => coloresTipoDescanso[p.tipo_descanso] || '#94a3b8')
+      backgroundColor: patronesDescanso.value.map(p => coloresTipoDescanso[p.tipo_descanso] || '#8b95a5')
     }]
   }
 })
@@ -303,7 +303,7 @@ const chartSerieMensual = computed(() => {
     datasets: [{
       label: '% de ocio',
       data: serieDiariaMecanico.value.map(d => d.ocio_porcentaje),
-      backgroundColor: serieDiariaMecanico.value.map(d => coloresTipoDescanso[d.tipo_descanso] || '#94a3b8')
+      backgroundColor: serieDiariaMecanico.value.map(d => coloresTipoDescanso[d.tipo_descanso] || '#8b95a5')
     }]
   }
 })
@@ -333,7 +333,7 @@ const getHeatColor = (dia, hora) => {
   const mins = getOcioMins(dia, hora);
   if (mins <= 0) return 'var(--border-soft)';
   const opacity = Math.min(mins / 60, 1) * 0.9;
-  return `rgba(178, 34, 52, ${opacity + 0.1})`;
+  return `rgba(217, 83, 79, ${opacity + 0.1})`;
 }
 </script>
 
@@ -348,7 +348,7 @@ const getHeatColor = (dia, hora) => {
   position: relative;
   z-index: 2;
 }
-.im-eyebrow { font-size: 0.85rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--primary); display: block; }
+.im-eyebrow { font-size: 0.85rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--primary-text); display: block; }
 .header-controls {
   display: flex;
   align-items: center;
@@ -359,13 +359,10 @@ const getHeatColor = (dia, hora) => {
   min-width: 220px;
 }
 .table-wrapper { overflow-x: auto; background: var(--surface); border: 1px solid var(--border-soft); border-radius: var(--radius); box-shadow: var(--shadow-sm); }
-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
-th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid var(--border-soft); }
-th { background: var(--border-soft); font-weight: 600; color: var(--text); text-transform: uppercase; font-size: 0.8rem; }
-.badge { padding: 4px 10px; border-radius: 12px; color: white; font-weight: bold; font-size: 0.85rem; }
-.bg-success { background: var(--success); }
-.bg-warning { background: var(--warning); color: #fff; }
-.bg-danger { background: var(--danger); }
+.badge { padding: 3px 10px; border-radius: 999px; color: #fff; font-weight: 650; font-size: 0.8rem; }
+.bg-success { background: var(--success-solid); }
+.bg-warning { background: var(--warning-solid); color: #fff; }
+.bg-danger { background: var(--danger-solid); }
 .text-success { color: var(--success); font-weight: 600; }
 .text-muted { color: var(--muted); }
 .text-danger { color: var(--danger); }
@@ -431,7 +428,7 @@ th { background: var(--border-soft); font-weight: 600; color: var(--text); text-
 .legend-item { display: flex; align-items: center; gap: 6px; }
 .legend-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
 
-.chart-title { font-size: 1rem; color: var(--primary); text-align: center; margin-bottom: 10px; }
+.chart-title { font-size: 1rem; color: var(--primary-text); text-align: center; margin-bottom: 10px; }
 .charts-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));

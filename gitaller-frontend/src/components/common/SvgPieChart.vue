@@ -21,7 +21,7 @@ const slices = computed(() => {
   const total = props.data.reduce((sum, d) => sum + d.value, 0)
   if (total === 0) return []
   
-  const colors = ['#0056a7', '#1d8a4f', '#b8860b', '#b22234', '#6c7a8a', '#8e44ad', '#e67e22']
+  const colors = ['#3b7ddd', '#2e9e60', '#d79a1e', '#d9534f', '#8b95a5', '#8b6fd6', '#e0833a']
   let startAngle = 0
   
   return props.data.map((d, i) => {

@@ -1,12 +1,12 @@
 <template>
-  <div class="card" ref="rootRef">
+  <div class="flat" ref="rootRef">
     <div class="header-row">
-      <h2>Informes de Rendimiento y Facturación</h2>
+      <span class="toolbar-spacer"></span>
       <div class="pdf-actions" v-if="store.financiero">
         <button class="btn btn-outline btn-sm" @click="exportarPDF" :disabled="exportando">
-          {{ exportando ? 'Generando PDF...' : '👁️ Previsualizar PDF' }}
+          {{ exportando ? 'Generando PDF...' : 'Previsualizar PDF' }}
         </button>
-        <button class="btn btn-sm" @click="descargarPDF" :disabled="exportando || !ultimoPdf">⬇ Descargar</button>
+        <button class="btn btn-sm" @click="descargarPDF" :disabled="exportando || !ultimoPdf"><AppIcon name="download" /> Descargar</button>
       </div>
     </div>
 
@@ -287,7 +287,7 @@
             <h3>Cuellos de Botella (Tiempos por Estado)</h3>
             <div style="display:flex; gap: 8px;" class="no-print">
               <input type="text" v-model="store.filtroCuellos" placeholder="Filtrar OT o Patente" class="form-control select-sm" @keyup.enter="store.cargarInformes" style="text-transform: uppercase;" />
-              <button class="btn btn-sm" @click="store.cargarInformes">🔍</button>
+              <button class="btn btn-sm" @click="store.cargarInformes" title="Buscar" aria-label="Buscar"><AppIcon name="search" /></button>
             </div>
           </div>
           <p class="chart-hint">Tiempo promedio que pasan las OTs en cada estado del taller (dónde se traban).</p>
@@ -357,7 +357,7 @@
               <thead><tr><th>Unidad</th><th>Cantidad OTs</th><th>Facturación Total</th></tr></thead>
               <tbody>
                 <tr v-for="u in store.financiero.rentabilidad_unidad" :key="u.unidad">
-                  <td><strong>{{ u.unidad }}</strong></td>
+                  <td :title="$unidadCompleta(u.unidad)"><strong>{{ $modelo(u.unidad) }}</strong></td>
                   <td>{{ u.cantidad }}</td>
                   <td><span class="highlight">{{ formatCurrency(u.facturacion_total) }}</span></td>
                 </tr>
@@ -488,8 +488,8 @@ const datosFinancierosAgrupados = computed(() => {
 const chartFinanciero = computed(() => ({
   labels: datosFinancierosAgrupados.value.map(d => d.etiqueta),
   datasets: [
-    { label: 'Repuestos', backgroundColor: '#1d8a4f', data: datosFinancierosAgrupados.value.map(d => d.repuestos) },
-    { label: 'Mano de Obra', backgroundColor: '#0056a7', data: datosFinancierosAgrupados.value.map(d => d.mano_obra) }
+    { label: 'Repuestos', backgroundColor: '#2e9e60', data: datosFinancierosAgrupados.value.map(d => d.repuestos) },
+    { label: 'Mano de Obra', backgroundColor: '#3b7ddd', data: datosFinancierosAgrupados.value.map(d => d.mano_obra) }
   ]
 }))
 
@@ -514,8 +514,8 @@ const datosTendenciaAgrupados = computed(() => {
 const chartTendencia = computed(() => ({
   labels: datosTendenciaAgrupados.value.map(d => d.etiqueta),
   datasets: [
-    { label: 'Abiertas', borderColor: '#b8860b', backgroundColor: '#b8860b', data: datosTendenciaAgrupados.value.map(d => d.aperturas), tension: 0.3 },
-    { label: 'Cerradas', borderColor: '#1d8a4f', backgroundColor: '#1d8a4f', data: datosTendenciaAgrupados.value.map(d => d.cierres), tension: 0.3 }
+    { label: 'Abiertas', borderColor: '#d79a1e', backgroundColor: '#d79a1e', data: datosTendenciaAgrupados.value.map(d => d.aperturas), tension: 0.3 },
+    { label: 'Cerradas', borderColor: '#2e9e60', backgroundColor: '#2e9e60', data: datosTendenciaAgrupados.value.map(d => d.cierres), tension: 0.3 }
   ]
 }))
 
@@ -556,15 +556,15 @@ const datosDiasSemana = computed(() => {
 const chartDiasSemana = computed(() => ({
   labels: datosDiasSemana.value.map(d => d.etiqueta),
   datasets: [
-    { label: 'Aperturas', backgroundColor: '#b8860b', data: datosDiasSemana.value.map(d => d.aperturas) },
-    { label: 'Cierres', backgroundColor: '#1d8a4f', data: datosDiasSemana.value.map(d => d.cierres) }
+    { label: 'Aperturas', backgroundColor: '#d79a1e', data: datosDiasSemana.value.map(d => d.aperturas) },
+    { label: 'Cierres', backgroundColor: '#2e9e60', data: datosDiasSemana.value.map(d => d.cierres) }
   ]
 }))
 
 // Tortas de aperturas/cierres por día de la semana (punto 5): reusan la
 // misma paleta de colores en el mismo orden de días para que sean fáciles
 // de comparar entre sí a simple vista.
-const coloresDias = ['#0056a7', '#1d8a4f', '#b8860b', '#b22234', '#6c7a8a', '#8e44ad', '#16a085']
+const coloresDias = ['#3b7ddd', '#2e9e60', '#d79a1e', '#d9534f', '#8b95a5', '#8b6fd6', '#2aa198']
 const chartAperturasDiaSemana = computed(() => ({
   labels: datosDiasSemana.value.map(d => d.etiqueta),
   datasets: [{ data: datosDiasSemana.value.map(d => d.aperturas), backgroundColor: coloresDias }]
@@ -583,7 +583,7 @@ const chartAporteMecanico = computed(() => {
     labels: datos.map(d => d.nombre),
     datasets: [{
       label: esFact ? 'Facturación Generada ($)' : 'OTs Trabajadas',
-      backgroundColor: esFact ? '#1d8a4f' : '#0056a7',
+      backgroundColor: esFact ? '#2e9e60' : '#3b7ddd',
       data: datos.map(d => esFact ? d.facturacion_generada : d.ot_trabajadas)
     }]
   }
@@ -612,8 +612,8 @@ const datosTiempos = computed(() => {
 const chartTiempos = computed(() => ({
   labels: datosTiempos.value.map(d => d.etiqueta),
   datasets: [
-    { label: 'Estimado (hs)', backgroundColor: '#b8860b', data: datosTiempos.value.map(d => d.estimado) },
-    { label: 'Real (hs)', backgroundColor: '#0056a7', data: datosTiempos.value.map(d => d.real) }
+    { label: 'Estimado (hs)', backgroundColor: '#d79a1e', data: datosTiempos.value.map(d => d.estimado) },
+    { label: 'Real (hs)', backgroundColor: '#3b7ddd', data: datosTiempos.value.map(d => d.real) }
   ]
 }))
 
@@ -628,7 +628,7 @@ const chartRentabilidad = computed(() => {
   const data = datosRentabilidad.value
   return {
     labels: data.map(d => d.etiqueta),
-    datasets: [{ label: 'Rentabilidad ($)', backgroundColor: data.map(d => d.valor >= 0 ? '#1d8a4f' : '#b22234'), data: data.map(d => d.valor) }]
+    datasets: [{ label: 'Rentabilidad ($)', backgroundColor: data.map(d => d.valor >= 0 ? '#2e9e60' : '#d9534f'), data: data.map(d => d.valor) }]
   }
 })
 const opcionesBarraRentabilidad = computed(() => ({
@@ -643,7 +643,7 @@ const chartCuellos = computed(() => {
   const datos = store.taller?.permanencia_estado || []
   return {
     labels: datos.map(e => e.estado),
-    datasets: [{ label: store.filtroCuellos ? 'Horas totales' : 'Horas promedio', backgroundColor: '#b22234', data: datos.map(e => store.filtroCuellos ? e.horas_totales : e.horas_promedio) }]
+    datasets: [{ label: store.filtroCuellos ? 'Horas totales' : 'Horas promedio', backgroundColor: '#d9534f', data: datos.map(e => store.filtroCuellos ? e.horas_totales : e.horas_promedio) }]
   }
 })
 
@@ -652,16 +652,16 @@ const calidadData = computed(() => {
   const r = store.financiero?.resumen || {}
   return {
     labels: ['Normales', 'Garantía IVECO', 'Otras Marcas (No Iveco)'],
-    datasets: [{ data: [r.total_normales || 0, r.total_garantia || 0, r.total_no_iveco || 0], backgroundColor: ['#0056a7', '#b8860b', '#6c7a8a'] }]
+    datasets: [{ data: [r.total_normales || 0, r.total_garantia || 0, r.total_no_iveco || 0], backgroundColor: ['#3b7ddd', '#d79a1e', '#8b95a5'] }]
   }
 })
 const chartRepuestosManoObra = computed(() => ({
   labels: ['Repuestos', 'Mano de Obra'],
-  datasets: [{ data: [store.financiero?.resumen.total_repuestos || 0, store.financiero?.resumen.total_mano_obra || 0], backgroundColor: ['#1d8a4f', '#0056a7'] }]
+  datasets: [{ data: [store.financiero?.resumen.total_repuestos || 0, store.financiero?.resumen.total_mano_obra || 0], backgroundColor: ['#2e9e60', '#3b7ddd'] }]
 }))
 const chartGarantia = computed(() => ({
   labels: ['Garantía (no facturado)', 'Facturable'],
-  datasets: [{ data: [store.financiero?.resumen.monto_garantia || 0, store.financiero?.resumen.monto_facturable || 0], backgroundColor: ['#b8860b', '#1d8a4f'] }]
+  datasets: [{ data: [store.financiero?.resumen.monto_garantia || 0, store.financiero?.resumen.monto_facturable || 0], backgroundColor: ['#d79a1e', '#2e9e60'] }]
 }))
 
 onMounted(() => { store.cargarInformes() })
@@ -699,7 +699,7 @@ onMounted(() => { store.cargarInformes() })
   position: relative;
   z-index: 2;
 }
-.header-with-actions h3 { margin: 0; color: var(--primary); font-size: 1.1rem; }
+.header-with-actions h3 { margin: 0; color: var(--primary-text); font-size: 1.1rem; }
 .select-sm { width: auto; padding: 4px 8px; font-size: 0.9rem; position: relative; z-index: 2; }
 .chart-hint { font-size: 0.8rem; color: var(--muted); margin: 10px 0 12px; }
 
@@ -748,7 +748,7 @@ onMounted(() => { store.cargarInformes() })
   color: var(--text-soft);
 }
 .highlight-card {
-  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  background: var(--primary);
   border-color: var(--primary-dark);
 }
 .highlight-card .stat-label,
@@ -780,7 +780,7 @@ onMounted(() => { store.cargarInformes() })
   background: var(--surface-raised, var(--surface));
 }
 .stat-card--eficiencia .stat-label {
-  color: var(--primary);
+  color: var(--primary-text);
 }
 
 .chart-box {
@@ -793,10 +793,7 @@ onMounted(() => { store.cargarInformes() })
 .chart-box canvas { max-width: 100% !important; max-height: 100% !important; }
 
 .table-wrapper { overflow-x: auto; }
-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
-th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border-soft); }
-th { background: var(--border-soft); font-weight: 600; color: var(--text); }
-.highlight { color: var(--primary); font-weight: bold; }
+.highlight { color: var(--primary-text); font-weight: bold; }
 
 .charts-grid {
   display: grid;

@@ -1,15 +1,14 @@
 <template>
   <div class="panel-turnos">
     <div class="cabecera">
-      <h2>Turnos</h2>
-      <div class="rango">
-        <button class="btn btn-secondary btn-sm" @click="moverSemana(-7)" title="Semana anterior">◀</button>
+      <div class="rango" style="margin-right: auto;">
+        <button class="btn btn-secondary btn-sm" @click="moverSemana(-7)" title="Semana anterior" aria-label="Semana anterior"><AppIcon name="chevron-left" /></button>
         <button class="btn btn-secondary btn-sm" @click="irAHoy">Hoy</button>
-        <button class="btn btn-secondary btn-sm" @click="moverSemana(7)" title="Semana siguiente">▶</button>
+        <button class="btn btn-secondary btn-sm" @click="moverSemana(7)" title="Semana siguiente" aria-label="Semana siguiente"><AppIcon name="chevron-right" /></button>
         <span class="rango__texto">{{ textoRango }}</span>
       </div>
-      <button class="btn btn-secondary btn-sm" @click="cargar" :disabled="cargando">↻ Actualizar</button>
-      <button class="btn btn-sm" v-can="'turno_gestionar'" @click="abrirNuevo">＋ Nuevo turno</button>
+      <button class="btn btn-secondary btn-sm" @click="cargar" :disabled="cargando"><AppIcon name="refresh" /> Actualizar</button>
+      <button class="btn btn-sm" v-can="'turno_gestionar'" @click="abrirNuevo"><AppIcon name="plus" /> Nuevo turno</button>
     </div>
 
     <div v-if="cargando && !turnos.length" class="loading-state"><div class="spinner"></div>Cargando turnos...</div>
@@ -37,7 +36,7 @@
                 <span class="patente patente--mini">{{ t.patente }}</span>
                 <span v-if="t.tipo !== 'normal'" class="prio" :class="`prio--${t.tipo}`">{{ t.tipo === 'garantia' ? 'Garantía' : 'Retrabajo' }}</span>
               </span>
-              <span class="item__l2">{{ t.unidad }} · {{ t.cliente }}</span>
+              <span class="item__l2" :title="$unidadCompleta(t.unidad)">{{ $modelo(t.unidad) }} · {{ t.cliente }}</span>
               <span class="item__l3">{{ ESTADOS[t.estado].texto }}<template v-if="t.ot"> · OT {{ t.ot }}</template></span>
             </span>
           </button>
@@ -62,7 +61,7 @@
               <span class="chip"><span class="dot" :class="`dot--${seleccionado.estado}`"></span>{{ ESTADOS[seleccionado.estado].texto }}</span>
               <span v-if="seleccionado.tipo !== 'normal'" class="prio" :class="`prio--${seleccionado.tipo}`">{{ seleccionado.tipo === 'garantia' ? 'Garantía · prioridad' : 'Retrabajo · prioridad' }}</span>
             </div>
-            <h3 class="det-cab__unidad">{{ seleccionado.unidad }}</h3>
+            <h3 class="det-cab__unidad" :title="$unidadCompleta(seleccionado.unidad)">{{ $modelo(seleccionado.unidad) }}</h3>
             <div class="sub">{{ seleccionado.cliente }}</div>
           </header>
 
@@ -80,8 +79,8 @@
           <div class="acciones" v-if="!seleccionado.ot">
             <template v-if="seleccionado.estado !== 'cancelado'">
               <button class="act-btn act-btn--principal" v-can="'turno_gestionar'" @click="generarOt = seleccionado">Generar OT</button>
-              <button class="act-btn" v-can="'turno_gestionar'" @click="abrirLlamado">📞 Registrar llamado</button>
-              <button v-if="seleccionado.estado !== 'confirmado'" class="act-btn" v-can="'turno_gestionar'" @click="confirmarDirecto">✔ Marcar confirmado</button>
+              <button class="act-btn" v-can="'turno_gestionar'" @click="abrirLlamado"><AppIcon name="phone" /> Registrar llamado</button>
+              <button v-if="seleccionado.estado !== 'confirmado'" class="act-btn" v-can="'turno_gestionar'" @click="confirmarDirecto"><AppIcon name="check" /> Marcar confirmado</button>
               <button class="act-btn" v-can="'turno_gestionar'" @click="editando = seleccionado; mostrarModalTurno = true">Reprogramar / editar</button>
               <button class="act-btn" v-can="'turno_gestionar'" @click="cambiarEstado('no_asistio')">No asistió</button>
               <button class="act-btn act-btn--peligro" v-can="'turno_gestionar'" @click="cancelando = seleccionado; motivoCancelacion = ''">Cancelar turno</button>
@@ -89,7 +88,7 @@
             <p v-else class="sub">Turno cancelado. Para reagendar, programá uno nuevo.</p>
           </div>
           <div class="acciones" v-else>
-            <button class="act-btn act-btn--principal" @click="$emit('ver-legajo', seleccionado.ot)">📁 Ver legajo de la OT {{ seleccionado.ot }}</button>
+            <button class="act-btn act-btn--principal" @click="$emit('ver-legajo', seleccionado.ot)"><AppIcon name="folder" /> Ver legajo de la OT {{ seleccionado.ot }}</button>
           </div>
 
           <h4>Historial del turno</h4>
@@ -155,6 +154,7 @@ import { parseUtc } from '../../utils/fechas'
 import ModalTurno from './ModalTurno.vue'
 import ModalGenerarOT from './ModalGenerarOT.vue'
 
+const props = defineProps({ turnoInicial: { type: Number, default: null } })
 const emit = defineEmits(['resumen-cambio', 'ver-legajo'])
 const { fetchJSON } = useApi()
 const toast = useToast()
@@ -207,8 +207,8 @@ const diasConTurnos = computed(() => {
 const redondear = (n) => Math.round((Number(n) || 0) * 10) / 10
 const porcentaje = (c) => c.horas_disponibles > 0 ? Math.min(100, Math.round((c.horas_comprometidas / c.horas_disponibles) * 100)) : 100
 const nombreDia = (f) => new Date(`${f}T12:00:00`).toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'numeric' })
-const hora = (v) => { const d = parseUtc(v); return d ? d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }) : '' }
-const fechaLarga = (v) => { const d = parseUtc(v); return d ? d.toLocaleString('es-AR', { weekday: 'short', day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' }) : '' }
+const hora = (v) => { const d = parseUtc(v); return d ? d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false }) : '' }
+const fechaLarga = (v) => { const d = parseUtc(v); return d ? d.toLocaleString('es-AR', { weekday: 'short', day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) : '' }
 const fechaCorta = (v) => { const d = parseUtc(v); return d ? d.toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' }) : '' }
 const nombreEvento = (t) => ({
   creado: 'Turno programado', editado: 'Turno modificado', reprogramado: 'Turno reprogramado', llamado: 'Llamado al cliente',
@@ -270,13 +270,25 @@ const cambiarEstado = async (estado, motivo = '') => {
   finally { procesando.value = false }
 }
 
-onMounted(cargar)
-defineExpose({ cargar })
+// Si se llega con un turno puntual (desde el inicio), la semana se posiciona en su fecha y se abre.
+onMounted(async () => {
+  if (props.turnoInicial) {
+    try {
+      const t = await fetchJSON(`/turnos/${props.turnoInicial}`)
+      const d = parseUtc(t.fecha_hora)
+      if (d) desde.value = iso(d)
+      await cargar()
+      await seleccionar(t)
+      return
+    } catch (e) { /* si no existe, se muestra la semana actual */ }
+  }
+  cargar()
+})
+defineExpose({ cargar, abrirNuevo })
 </script>
 
 <style scoped>
 .cabecera { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; }
-.cabecera h2 { margin: 0; margin-right: auto; }
 .rango { display: flex; align-items: center; gap: 6px; }
 .rango__texto { font-weight: 600; margin-left: 6px; text-transform: capitalize; }
 .sub { font-size: 0.82rem; color: var(--text-soft); }
@@ -307,16 +319,13 @@ defineExpose({ cargar })
 /* Estado = punto de color + texto. Mismos colores en lista, detalle y leyenda. */
 .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex-shrink: 0; display: inline-block; margin: 5px 6px 0 0; }
 .chip .dot { margin: 0 6px 0 0; }
-.dot--sin_confirmar { background: var(--warning); }
+.dot--sin_confirmar { background: var(--amber); }
 .dot--confirmado { background: var(--success); }
-.dot--reprogramar { background: #8b5cf6; }
+.dot--reprogramar { background: var(--violet); }
 .dot--ot_creada { background: var(--primary); }
 .dot--no_asistio { background: var(--muted); }
 .dot--cancelado { background: var(--danger); }
-.chip { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 20px; background: var(--hover-row); font-size: 0.8rem; font-weight: 600; color: var(--text-soft); }
 
-.patente { background: #fff; color: #111; border: 2px solid #111; padding: 1px 9px; border-radius: 6px; font-family: monospace; font-weight: 700; font-size: 1rem; letter-spacing: 1px; }
-.patente--mini { border-width: 1px; padding: 0 6px; font-size: 0.78rem; letter-spacing: 0.5px; }
 .prio { padding: 1px 8px; border-radius: 10px; font-size: 0.72rem; font-weight: 700; background: var(--warning-light); color: var(--warning); }
 .prio--retrabajo { background: var(--danger-light); color: var(--danger); }
 
@@ -338,7 +347,7 @@ defineExpose({ cargar })
 .acciones { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
 .act-btn { flex: 1 1 150px; min-height: 40px; padding: 8px 14px; border: 1px solid var(--border); border-radius: 8px; background: transparent; color: var(--text); font: inherit; font-size: 0.88rem; font-weight: 600; cursor: pointer; transition: background 0.15s; }
 .act-btn:hover { background: var(--hover-row); }
-.act-btn--principal { background: var(--primary); border-color: var(--primary); color: #fff; }
+.act-btn--principal { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
 .act-btn--principal:hover { filter: brightness(1.08); background: var(--primary); }
 .act-btn--peligro { color: var(--danger); border-color: var(--danger); }
 .act-btn:focus-visible, .item:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }

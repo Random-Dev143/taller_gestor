@@ -1,9 +1,12 @@
 <template>
   <div class="panel-garantias">
     <div class="pg-barra">
-      <input type="text" v-model="busqueda" class="form-control search-input"
-             placeholder="🔍 Buscar por N° de OT (garantía), patente o proforma..." @input="onBuscar" />
-      <button class="btn btn-secondary btn-sm" @click="cargar">↻ Actualizar</button>
+      <div class="search" style="flex-basis: 360px;">
+        <AppIcon name="search" />
+        <input type="text" v-model="busqueda" class="form-control" aria-label="Buscar garantías"
+               placeholder="Buscar por N° de OT, patente o proforma" @input="onBuscar" />
+      </div>
+      <button class="btn btn-secondary btn-sm" @click="cargar"><AppIcon name="refresh" /> Actualizar</button>
     </div>
 
     <p v-if="!loading && resumen" class="pg-resumen">{{ resumen }}</p>
@@ -32,7 +35,7 @@
         <tbody>
           <tr v-for="f in filas" :key="f.ot" :class="{ 'pg-editando': editando === f.ot }">
             <td><strong>{{ f.ot }}</strong></td>
-            <td>{{ f.cliente }}<br /><small class="pg-sub">{{ f.patente }} · {{ f.unidad }}</small></td>
+            <td>{{ f.cliente }}<br /><small class="pg-sub">{{ f.patente }} · {{ $modelo(f.unidad) }}</small></td>
             <td>{{ fmtFechaHora(f.fecha_cierre) }}</td>
             <td>{{ fmtMoneda(f.monto_ot_garantia) }}</td>
 
@@ -183,7 +186,7 @@ const fmtFechaHora = (s) => {
 .pg-acciones { white-space: nowrap; }
 .pg-acciones .btn + .btn { margin-left: 6px; }
 .pg-editando { background: var(--border-soft); }
-.pg-estado--pagado { background: var(--success); color: #fff; }
-.pg-estado--reclamado { background: var(--warning); color: #fff; }
-.pg-estado--vacio { background: var(--muted); color: #fff; }
+.pg-estado--pagado { background: var(--status-progress-bg); color: var(--status-progress-text); }
+.pg-estado--reclamado { background: var(--status-warn-bg); color: var(--status-warn-text); }
+.pg-estado--vacio { background: var(--status-wait-bg); color: var(--status-wait-text); }
 </style>

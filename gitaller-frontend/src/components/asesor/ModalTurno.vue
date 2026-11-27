@@ -37,7 +37,7 @@
             <label>Vehículos del cliente</label>
             <select v-model="unidadElegida" :disabled="unidadesCliente.length === 0" @change="onElegirUnidad($event.target.value)">
               <option value="">{{ unidadesCliente.length === 0 ? '— Elegí un cliente de la lista —' : `— ${unidadesCliente.length} vehículo(s) registrados —` }}</option>
-              <option v-for="u in unidadesCliente" :key="u.patente" :value="u.patente">{{ u.patente }} · {{ u.unidad }}</option>
+              <option v-for="u in unidadesCliente" :key="u.patente" :value="u.patente">{{ u.patente }} · {{ $modelo(u.unidad) }}</option>
             </select>
           </div>
           <div class="form-group">
@@ -229,7 +229,7 @@ if (esEdicion.value) revisarCapacidad()
   z-index: 1000; max-height: 180px; overflow-y: auto;
 }
 .autocomplete-list li { padding: 8px 12px; cursor: pointer; border-bottom: 1px solid var(--border-soft); display: flex; justify-content: space-between; }
-.autocomplete-list li:hover { background: var(--primary-light); color: var(--primary); }
+.autocomplete-list li:hover { background: var(--primary-light); color: var(--primary-text); }
 .aviso { margin: 10px 0 0; padding: 8px 12px; border-radius: 6px; font-size: 0.88rem; border: 1px solid var(--border); }
 .aviso--info { background: var(--primary-light); color: var(--text); }
 .aviso--alerta { background: var(--warning-light); border-color: var(--warning); color: var(--text); }

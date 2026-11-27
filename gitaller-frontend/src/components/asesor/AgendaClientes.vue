@@ -1,10 +1,13 @@
 <template>
-  <div class="card">
+  <div class="flat">
     <div class="header-row">
-      <h2>Agenda de Clientes y Unidades</h2>
-      <input type="text" v-model="busqueda" placeholder="🔍 Buscar por patente, cliente o unidad..." class="form-control search-input" />
-      <button class="btn btn-secondary btn-sm" @click="cargarAgenda">↻ Actualizar</button>
-      <button class="btn btn-outline btn-sm" v-can="'agenda_importar'" @click="mostrarImportar = true">📥 Importar planillas</button>
+      <span class="toolbar-spacer"></span>
+      <div class="search">
+        <AppIcon name="search" />
+        <input type="text" v-model="busqueda" placeholder="Buscar por patente, cliente o unidad" class="form-control" aria-label="Buscar en la agenda" />
+      </div>
+      <button class="btn btn-secondary btn-sm" @click="cargarAgenda"><AppIcon name="refresh" /> Actualizar</button>
+      <button class="btn btn-outline btn-sm" v-can="'agenda_importar'" @click="mostrarImportar = true"><AppIcon name="download" /> Importar planillas</button>
     </div>
 
     <div v-if="loading" class="loading-state"><div class="spinner"></div>Cargando agenda...</div>
@@ -14,7 +17,7 @@
       <div v-for="grupo in clientesFiltrados" :key="grupo.id" class="client-group">
         <div class="client-header" @click="toggleExpand(grupo.id)">
           <div class="client-title">
-            <span class="expand-icon">{{ expandedClients.has(grupo.id) ? '▼' : '▶' }}</span>
+            <span class="expand-icon"><AppIcon :name="expandedClients.has(grupo.id) ? 'chevron-down' : 'chevron-right'" /></span>
             <span class="client-name">{{ grupo.nombre }}</span>
             <span class="badge-sm">{{ grupo.unidades.length }} unidad{{ grupo.unidades.length !== 1 ? 'es' : '' }}</span>
           </div>
@@ -52,7 +55,7 @@
                     <input v-model="editForm.chasis" class="edit-input" />
                   </div>
                   <div v-else>
-                    <div>{{ u.unidad }}</div>
+                    <div :title="$unidadCompleta(u.unidad)">{{ $modelo(u.unidad) }}</div>
                     <div class="text-muted dato-sec" v-if="u.chasis">Chasis: {{ u.chasis }}</div>
                     <div class="text-muted dato-sec" v-if="u.cliente_cuit">CUIT: {{ u.cliente_cuit }}</div>
                   </div>
@@ -66,8 +69,8 @@
                   </template>
                   <template v-else>
                     <strong>{{ u.contacto_nombre }} {{ u.contacto_apellido }}</strong>
-                    <div v-if="u.telefono">📞 {{ u.telefono }}</div>
-                    <div v-if="u.correo">📧 {{ u.correo }}</div>
+                    <div v-if="u.telefono"><AppIcon name="phone" /> {{ u.telefono }}</div>
+                    <div v-if="u.correo"><AppIcon name="mail" /> {{ u.correo }}</div>
                   </template>
                 </td>
                 <td style="white-space: nowrap; vertical-align: top;">
@@ -77,7 +80,7 @@
                   </template>
                   <template v-else>
                     <button class="btn btn-sm" v-can="'agenda_gestionar'" @click="iniciarEdicion(u)">Editar</button>
-                    <button class="btn btn-outline btn-sm" v-can="'agenda_ver'" @click="verHistorial(u)">🕓 Historial</button>
+                    <button class="btn btn-outline btn-sm" v-can="'agenda_ver'" @click="verHistorial(u)"><AppIcon name="clock" /> Historial</button>
                   </template>
                 </td>
               </tr>
@@ -87,9 +90,8 @@
       </div>
     </div>
 
-    <hr style="margin:20px 0;" />
-
-    <h3>Agregar Registro Manual</h3>
+    <details class="agregar">
+      <summary><AppIcon name="plus" /> Agregar cliente o unidad manualmente</summary>
     <form @submit.prevent="enviarNuevoCliente">
       <div class="form-grid">
         <div class="form-group"><label>Patente *</label><input type="text" v-model="form.patente" required /></div>
@@ -104,6 +106,7 @@
       </div>
       <button type="submit" class="btn btn-success" v-can="'agenda_gestionar'" :disabled="enviando">Guardar en agenda</button>
     </form>
+    </details>
 
     <ImportarPlanillasModal v-if="mostrarImportar" @close="mostrarImportar = false" @cambios="cargarAgenda" />
 
@@ -223,6 +226,11 @@ onMounted(cargarAgenda)
 </script>
 
 <style scoped>
+.agregar { margin-top: 20px; border: 1px solid var(--border-soft); border-radius: var(--radius); background: var(--surface); }
+.agregar summary { display: flex; align-items: center; gap: 8px; padding: 12px 16px; cursor: pointer; font-weight: 600; color: var(--text-soft); list-style: none; }
+.agregar summary:hover { color: var(--text); }
+.agregar[open] summary { border-bottom: 1px solid var(--border-soft); }
+.agregar form { padding: 16px; }
 .header-row { display: flex; gap: 15px; align-items: center; margin-bottom: 15px; }
 .search-input { max-width: 300px; }
 .edit-input { padding: 4px; border: 1px solid var(--primary); border-radius: 4px; width: 100%; }

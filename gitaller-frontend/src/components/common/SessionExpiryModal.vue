@@ -3,7 +3,7 @@
     <transition name="session-modal">
       <div v-if="mostrarAvisoExpiracion" class="session-overlay">
         <div class="session-card" role="alertdialog" aria-live="assertive">
-          <div class="session-icon">⏰</div>
+          <div class="session-icon"><AppIcon name="clock" /></div>
           <h3>Tu sesión está por vencer</h3>
           <p>
             Por seguridad, la sesión se cierra sola si no hay actividad.

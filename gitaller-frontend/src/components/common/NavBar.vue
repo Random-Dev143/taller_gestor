@@ -1,39 +1,48 @@
 <template>
-  <div class="navbar" :style="customStyle">
-    <!-- Botón de Cerrar sesión, ahora donde estaba el de Inicio -->
-    <button class="logout" @click="handleLogout">{{ logoutText }}</button>
+  <header class="topbar" :style="customStyle">
+    <div class="topbar__inner">
+      <div class="topbar__brand">
+        <img v-if="configStore.config.logo_path" :src="configStore.getLogoUrl()" class="topbar__logo" alt="Logo" />
+        <span v-else class="topbar__mark" aria-hidden="true">G</span>
+        <span class="topbar__name" :style="brandStyle">{{ configStore.config.nombre_taller }}</span>
+        <span class="topbar__role">{{ brandLabel }}</span>
+      </div>
 
-    <div style="display: flex; align-items: center; gap: 12px; margin-right: auto;">
-      <img v-if="configStore.config.logo_path" :src="configStore.getLogoUrl()" style="max-height: 35px; border-radius: 4px;" alt="Logo" />
-      <span class="brand" :style="brandStyle">{{ configStore.config.nombre_taller }} | <small style="color: var(--text-soft);">{{ brand }}</small></span>
+      <nav class="topbar__tabs" aria-label="Secciones">
+        <button
+          v-for="tab in tabs"
+          :key="tab.id"
+          type="button"
+          class="tb-tab"
+          :class="{ 'tb-tab--active': activeTab === tab.id }"
+          :aria-current="activeTab === tab.id ? 'page' : null"
+          @click="$emit('update:activeTab', tab.id)"
+        >
+          {{ tab.label }}
+          <span v-if="tab.badge" class="tab-badge" :title="tab.badgeTitle || ''" :aria-label="tab.badgeTitle || `${tab.badge} pendientes`">{{ tab.badge }}</span>
+        </button>
+      </nav>
+
+      <!-- Espacio para inyectar elementos extra -->
+      <slot name="extra"></slot>
+
+      <div class="topbar__actions">
+        <button type="button" class="tb-btn" @click="toggleTheme" :title="isDark ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'" :aria-label="isDark ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'">
+          <AppIcon :name="isDark ? 'sun' : 'moon'" />
+        </button>
+        <button type="button" class="tb-btn" @click="goHome" title="Volver al menú principal" aria-label="Volver al menú principal">
+          <AppIcon name="home" />
+        </button>
+        <button type="button" class="tb-btn tb-btn--text" @click="handleLogout">
+          <AppIcon name="logout" /><span class="tb-btn__label">{{ logoutText }}</span>
+        </button>
+      </div>
     </div>
-    
-    <!-- Pestañas dinámicas -->
-    <button
-      v-for="tab in tabs"
-      :key="tab.id"
-      :class="{ 'active-tab': activeTab === tab.id }"
-      @click="$emit('update:activeTab', tab.id)"
-    >
-      {{ tab.label }}
-      <span v-if="tab.badge" class="tab-badge" :title="tab.badgeTitle || ''" :aria-label="tab.badgeTitle || `${tab.badge} pendientes`">{{ tab.badge }}</span>
-    </button>
-    
-    <!-- Espacio para inyectar elementos extra -->
-    <slot name="extra"></slot>
-    
-    <!-- Controles de la derecha -->
-    <div style="display: flex; gap: 10px;">
-      <button class="theme-toggle-btn" @click="toggleTheme" :title="isDark ? 'Cambiar a Modo Claro' : 'Cambiar a Modo Oscuro'">
-        {{ isDark ? '☀️' : '🌙' }}
-      </button>
-      <button class="home-btn" @click="goHome" title="Volver al menú principal">🏠</button>
-    </div>
-  </div>
+  </header>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../../stores/useAuthStore'
 import { useConfigStore } from '../../stores/useConfigStore'
@@ -73,6 +82,9 @@ const props = defineProps({
 
 const emit = defineEmits(['update:activeTab', 'logout'])
 
+// El rol viene con un emoji decorativo en algunas vistas ("👔 Asesor"): se muestra solo el texto.
+const brandLabel = computed(() => props.brand.replace(/^[\p{Extended_Pictographic}\uFE0F\s]+/u, '').trim())
+
 // Función para volver al menú principal
 const goHome = () => {
   router.push({ name: 'home' })
@@ -90,118 +102,78 @@ const handleLogout = async () => {
 </script>
 
 <style scoped>
-.tab-badge { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 6px; border-radius: 9px; background: var(--danger); color: #fff; font-size: 0.72rem; font-weight: 700; line-height: 18px; text-align: center; }
-.navbar {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 10px 20px;
-    background: var(--surface);
-    padding: 12px 24px;
-    border-radius: 12px;
-    box-shadow: var(--shadow-sm);
-    margin-bottom: 30px;
+.topbar {
+  position: sticky; top: 0; z-index: 100;
+  background: var(--ink);
+  color: var(--ink-text);
+  border-bottom: 1px solid var(--ink-border);
+}
+.topbar__inner {
+  max-width: 1480px; margin: 0 auto;
+  min-height: var(--topbar-h);
+  padding: 0 var(--gutter);
+  display: flex; align-items: center; gap: 8px 20px;
 }
 
-/* Estilos del botón de inicio */
-.navbar .home-btn {
-    background: var(--border-soft);
-    border: 1px solid var(--border);
-    padding: 6px 12px;
-    border-radius: 8px;
-    font-size: 1.2rem;
-    cursor: pointer;
-    color: var(--text);
-    transition: background 0.2s, transform 0.1s;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+.topbar__brand { display: flex; align-items: center; gap: 10px; flex-shrink: 0; min-width: 0; }
+.topbar__logo { max-height: 28px; max-width: 120px; border-radius: 4px; }
+.topbar__mark {
+  width: 28px; height: 28px; border-radius: 7px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--primary); color: var(--on-primary); font-weight: 800; font-size: 0.95rem;
+}
+.topbar__name { font-weight: 650; font-size: 0.98rem; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px; }
+.topbar__role {
+  padding-left: 10px; margin-left: 2px; border-left: 1px solid var(--ink-border);
+  color: var(--ink-soft); font-size: 0.85rem; white-space: nowrap;
 }
 
-.navbar .home-btn:hover {
-    background: var(--primary-light);
-    transform: scale(1.05);
+.topbar__tabs {
+  display: flex; align-items: stretch; gap: 2px; flex: 1 1 auto; min-width: 0;
+  align-self: stretch;
+  overflow-x: auto; scrollbar-width: none;
+}
+.topbar__tabs::-webkit-scrollbar { display: none; }
+
+.tb-tab {
+  position: relative; display: inline-flex; align-items: center; gap: 6px;
+  padding: 0 14px; border: none; background: transparent; cursor: pointer;
+  font: inherit; font-size: 0.9rem; font-weight: 500; white-space: nowrap;
+  color: var(--ink-soft);
+  transition: color 0.15s, background-color 0.15s;
+}
+.tb-tab:hover { color: var(--ink-text); background: var(--ink-hover); }
+.tb-tab--active { color: var(--ink-text); font-weight: 600; }
+.tb-tab--active::after {
+  content: ''; position: absolute; left: 10px; right: 10px; bottom: 0; height: 3px;
+  border-radius: 3px 3px 0 0; background: var(--primary-text);
+}
+.tb-tab:focus-visible { outline: 2px solid var(--primary-text); outline-offset: -2px; border-radius: 4px; }
+
+.tab-badge {
+  display: inline-block; min-width: 18px; padding: 0 6px; border-radius: 9px;
+  background: #e5484d; color: #fff; font-size: 0.7rem; font-weight: 700; line-height: 18px; text-align: center;
 }
 
-/* Estilos del botón de tema */
-.navbar .theme-toggle-btn {
-    background: var(--border-soft);
-    border: 1px solid var(--border);
-    padding: 6px 12px;
-    border-radius: 8px;
-    font-size: 1.2rem;
-    cursor: pointer;
-    color: var(--text);
-    transition: background 0.2s, transform 0.1s;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+.topbar__actions { display: flex; align-items: center; gap: 4px; margin-left: auto; flex-shrink: 0; }
+.tb-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  min-width: 36px; height: 36px; padding: 0 9px;
+  border: none; border-radius: 8px; background: transparent; cursor: pointer;
+  color: var(--ink-soft); font: inherit; font-size: 0.85rem; font-weight: 500;
+  transition: background-color 0.15s, color 0.15s;
 }
+.tb-btn .icon { font-size: 1.15rem; }
+.tb-btn:hover { background: var(--ink-hover); color: var(--ink-text); }
+.tb-btn:focus-visible { outline: 2px solid var(--primary-text); outline-offset: 1px; }
 
-.navbar .theme-toggle-btn:hover {
-    background: var(--primary-light);
-    transform: scale(1.05);
+@media (max-width: 900px) {
+  .topbar__name { display: none; }
+  .tb-btn__label { display: none; }
 }
-
-.navbar .brand {
-    font-weight: 700;
-    font-size: 1.3rem;
-    color: var(--primary);
-    margin-right: auto;
-}
-
-.navbar button:not(.home-btn):not(.theme-toggle-btn):not(.logout) {
-    background: transparent;
-    border: none;
-    padding: 8px 16px;
-    border-radius: 8px;
-    font-size: 0.95rem;
-    cursor: pointer;
-    color: var(--text);
-    transition: background 0.2s;
-}
-
-.navbar button:not(.home-btn):not(.theme-toggle-btn):not(.logout):hover {
-    background: var(--primary-light);
-}
-
-.navbar button.active-tab {
-    background: var(--primary);
-    color: white;
-}
-
-.navbar .logout {
-    background: transparent;
-    border: none;
-    padding: 8px 16px;
-    border-radius: 8px;
-    font-size: 0.95rem;
-    cursor: pointer;
-    color: var(--danger);
-    font-weight: 500;
-    transition: background 0.2s;
-}
-
-.navbar .logout:hover {
-    background: var(--danger-light);
-}
-
-@media (max-width: 768px) {
-    .navbar {
-        flex-direction: column;
-        align-items: stretch;
-    }
-    .navbar .brand {
-        margin-right: 0;
-        text-align: center;
-        margin-top: 10px;
-    }
-    .navbar button {
-        text-align: center;
-        padding: 10px;
-    }
-    .navbar .home-btn, .navbar .theme-toggle-btn {
-        align-self: center;
-    }
+@media (max-width: 640px) {
+  .topbar__inner { flex-wrap: wrap; padding-top: 6px; row-gap: 0; }
+  .topbar__tabs { order: 3; flex-basis: 100%; min-height: 42px; }
+  .topbar__actions { margin-left: auto; }
 }
 </style>

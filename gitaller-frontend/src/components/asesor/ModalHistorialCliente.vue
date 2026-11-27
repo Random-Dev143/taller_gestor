@@ -3,7 +3,7 @@
     <div class="modal-content modal-large">
       <button class="close-btn" @click="$emit('close')">&times;</button>
       <h2>Historial de {{ patente }}</h2>
-      <p class="text-muted mt-10" v-if="cliente">{{ cliente }} · {{ unidad }}</p>
+      <p class="text-muted mt-10" v-if="cliente">{{ cliente }} · {{ $modelo(unidad) }}</p>
 
       <div v-if="loading" class="loading-state"><div class="spinner"></div>Cargando historial...</div>
       <p v-else-if="historial.length === 0" class="empty-state">Esta unidad todavía no tiene OTs registradas.</p>
@@ -20,7 +20,7 @@
               <td>{{ formatFecha(ot.fecha_apertura) }}</td>
               <td>{{ ot.fecha_cierre ? formatFecha(ot.fecha_cierre) : '—' }}</td>
               <td><span :class="['status-tag', ot.estado_actual === 'Finalizada' ? 'status-done' : 'status-progress']">{{ ot.estado_actual }}</span></td>
-              <td>{{ ot.es_garantia ? '✅' : '—' }}</td>
+              <td>{{ ot.es_garantia ? 'Sí' : '—' }}</td>
               <td><span class="highlight">{{ formatCurrency((ot.monto_repuestos || 0) + (ot.monto_mano_obra || 0)) }}</span></td>
             </tr>
           </tbody>
@@ -77,5 +77,5 @@ onMounted(async () => {
 .status-tag { font-size: 0.8rem; font-weight: 700; padding: 3px 10px; border-radius: 20px; }
 .status-progress { background: var(--status-progress-bg); color: var(--status-progress-text); }
 .status-done { background: var(--status-done-bg); color: var(--status-done-text); }
-.highlight { color: var(--primary); font-weight: bold; }
+.highlight { color: var(--primary-text); font-weight: bold; }
 </style>

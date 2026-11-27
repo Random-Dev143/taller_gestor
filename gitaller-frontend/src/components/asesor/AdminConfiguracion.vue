@@ -1,159 +1,161 @@
 <template>
-  <div class="card">
-    <h2>Configuración General del Taller</h2>
-    <hr style="margin-bottom: 20px;">
+  <div class="config">
+    <!-- 1. Datos del taller -->
+    <section class="card config-block">
+      <header class="config-block__head">
+        <h3>Datos del taller</h3>
+        <p>Se muestran en la pantalla de inicio, en los informes y en los PDF. Se guardan junto con los horarios, con el botón de la sección siguiente.</p>
+      </header>
+      <form @submit.prevent="guardarConfig" id="form-config">
+        <div class="form-grid">
+          <div class="form-group span-full">
+            <label>Nombre del taller / empresa</label>
+            <input type="text" v-model="form.nombre_taller" required />
+          </div>
+          <div class="form-group span-full">
+            <label>Eslogan o descripción corta</label>
+            <input type="text" v-model="form.slogan" placeholder="Ej: Concesionario oficial" />
+          </div>
+          <div class="form-group span-full">
+            <label>Dirección</label>
+            <input type="text" v-model="form.direccion" placeholder="Ej: Av. Principal 123, Ciudad" />
+          </div>
+          <div class="form-group">
+            <label>CUIT / RUT</label>
+            <input type="text" v-model="form.cuit" placeholder="Ej: 30-12345678-9" />
+          </div>
+          <div class="form-group">
+            <label>Teléfono(s)</label>
+            <input type="text" v-model="form.telefono" placeholder="Ej: 0800-123-4567" />
+          </div>
+          <div class="form-group">
+            <label>Correo de contacto</label>
+            <input type="email" v-model="form.email" placeholder="Ej: info@mitaller.com" />
+          </div>
+        </div>
+      </form>
+    </section>
 
-    <form @submit.prevent="guardarConfig">
+    <!-- 2. Horarios y servidor -->
+    <section class="card config-block">
+      <header class="config-block__head">
+        <h3>Horarios y servidor</h3>
+        <p>Los horarios definen la pausa y el cierre automático de tareas, y la capacidad diaria de los turnos.</p>
+      </header>
       <div class="form-grid">
-        <div class="form-group" style="grid-column: span 2;">
-          <label>Nombre del Taller / Empresa</label>
-          <input type="text" v-model="form.nombre_taller" required />
-        </div>
-        <div class="form-group" style="grid-column: span 2;">
-          <label>Slogan o Descripción Corta</label>
-          <input type="text" v-model="form.slogan" placeholder="Ej: Concesionario Oficial..." />
-        </div>
-        <div class="form-group" style="grid-column: span 2;">
-          <label>Dirección del Taller</label>
-          <input type="text" v-model="form.direccion" placeholder="Ej: Av. Principal 123, Ciudad" />
+        <div class="form-group">
+          <label>Apertura (hora, 0-23)</label>
+          <input type="number" form="form-config" v-model="form.hora_apertura" min="0" max="23" required />
         </div>
         <div class="form-group">
-          <label>CUIT / RUT</label>
-          <input type="text" v-model="form.cuit" placeholder="Ej: 30-12345678-9" />
+          <label>Cierre (hora, 0-23)</label>
+          <input type="number" form="form-config" v-model="form.hora_cierre" min="0" max="23" required />
         </div>
-        <div class="form-group">
-          <label>Teléfono(s)</label>
-          <input type="text" v-model="form.telefono" placeholder="Ej: 0800-123-4567" />
+        <div class="form-group span-full">
+          <label class="check"><input type="checkbox" form="form-config" v-model="form.trabaja_corrido" /> El taller trabaja de corrido (sin pausa de almuerzo)</label>
         </div>
-        <div class="form-group" style="grid-column: span 2;">
-          <label>Correo Electrónico (Contacto)</label>
-          <input type="email" v-model="form.email" placeholder="Ej: info@mitaller.com" />
-        </div>
-        <!-- Agrega este bloque debajo del div de nombre_taller -->
-        <div class="form-group">
-          <label>Puerto del Servidor</label>
-          <input type="number" v-model="form.puerto_servidor" required />
-          <small style="color: var(--danger); display:block; margin-top:4px;">
-            ⚠️ Si modificas este valor, debes reiniciar manualmente la consola del backend.
-          </small>
-        </div>
-
-        <div class="form-group">
-          <label>Hora de Apertura (0-23)</label>
-          <input type="number" v-model="form.hora_apertura" min="0" max="23" required />
-        </div>
-        <div class="form-group">
-          <label>Hora de Cierre (0-23)</label>
-          <input type="number" v-model="form.hora_cierre" min="0" max="23" required />
-        </div>
-
-        <div class="form-group" style="grid-column: span 2;">
-          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin-top: 10px;">
-            <input type="checkbox" v-model="form.trabaja_corrido" style="width: 20px; height: 20px;" />
-            <span style="font-size: 1rem; color: var(--primary); font-weight: bold;">El taller trabaja de corrido (Sin pausa de almuerzo)</span>
-          </label>
-        </div>
-
         <template v-if="!form.trabaja_corrido">
           <div class="form-group">
-            <label>Inicio de Almuerzo (0-23)</label>
-            <input type="number" v-model="form.hora_almuerzo_inicio" min="0" max="23" />
+            <label>Inicio de almuerzo (hora)</label>
+            <input type="number" form="form-config" v-model="form.hora_almuerzo_inicio" min="0" max="23" />
           </div>
           <div class="form-group">
-            <label>Fin de Almuerzo (Reanudación)</label>
-            <input type="number" v-model="form.hora_almuerzo_fin" min="0" max="23" />
+            <label>Fin de almuerzo (hora)</label>
+            <input type="number" form="form-config" v-model="form.hora_almuerzo_fin" min="0" max="23" />
           </div>
         </template>
-
-        <div class="form-group" style="grid-column: span 2;">
-          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin-top: 10px;">
-            <input type="checkbox" v-model="form.trabaja_sabados" style="width: 20px; height: 20px;" />
-            <span style="font-size: 1rem; color: var(--primary); font-weight: bold;">El taller abre los sábados</span>
-          </label>
-          <small style="color: var(--muted); display:block; margin-top:4px;">
-            Controla la pausa/cierre automático de tareas de los sábados (ver módulo de cron). Se asume media jornada, sin corte de almuerzo.
-          </small>
+        <div class="form-group span-full">
+          <label class="check"><input type="checkbox" form="form-config" v-model="form.trabaja_sabados" /> El taller abre los sábados</label>
+          <small class="hint">Se asume media jornada, sin corte de almuerzo.</small>
         </div>
-
         <template v-if="form.trabaja_sabados">
           <div class="form-group">
-            <label>Sábado — Hora de Apertura (0-23)</label>
-            <input type="number" v-model="form.sabado_hora_apertura" min="0" max="23" />
+            <label>Sábado: apertura (hora)</label>
+            <input type="number" form="form-config" v-model="form.sabado_hora_apertura" min="0" max="23" />
           </div>
           <div class="form-group">
-            <label>Sábado — Hora de Cierre (0-23)</label>
-            <input type="number" v-model="form.sabado_hora_cierre" min="0" max="23" />
+            <label>Sábado: cierre (hora)</label>
+            <input type="number" form="form-config" v-model="form.sabado_hora_cierre" min="0" max="23" />
           </div>
         </template>
+        <div class="form-group">
+          <label>Puerto del servidor</label>
+          <input type="number" form="form-config" v-model="form.puerto_servidor" required />
+          <small class="hint hint--warn"><AppIcon name="alert" /> Si lo modificás, hay que reiniciar el servidor.</small>
+        </div>
       </div>
+      <div class="config-block__actions">
+        <button type="submit" form="form-config" class="btn" :disabled="guardando">
+          {{ reiniciandoBackend ? 'Reiniciando servidor...' : (guardando ? 'Guardando...' : 'Guardar datos y horarios') }}
+        </button>
+      </div>
+    </section>
 
-      <button type="submit" class="btn btn-success" :disabled="guardando">
-        {{ reiniciandoBackend ? 'Reiniciando servidor...' : (guardando ? 'Guardando...' : 'Guardar Configuración') }}
-      </button>
-    </form>
-
-    <hr style="margin: 30px 0;">
-
-    <h3>Informe NPS (planilla quincenal)</h3>
-    <p class="text-muted" style="font-size: 0.85rem; margin-top: 4px;">
-      Cada 1 y 16 el sistema genera solo la planilla del período anterior y la <strong>guarda</strong> en esta carpeta (no la envía a nadie).
-    </p>
-    <form @submit.prevent="guardarInformes">
-      <div class="form-grid">
-        <div class="form-group" style="grid-column: span 2;">
-          <label>Carpeta donde se guardan los informes</label>
-          <div style="display: flex; gap: 8px;">
-            <input type="text" v-model="informes.carpeta_informes" placeholder="Ej: C:\Informes\NPS" style="flex: 1;" />
-            <button type="button" class="btn btn-sm btn-secondary" @click="elegirCarpeta">Examinar...</button>
+    <!-- 3. Informe NPS -->
+    <section class="card config-block">
+      <header class="config-block__head">
+        <h3>Informe NPS (planilla quincenal)</h3>
+        <p>Cada 1 y 16 el sistema genera la planilla del período anterior y la <strong>guarda</strong> en esta carpeta. No se envía a nadie.</p>
+      </header>
+      <form @submit.prevent="guardarInformes">
+        <div class="form-grid">
+          <div class="form-group span-full">
+            <label>Carpeta donde se guardan los informes</label>
+            <div class="folder-row">
+              <input type="text" v-model="informes.carpeta_informes" placeholder="Ej: C:\Informes\NPS" />
+              <button type="button" class="btn btn-sm btn-secondary" @click="elegirCarpeta">Examinar...</button>
+            </div>
+            <small class="hint">La ruta debe existir en la PC donde corre el servidor. Si no existe, se crea.</small>
           </div>
-          <small class="text-muted">La ruta debe existir en la PC donde corre el servidor. Si no existe, se crea.</small>
-        </div>
-        <div class="form-group"><label>Código de Concesionario</label><input type="text" v-model="informes.nps_concesionario" required /></div>
-        <div class="form-group"><label>Código de Sede</label><input type="text" v-model="informes.nps_sede" required /></div>
-        <div class="form-group" style="grid-column: span 2;">
-          <label style="display: flex; align-items: center; gap: 8px;">
-            <input type="checkbox" v-model="informes.informe_auto_activo" style="width: auto;" />
-            Generar el informe automáticamente cada quincena
-          </label>
-        </div>
-      </div>
-      <button type="submit" class="btn btn-success" :disabled="guardandoInformes">{{ guardandoInformes ? 'Guardando...' : 'Guardar ajustes del informe' }}</button>
-    </form>
-
-    <hr style="margin: 30px 0;">
-
-    <h3>Documentos de las OT (legajo digital)</h3>
-    <p class="text-muted" style="font-size: 0.85rem; margin-top: 4px;">
-      Acá se guardan los PDF (presupuestos y otros) que se suben al legajo de cada OT, en una subcarpeta por OT.
-      Incluí esta carpeta en tu copia de seguridad: la base de datos solo guarda la ruta de cada archivo.
-    </p>
-    <form @submit.prevent="guardarDocumentos">
-      <div class="form-grid">
-        <div class="form-group" style="grid-column: span 2;">
-          <label>Carpeta donde se guardan los documentos</label>
-          <div style="display: flex; gap: 8px;">
-            <input type="text" v-model="documentos.carpeta_documentos" placeholder="Ej: D:\Taller\Documentos" style="flex: 1;" />
-            <button type="button" class="btn btn-sm btn-secondary" @click="elegirCarpetaDocumentos">Examinar...</button>
+          <div class="form-group"><label>Código de concesionario</label><input type="text" v-model="informes.nps_concesionario" required /></div>
+          <div class="form-group"><label>Código de sede</label><input type="text" v-model="informes.nps_sede" required /></div>
+          <div class="form-group span-full">
+            <label class="check"><input type="checkbox" v-model="informes.informe_auto_activo" /> Generar el informe automáticamente cada quincena</label>
           </div>
-          <small class="text-muted">La ruta debe existir en la PC donde corre el servidor. Si no existe, se crea.</small>
         </div>
-      </div>
-      <button type="submit" class="btn btn-success" :disabled="guardandoDocumentos">{{ guardandoDocumentos ? 'Guardando...' : 'Guardar carpeta de documentos' }}</button>
-    </form>
+        <div class="config-block__actions">
+          <button type="submit" class="btn" :disabled="guardandoInformes">{{ guardandoInformes ? 'Guardando...' : 'Guardar ajustes del informe' }}</button>
+        </div>
+      </form>
+    </section>
 
-    <hr style="margin: 30px 0;">
+    <!-- 4. Documentos del legajo digital -->
+    <section class="card config-block">
+      <header class="config-block__head">
+        <h3>Documentos de las OT (legajo digital)</h3>
+        <p>Acá se guardan los PDF (presupuestos y otros) que se suben al legajo de cada OT, en una subcarpeta por OT. Incluí esta carpeta en tu copia de seguridad: la base de datos solo guarda la ruta de cada archivo.</p>
+      </header>
+      <form @submit.prevent="guardarDocumentos">
+        <div class="form-grid">
+          <div class="form-group span-full">
+            <label>Carpeta donde se guardan los documentos</label>
+            <div class="folder-row">
+              <input type="text" v-model="documentos.carpeta_documentos" placeholder="Ej: D:\Taller\Documentos" />
+              <button type="button" class="btn btn-sm btn-secondary" @click="elegirCarpetaDocumentos">Examinar...</button>
+            </div>
+            <small class="hint">La ruta debe existir en la PC donde corre el servidor. Si no existe, se crea.</small>
+          </div>
+        </div>
+        <div class="config-block__actions">
+          <button type="submit" class="btn" :disabled="guardandoDocumentos">{{ guardandoDocumentos ? 'Guardando...' : 'Guardar carpeta de documentos' }}</button>
+        </div>
+      </form>
+    </section>
 
-    <h3>Logotipo del Taller</h3>
-    <div style="display: flex; align-items: center; gap: 20px; margin-top: 15px;">
-      <div style="width: 150px; height: 80px; border: 1px dashed var(--border); display: flex; align-items: center; justify-content: center; background: var(--border-soft); border-radius: 8px;">
-        <img v-if="configStore.config.logo_path" :src="configStore.getLogoUrl()" style="max-width: 100%; max-height: 100%;" />
-        <span v-else style="color: var(--muted); font-size: 0.8rem;">Sin logo</span>
+    <!-- 5. Logotipo -->
+    <section class="card config-block">
+      <header class="config-block__head">
+        <h3>Logotipo</h3>
+        <p>Se muestra en la barra superior y en la pantalla de ingreso. Recomendado: PNG con fondo transparente.</p>
+      </header>
+      <div class="logo-row">
+        <div class="logo-preview">
+          <img v-if="configStore.config.logo_path" :src="configStore.getLogoUrl()" alt="Logotipo actual" />
+          <span v-else>Sin logo</span>
+        </div>
+        <button type="button" class="btn btn-sm btn-secondary" @click="subirLogo">Examinar y subir logo</button>
       </div>
-      <div>
-        <p style="font-size: 0.85rem; color: var(--text-soft); margin-top: 0;">Suba una imagen en formato PNG (Fondo transparente recomendado).</p>
-        <button class="btn btn-sm btn-secondary" @click="subirLogo">Examinar y Subir Logo</button>
-      </div>
-    </div>
+    </section>
   </div>
 </template>
 
@@ -331,3 +333,25 @@ const subirLogo = () => {
   input.click()
 }
 </script>
+
+
+<style scoped>
+.config { display: grid; gap: 16px; max-width: 920px; margin: 0 auto; }
+.config .card { margin-bottom: 0; }
+.config-block__head { margin-bottom: 16px; }
+.config-block__head h3 { margin: 0 0 4px; }
+.config-block__head p { margin: 0; font-size: 0.86rem; color: var(--text-soft); }
+.config-block__actions { display: flex; justify-content: flex-end; margin-top: 4px; }
+.check { display: flex; align-items: center; gap: 9px; font-size: 0.92rem; font-weight: 500; color: var(--text); cursor: pointer; }
+.hint { color: var(--muted); font-size: 0.8rem; }
+.hint--warn { display: flex; align-items: center; gap: 5px; color: var(--warning); }
+.folder-row { display: flex; gap: 8px; }
+.folder-row input { flex: 1; }
+.logo-row { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+.logo-preview {
+  width: 160px; height: 80px; display: flex; align-items: center; justify-content: center;
+  border: 1px dashed var(--border); border-radius: var(--radius); background: var(--surface-sub);
+  color: var(--muted); font-size: 0.82rem;
+}
+.logo-preview img { max-width: 100%; max-height: 100%; }
+</style>

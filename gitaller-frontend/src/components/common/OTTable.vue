@@ -3,81 +3,103 @@
     <table class="ot-table">
       <thead>
         <tr>
-          <th v-for="col in columnas" :key="col.key" :class="{ sortable: col.sortable }"
+          <th v-for="col in columnas" :key="col.key" :class="{ sortable: col.sortable, 'is-sorted': sortBy === col.key }"
+              :aria-sort="sortBy === col.key ? (sortDir === 'asc' ? 'ascending' : 'descending') : null"
               @click="col.sortable && $emit('sort-change', col.key)">
             {{ col.label }}
-            <span v-if="col.sortable" class="sort-icon">{{ sortIcon(col.key) }}</span>
+            <AppIcon v-if="col.sortable" :name="iconoOrden(col.key)" class="sort-icon" />
           </th>
-          <th>Acciones</th>
+          <th v-if="mostrarFacturacion">Facturación</th>
+          <th class="col-acciones"><span class="sr-only">Acciones</span></th>
         </tr>
       </thead>
       <tbody>
         <tr v-if="data.length === 0">
-          <td colspan="10" class="empty-state">No hay órdenes de trabajo para mostrar</td>
+          <td :colspan="cantidadColumnas" class="empty-state">No hay órdenes de trabajo para mostrar</td>
         </tr>
-        <tr v-for="ot in data" :key="ot.ot" :class="{ 'row-anulada': !!ot.anulada, 'row-ready': !ot.anulada && esLista(ot), 'row-stale': !ot.anulada && esEstancada(ot) }">
-          <td data-label="OT">
+        <tr v-for="ot in data" :key="ot.ot"
+            :class="{ 'row-anulada': !!ot.anulada, 'row-ready': !ot.anulada && esLista(ot), 'row-stale': !ot.anulada && esEstancada(ot), 'row-click': can('ot_ver_detalle') }"
+            @click="abrirFila(ot)">
+          <td data-label="OT" class="cell-ot">
             <strong :class="{ 'ot-anulada': !!ot.anulada }">{{ ot.ot }}</strong>
-            <span v-if="ot.anulada" class="badge-anulada" :title="ot.anulada_motivo ? `Motivo: ${ot.anulada_motivo}` : 'OT anulada'">ANULADA</span>
-            <span v-if="!ot.anulada && esEstancada(ot)" class="badge-antiguedad" :title="`Abierta hace ${diasAbierta(ot)} días`">
-              ⏳ {{ diasAbierta(ot) }}d
+            <span v-if="ot.anulada" class="tag tag--danger" :title="ot.anulada_motivo ? `Motivo: ${ot.anulada_motivo}` : 'OT anulada'">Anulada</span>
+            <span v-else-if="esEstancada(ot)" class="tag tag--danger" :title="`Abierta hace ${diasAbierta(ot)} días`">
+              <AppIcon name="clock" /> {{ diasAbierta(ot) }} d
             </span>
           </td>
-          <td data-label="Cliente">{{ ot.cliente }}</td>
-          <td data-label="Patente"><span class="patente-badge">{{ ot.patente }}</span></td>
-          <td data-label="Unidad">{{ ot.unidad }}</td>
 
-          <td data-label="Mecánico">
-                <button v-if="esJefe" v-can="'tarea_gestionar_todas'"
-                        :class="['btn btn-sm btn-assign', !ot.mecanico ? 'btn-urgente' : '']" 
-                        @click="$emit('open-assign-modal', ot.ot)">
-                    {{ ot.mecanico || '⚠️ Falta Asignar' }}
-                </button>
-                <span v-else>
-                    <span v-if="!ot.mecanico" class="badge-sm badge-warn">Sin Asignar</span>
-                    <span v-else>{{ ot.mecanico }}</span>
-                </span>
-            </td>
+          <td data-label="Vehículo" class="cell-vehiculo">
+            <span class="patente">{{ ot.patente }}</span>
+            <span class="modelo" :title="$unidadCompleta(ot.unidad)">{{ $modelo(ot.unidad) }}</span>
+          </td>
 
-          <td data-label="Estado">
-            <select v-if="esJefe" v-can="'ot_cambiar_estado'" class="estado-select" @change="$emit('update-status', {ot: ot.ot, estado: $event.target.value})">
+          <td data-label="Cliente" class="cell-cliente">{{ ot.cliente }}</td>
+
+          <td data-label="Mecánico" @click.stop>
+            <button v-if="esJefe && can('tarea_gestionar_todas')"
+                    :class="['btn btn-sm', ot.mecanico ? 'btn-ghost btn-assign' : 'btn-assign btn-urgente']"
+                    @click="$emit('open-assign-modal', ot.ot)">
+              <AppIcon v-if="!ot.mecanico" name="alert" />{{ ot.mecanico || 'Asignar' }}
+            </button>
+            <template v-else>
+              <span v-if="!ot.mecanico" class="text-muted">Sin asignar</span>
+              <span v-else>{{ ot.mecanico }}</span>
+            </template>
+          </td>
+
+          <td data-label="Estado" class="cell-estado" @click.stop>
+            <select v-if="esJefe && can('ot_cambiar_estado')" class="estado-select" @change="$emit('update-status', {ot: ot.ot, estado: $event.target.value})">
               <option v-for="est in ['En Proceso', 'En Espera', 'Espera de Repuestos', 'Trabajos de Terceros', 'Finalizada']"
                       :key="est" :value="est" :selected="ot.estado_actual === est">{{ est }}</option>
             </select>
             <span v-else :class="['status-tag', statusClass(ot.estado_actual)]">{{ ot.estado_actual }}</span>
+            <span v-if="ot.es_garantia" class="tag">Garantía</span>
+            <span v-if="ot.controlada" class="tag tag--ok"><AppIcon name="check" /> Controlada</span>
           </td>
 
-          <td data-label="Garantía">{{ ot.es_garantia ? '✅' : '—' }}</td>
-          <td data-label="Controlada">{{ ot.controlada ? '✅' : '—' }}</td>
-          
-          <td data-label="Facturación">
+          <td v-if="mostrarFacturacion" data-label="Facturación">
             <template v-if="ot.estado_actual === 'Finalizada'">
-              <span v-if="tieneMontos(ot)" class="status-tag status-progress" title="Valores cargados">✅ Cargados</span>
-              <span v-else class="status-tag status-danger" title="Falta cargar importes">⚠️ Vacíos</span>
+              <span v-if="tieneMontos(ot)" class="status-tag status-progress" title="Valores cargados"><AppIcon name="check" /> Cargada</span>
+              <span v-else class="status-tag status-danger" title="Falta cargar importes"><AppIcon name="alert" /> Falta cargar</span>
             </template>
             <span v-else class="text-muted">—</span>
           </td>
 
-          <td class="actions-cell" data-label="Acciones">
-            <button v-if="esJefe && !ot.controlada" v-can="'ot_controlar'" class="btn btn-success btn-sm" @click="$emit('control-ot', ot.ot)">Controlar</button>
-            <button class="btn btn-secondary btn-sm" v-can="'ot_ver_detalle'" @click="$emit('view-detail', ot.ot)">Detalle</button>
-            <button class="btn btn-sm" v-can="'ot_editar'" @click="$emit('edit-ot', ot.ot)">Editar</button>
-            <button class="btn btn-outline btn-sm" v-can="'ot_ver_detalle'" @click="$emit('export-pdf', ot.ot)">📄 PDF</button>
-            <button class="btn btn-outline btn-sm" v-can="'ot_ver_detalle'" @click="$emit('ver-legajo', ot.ot)" title="Turno, presupuestos y trabajos realizados">📁 Legajo</button>
-            <button v-if="!ot.anulada" class="btn btn-danger btn-sm" v-can="'ot_anular'" @click="pedirAnulacion(ot)">Anular</button>
-            <button v-else class="btn btn-secondary btn-sm" v-can="'ot_anular'" @click="reactivar(ot)">Reactivar</button>
+          <td class="actions-cell" data-label="" @click.stop>
+            <button v-if="esJefe && !ot.controlada && can('ot_controlar')" class="btn btn-sm btn-ok" @click="$emit('control-ot', ot.ot)"><AppIcon name="check" /> Controlar</button>
+            <button v-if="hayAccionesMenu(ot)" type="button" class="btn btn-ghost btn-icon btn-sm btn-menu"
+                    :aria-label="`Más acciones de la OT ${ot.ot}`" aria-haspopup="menu" :aria-expanded="menu && menu.ot.ot === ot.ot ? 'true' : 'false'"
+                    @click.stop="abrirMenu(ot, $event)">
+              <AppIcon name="more" />
+            </button>
           </td>
         </tr>
       </tbody>
     </table>
 
+    <Teleport to="body">
+      <div v-if="menu" class="ot-menu" role="menu" :style="{ top: menu.top + 'px', right: menu.right + 'px' }" @click.stop>
+        <button v-if="can('ot_ver_detalle')" role="menuitem" @click="accion('view-detail', menu.ot)"><AppIcon name="eye" /> Ver detalle</button>
+        <button v-if="can('ot_editar')" role="menuitem" @click="accion('edit-ot', menu.ot)"><AppIcon name="edit" /> Editar</button>
+        <button v-if="can('ot_ver_detalle')" role="menuitem" @click="accion('ver-legajo', menu.ot)"><AppIcon name="folder" /> Legajo digital</button>
+        <button v-if="can('ot_ver_detalle')" role="menuitem" @click="accion('export-pdf', menu.ot)"><AppIcon name="file" /> Descargar PDF</button>
+        <template v-if="can('ot_anular')">
+          <hr />
+          <button v-if="!menu.ot.anulada" role="menuitem" class="danger" @click="cerrarMenu(); pedirAnulacion(menu.ot)"><AppIcon name="x" /> Anular OT</button>
+          <button v-else role="menuitem" @click="cerrarMenu(); reactivar(menu.ot)"><AppIcon name="refresh" /> Reactivar OT</button>
+        </template>
+      </div>
+    </Teleport>
+
     <div v-if="anulando" class="modal-overlay" @click.self="anulando = null">
       <div class="modal-content" style="max-width: 440px;">
         <h3>Anular OT {{ anulando.ot }}</h3>
         <p class="text-muted">La OT queda marcada en rojo y figura como "Anulada" en la planilla de NPS. Se puede reactivar después.</p>
-        <label>Motivo (opcional)</label>
-        <textarea v-model="motivoAnulacion" class="form-control" rows="3" maxlength="200"></textarea>
-        <div style="display: flex; gap: 10px; margin-top: 14px;">
+        <div class="form-group">
+          <label>Motivo (opcional)</label>
+          <textarea v-model="motivoAnulacion" class="form-control" rows="3" maxlength="200"></textarea>
+        </div>
+        <div style="display: flex; gap: 10px; margin-top: 16px;">
           <button class="btn btn-danger" :disabled="procesando" @click="confirmarAnulacion">{{ procesando ? 'Anulando...' : 'Anular OT' }}</button>
           <button class="btn btn-secondary" @click="anulando = null">Cancelar</button>
         </div>
@@ -87,10 +109,11 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { diasDesde } from '../../utils/fechas'
 import { useApi } from '../../composables/useApi'
 import { useToast, errMsg } from '../../composables/useToast'
+import { useAuthStore } from '../../stores/useAuthStore'
 const props = defineProps({
   data: { type: Array, required: true },
   esJefe: { type: Boolean, default: false },
@@ -100,7 +123,11 @@ const props = defineProps({
 })
 const emit = defineEmits(['update-status', 'view-detail', 'edit-ot', 'control-ot', 'open-assign-modal', 'export-pdf', 'ver-legajo', 'sort-change', 'refrescar'])
 
-// ─── Anulación (solo con el permiso 'ot_anular', el botón se oculta si no lo tiene) ───
+// ─── Permisos: se evalúan en cada render (v-can solo corre al montar) ───
+const authStore = useAuthStore()
+const can = (permiso) => (authStore.usuario?.permisos || []).includes(permiso)
+
+// ─── Anulación (solo con el permiso 'ot_anular', la opción se oculta si no lo tiene) ───
 const { fetchJSON } = useApi()
 const toast = useToast()
 const anulando = ref(null)
@@ -127,25 +154,21 @@ const reactivar = async (ot) => {
   } catch (err) { toast.error(errMsg(err)) }
 }
 
-// Columnas ordenables. Garantía/Controlada quedan afuera porque son
-// booleanas y ordenarlas no aporta demasiado; se pueden sumar igual
-// agregando su key acá y en el whitelist ORDENABLES del backend.
+// Columnas ordenables. "Vehículo" ordena por patente. Garantía y Controlada ya no son
+// columnas: son etiquetas dentro de Estado (solo se muestran cuando aplican).
 const columnas = [
   { key: 'ot', label: 'OT', sortable: true },
+  { key: 'patente', label: 'Vehículo', sortable: true },
   { key: 'cliente', label: 'Cliente', sortable: true },
-  { key: 'patente', label: 'Patente', sortable: true },
-  { key: 'unidad', label: 'Unidad', sortable: true },
   { key: 'mecanico', label: 'Mecánico', sortable: true },
-  { key: 'estado', label: 'Estado', sortable: true },
-  { key: 'garantia', label: 'Garantía', sortable: false },
-  { key: 'controlada', label: 'Controlada', sortable: false },
-  { key: 'facturacion', label: 'Facturación', sortable: true }
+  { key: 'estado', label: 'Estado', sortable: true }
 ]
 
-const sortIcon = (key) => {
-  if (props.sortBy !== key) return '↕'
-  return props.sortDir === 'asc' ? '▲' : '▼'
-}
+// Facturación solo tiene sentido en OTs finalizadas: si no hay ninguna en la página, no ocupa lugar.
+const mostrarFacturacion = computed(() => props.data.some(o => o.estado_actual === 'Finalizada'))
+const cantidadColumnas = computed(() => columnas.length + (mostrarFacturacion.value ? 1 : 0) + 1)
+
+const iconoOrden = (key) => props.sortBy !== key ? 'sort' : (props.sortDir === 'asc' ? 'chevron-up' : 'chevron-down')
 
 const statusClass = (estado) => ({
   'En Proceso': 'status-progress',
@@ -173,75 +196,126 @@ const diasAbierta = (ot) => {
 }
 
 const esEstancada = (ot) => ot.estado_actual !== 'Finalizada' && diasAbierta(ot) > UMBRAL_DIAS_ESTANCADA
+
+// ─── Menú de acciones por fila ("⋯") ───
+// Se dibuja con posición fija (Teleport) para que no lo recorte el scroll horizontal de la tabla.
+const menu = ref(null) // { ot, top, right }
+const abrirMenu = (ot, ev) => {
+  if (menu.value && menu.value.ot.ot === ot.ot) { menu.value = null; return }
+  const r = ev.currentTarget.getBoundingClientRect()
+  menu.value = { ot, top: r.bottom + 4, right: Math.max(8, window.innerWidth - r.right) }
+}
+const cerrarMenu = () => { menu.value = null }
+const accion = (evento, ot) => { cerrarMenu(); emit(evento, ot.ot) }
+const onTecla = (e) => { if (e.key === 'Escape') cerrarMenu() }
+onMounted(() => {
+  document.addEventListener('click', cerrarMenu)
+  document.addEventListener('keydown', onTecla)
+  window.addEventListener('resize', cerrarMenu)
+  window.addEventListener('scroll', cerrarMenu, true)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('click', cerrarMenu)
+  document.removeEventListener('keydown', onTecla)
+  window.removeEventListener('resize', cerrarMenu)
+  window.removeEventListener('scroll', cerrarMenu, true)
+})
+
+const hayAccionesMenu = (ot) => can('ot_editar') || can('ot_ver_detalle') || can('ot_anular')
+const abrirFila = (ot) => { if (can('ot_ver_detalle')) emit('view-detail', ot.ot) }
 </script>
 
 <style scoped>
-/* [PATCH modo oscuro] Todos los colores "pastel" que antes estaban
-   escritos en hex fijo (fondos de fila, chips, status-tags) ahora
-   salen de las variables --row-ready-bg / --status-*-bg / --chip-bg
-   definidas en style.css, que cambian solas al activar .dark-theme.
-   Así se evita el efecto "recuadro clarito flotando sobre fondo
-   oscuro" que se veía en la tabla de OTs. */
-.table-wrapper { overflow-x: auto; width: 100%; }
-.ot-table thead th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
-.ot-table thead th.sortable:hover { color: var(--primary, #0d6efd); }
-.sort-icon { font-size: 0.7rem; margin-left: 4px; opacity: 0.7; }
-.btn-assign { background: var(--chip-bg); border: 1px solid var(--border); color: var(--text); width: 100%; text-align: left; }
-.estado-select { padding: 6px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--text); width: 100%; max-width: 150px; }
-.actions-cell { white-space: nowrap; }
-.patente-badge { background: #111; color: white; font-family: monospace; font-weight: bold; padding: 3px 8px; border-radius: 4px; }
-.text-muted { color: var(--muted); }
+/* Los colores salen de las variables de style.css: cambian solos con el tema oscuro. */
+.table-wrapper { width: 100%; }
+.ot-table thead th.sortable { cursor: pointer; user-select: none; }
+.ot-table thead th.sortable:hover, .ot-table thead th.is-sorted { color: var(--text); }
+.sort-icon { margin-left: 3px; font-size: 0.95em; opacity: 0.45; vertical-align: -0.2em; }
+.is-sorted .sort-icon { opacity: 1; color: var(--primary-text); }
+.col-acciones { width: 1%; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
-.status-tag { font-size: 0.8rem; font-weight: 700; padding: 3px 10px; border-radius: 20px; white-space: nowrap; }
-.status-progress { background: var(--status-progress-bg); color: var(--status-progress-text); }
-.status-wait { background: var(--status-wait-bg); color: var(--status-wait-text); }
-.status-warn { background: var(--status-warn-bg); color: var(--status-warn-text); }
-.status-danger { background: var(--status-danger-bg); color: var(--status-danger-text); }
-.status-done { background: var(--status-done-bg); color: var(--status-done-text); }
+.row-click { cursor: pointer; }
+.cell-ot { white-space: nowrap; }
+.cell-ot strong { font-size: 0.95rem; }
+.cell-vehiculo { white-space: nowrap; }
+.cell-vehiculo .modelo { margin-left: 8px; color: var(--text); }
+.ot-table th, .ot-table td { padding-left: 10px; padding-right: 10px; }
+.cell-cliente { color: var(--text-soft); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cell-estado .tag { margin: 4px 0 0 0; }
+.cell-estado .tag + .tag { margin-left: 6px; }
+.cell-estado select + .tag, .cell-estado .status-tag + .tag { margin-left: 0; display: inline-flex; }
+.estado-select { min-height: 30px; padding: 3px 8px; font-size: 0.82rem; width: auto; max-width: 172px; }
 
-.btn-urgente { background-color: var(--status-urgente-bg) !important; color: var(--status-urgente-text) !important; border: 1px solid var(--status-urgente-border) !important; font-weight: bold; animation: pulse-warn 2s infinite; }
-@keyframes pulse-warn { 0% { box-shadow: 0 0 0 0 rgba(255, 193, 7, 0.4); } 70% { box-shadow: 0 0 0 6px rgba(255, 193, 7, 0); } 100% { box-shadow: 0 0 0 0 rgba(255, 193, 7, 0); } }
-
-.row-ready { background-color: var(--row-ready-bg) !important; border-left: 5px solid var(--row-ready-border); }
-.row-ready td { background-color: transparent !important; }
-
-/* OT anulada por el jefe de taller: rojo fuerte (más que "estancada") y número tachado */
-.row-anulada { background-color: var(--row-anulada-bg) !important; border-left: 5px solid var(--row-anulada-border); }
-.row-anulada td { background-color: transparent !important; }
-.ot-anulada { text-decoration: line-through; }
-.badge-anulada {
-  display: inline-block; margin-left: 8px; font-size: 0.7rem; font-weight: 800; letter-spacing: 0.4px;
-  background: var(--row-anulada-border); color: #fff; padding: 2px 8px; border-radius: 10px; white-space: nowrap;
+.tag {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 1px 8px; border-radius: 999px;
+  background: var(--chip-bg); color: var(--text-soft);
+  font-size: 0.72rem; font-weight: 600; white-space: nowrap;
 }
+.tag--ok { background: var(--status-progress-bg); color: var(--status-progress-text); }
+.tag--danger { background: var(--status-danger-bg); color: var(--status-danger-text); margin-left: 8px; }
 
-.badge-antiguedad {
-  display: inline-block; margin-left: 8px; font-size: 0.72rem; font-weight: 700;
-  background: var(--status-danger-bg); color: var(--status-danger-text); padding: 2px 7px; border-radius: 10px;
-  white-space: nowrap;
+.btn-assign { max-width: 170px; justify-content: flex-start; overflow: hidden; text-overflow: ellipsis; }
+.btn-assign.btn-ghost { font-weight: 500; color: var(--text); padding: 0 8px; margin-left: -8px; }
+.btn-ok { padding: 0 10px; background: transparent; color: var(--success); border-color: var(--success); }
+.btn-ok:hover { background: var(--status-progress-bg); }
+.btn-urgente { background: var(--status-urgente-bg); color: var(--status-urgente-text); border-color: var(--status-urgente-border); }
+.btn-urgente:hover { background: var(--status-urgente-bg); filter: brightness(0.97); }
+
+.actions-cell { white-space: nowrap; text-align: right; }
+.actions-cell .btn + .btn { margin-left: 4px; }
+.btn-menu { color: var(--text-soft); }
+
+/* Filas con estado: barra de color a la izquierda + tinte suave (sin !important) */
+.ot-table tbody tr.row-ready td { background: var(--row-ready-bg); }
+.ot-table tbody tr.row-stale td { background: var(--row-stale-bg); }
+.ot-table tbody tr.row-anulada td { background: var(--row-anulada-bg); }
+.ot-table tbody tr.row-ready td:first-child { box-shadow: inset 3px 0 0 var(--row-ready-border); }
+.ot-table tbody tr.row-stale td:first-child { box-shadow: inset 3px 0 0 var(--row-stale-border); }
+.ot-table tbody tr.row-anulada td:first-child { box-shadow: inset 3px 0 0 var(--row-anulada-border); }
+.ot-anulada { text-decoration: line-through; color: var(--muted); }
+
+/* Menú "⋯" (Teleport al body: lleva el data-v de este componente) */
+.ot-menu {
+  position: fixed; z-index: 1100; min-width: 190px; padding: 6px;
+  background: var(--surface-raised); color: var(--text);
+  border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow-md);
 }
-.row-stale { background-color: var(--row-stale-bg) !important; border-left: 5px solid var(--row-stale-border); }
-.row-stale td { background-color: transparent !important; }
+.ot-menu button {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 8px 10px; border: none; border-radius: 6px; background: transparent;
+  font: inherit; font-size: 0.88rem; color: inherit; text-align: left; cursor: pointer;
+}
+.ot-menu button:hover, .ot-menu button:focus-visible { background: var(--hover-row); outline: none; }
+.ot-menu button .icon { color: var(--text-soft); }
+.ot-menu button.danger, .ot-menu button.danger .icon { color: var(--danger); }
+.ot-menu hr { border: none; border-top: 1px solid var(--border-soft); margin: 6px 0; }
 
 @media (max-width: 850px) {
   .ot-table thead { display: none; }
   .ot-table, .ot-table tbody, .ot-table tr, .ot-table td { display: block; width: 100%; }
+  .table-wrapper { border: none; background: transparent; }
   .ot-table tr {
     border: 1px solid var(--border-soft); border-radius: var(--radius);
-    margin-bottom: 16px; padding: 12px; box-shadow: var(--shadow-sm);
+    margin-bottom: 12px; padding: 10px 14px; box-shadow: var(--shadow-sm);
     background: var(--surface); position: relative;
   }
   .ot-table td {
-    display: flex; justify-content: space-between; align-items: center;
+    display: flex; justify-content: space-between; align-items: center; gap: 12px;
     padding: 6px 0; border-bottom: 1px solid var(--border-soft); text-align: right;
+    max-width: none; white-space: normal;
   }
-  .ot-table td:last-child { border-bottom: none; margin-top: 10px; }
-  .ot-table td::before {
-    content: attr(data-label); font-weight: bold; color: var(--muted);
-    text-align: left; padding-right: 15px; font-size: 0.85rem; text-transform: uppercase;
+  .ot-table td[data-label]:not([data-label=""])::before {
+    content: attr(data-label); font-weight: 600; color: var(--muted);
+    text-align: left; font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.04em;
   }
-  .actions-cell { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
-  .estado-select { max-width: 100%; }
-  .row-ready { border-left: none; border-top: 5px solid var(--row-ready-border); }
-  .row-stale { border-left: none; border-top: 5px solid var(--row-stale-border); }
+  .ot-table td:last-child { border-bottom: none; justify-content: flex-end; }
+  .ot-table tbody tr.row-ready td, .ot-table tbody tr.row-stale td, .ot-table tbody tr.row-anulada td { background: transparent; }
+  .ot-table tbody tr.row-ready td:first-child, .ot-table tbody tr.row-stale td:first-child, .ot-table tbody tr.row-anulada td:first-child { box-shadow: none; }
+  .ot-table tr.row-ready { border-left: 4px solid var(--row-ready-border); }
+  .ot-table tr.row-stale { border-left: 4px solid var(--row-stale-border); }
+  .ot-table tr.row-anulada { border-left: 4px solid var(--row-anulada-border); }
+  .cell-cliente { max-width: none; }
 }
 </style>

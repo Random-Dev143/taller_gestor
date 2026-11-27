@@ -14,7 +14,7 @@
             :title="`Volver a mostrar solo los últimos ${DIAS_POR_DEFECTO} días`">
       Últimos {{ DIAS_POR_DEFECTO }} días
     </button>
-    <span v-if="buscando" class="ff-aviso">🔍 La búsqueda abarca todas las fechas</span>
+    <span v-if="buscando" class="ff-aviso"><AppIcon name="search" /> La búsqueda abarca todas las fechas</span>
   </div>
 </template>
 

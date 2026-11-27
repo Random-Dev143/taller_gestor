@@ -4,8 +4,8 @@
       {{ total }} OT{{ total === 1 ? '' : 's' }} · Página {{ page }} de {{ totalPages }}
     </span>
     <div class="pagination-controls">
-      <button class="btn btn-sm btn-secondary" :disabled="page <= 1" @click="$emit('cambiar-pagina', page - 1)">‹ Anterior</button>
-      <button class="btn btn-sm btn-secondary" :disabled="page >= totalPages" @click="$emit('cambiar-pagina', page + 1)">Siguiente ›</button>
+      <button class="btn btn-sm btn-secondary" :disabled="page <= 1" @click="$emit('cambiar-pagina', page - 1)"><AppIcon name="chevron-left" /> Anterior</button>
+      <button class="btn btn-sm btn-secondary" :disabled="page >= totalPages" @click="$emit('cambiar-pagina', page + 1)">Siguiente <AppIcon name="chevron-right" /></button>
     </div>
   </div>
 </template>

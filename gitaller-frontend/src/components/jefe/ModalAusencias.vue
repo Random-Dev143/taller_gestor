@@ -109,7 +109,7 @@ const guardar = async (d) => {
 .form-inline input:not([type="number"]) { flex: 1; min-width: 180px; }
 .form-inline input[type="number"] { width: 75px; }
 .badge { padding: 3px 9px; border-radius: 12px; color: white; font-weight: 600; font-size: 0.78rem; }
-.bg-success { background: #1d8a4f; }
-.bg-danger { background: #b22234; }
+.bg-success { background: var(--success-solid); color: #fff; }
+.bg-danger { background: var(--danger-solid); color: #fff; }
 .chart-hint { font-size: 0.85rem; color: var(--muted); }
 </style>

@@ -1,27 +1,28 @@
 <template>
-  <div class="login-container">
-    <div class="card login-box" style="max-width: 500px;">
-      <div class="brand-header">
-        <h1>⚙️ Configuración Inicial</h1>
-        <p class="subtitle">Define el rol de esta computadora en el taller.</p>
+  <div class="auth-screen">
+    <div class="auth-card" style="max-width: 480px;">
+      <div class="auth-brand">
+        <span class="auth-mark" aria-hidden="true">G</span>
+        <h1>Configuración inicial</h1>
+        <p>Definí el rol de esta computadora en el taller.</p>
       </div>
 
       <div v-if="!modoSeleccionado">
-        <button class="btn btn-primary w-100 mb-15" @click="seleccionarServidor" :disabled="iniciando">
-          <span style="font-size: 1.2rem;">🖥️</span> 
+        <button class="btn btn-primary w-100" style="margin-bottom: 12px;" @click="seleccionarServidor" :disabled="iniciando">
+          <AppIcon name="monitor" />
           {{ iniciando ? 'Iniciando servidor...' : 'Esta PC es el Servidor Principal' }}
         </button>
         <button class="btn btn-secondary w-100" @click="modoSeleccionado = 'cliente'" :disabled="iniciando">
-          <span style="font-size: 1.2rem;">💻</span> Esta PC es una Terminal Cliente
+          <AppIcon name="monitor" /> Esta PC es una Terminal Cliente
         </button>
       </div>
 
       <div v-else-if="modoSeleccionado === 'cliente'">
-        <div class="form-group mb-15 text-left">
+        <div class="form-group">
           <label>Ingresa la IP de la PC Servidor:</label>
           <input type="text" v-model="ipServidor" class="form-control" placeholder="Ej: 192.168.1.50" autofocus />
         </div>
-        <button class="btn btn-success w-100 mb-10" @click="guardarCliente" :disabled="!ipServidor">
+        <button class="btn btn-success w-100" style="margin-bottom: 10px;" @click="guardarCliente" :disabled="!ipServidor">
           Conectar y Guardar
         </button>
         <button class="btn btn-outline w-100" @click="modoSeleccionado = null">
@@ -69,13 +70,5 @@ const guardarCliente = () => {
 </script>
 
 <style scoped>
-.login-container { display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: -20px; background: linear-gradient(135deg, #0056a7 0%, #003f7d 100%); }
-.login-box { width: 100%; text-align: center; padding: 40px 30px; }
-.brand-header h1 { color: var(--primary); margin-bottom: 5px; }
-.subtitle { color: var(--muted); font-size: 0.95rem; margin-bottom: 25px; }
-.mb-10 { margin-bottom: 10px; }
-.mb-15 { margin-bottom: 15px; }
-.text-left { text-align: left; }
-
-
+.btn { min-height: 42px; }
 </style>

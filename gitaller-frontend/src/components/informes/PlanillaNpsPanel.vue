@@ -2,7 +2,7 @@
   <div class="nps-panel" v-can="'informe_nps'">
     <div class="nps-head">
       <div>
-        <h3>📋 Planilla NPS (Excel)</h3>
+        <h3><AppIcon name="clipboard" /> Planilla NPS (Excel)</h3>
         <p class="text-muted nps-sub">
           Incluye las OT <strong>abiertas</strong> en el período. Se llamará <strong>{{ titulo || '—' }}</strong>.
         </p>
@@ -19,27 +19,27 @@
         <input type="date" v-model="hasta" class="form-control date-input" />
       </div>
       <button class="btn" @click="descargar" :disabled="!periodoValido || ocupado">
-        {{ ocupado === 'descargar' ? 'Generando...' : '⬇ Descargar planilla' }}
+        {{ ocupado === 'descargar' ? 'Generando...' : 'Descargar planilla' }}
       </button>
       <button class="btn btn-outline" @click="guardarEnCarpeta" :disabled="!periodoValido || ocupado || !estado.carpeta"
         :title="estado.carpeta ? 'Guarda una copia en ' + estado.carpeta : 'Configure la carpeta en Configuración'">
-        {{ ocupado === 'guardar' ? 'Guardando...' : '💾 Guardar en carpeta' }}
+        {{ ocupado === 'guardar' ? 'Guardando...' : 'Guardar en carpeta' }}
       </button>
     </div>
     <p v-if="errorPeriodo" class="nps-error">{{ errorPeriodo }}</p>
 
     <div class="nps-auto" v-if="estado.carpeta !== null">
       <template v-if="!estado.carpeta">
-        ⚠️ El informe automático no está activo: falta definir la <strong>carpeta de informes</strong> en Configuración.
+        <AppIcon name="alert" /> El informe automático no está activo: falta definir la <strong>carpeta de informes</strong> en Configuración.
       </template>
       <template v-else-if="!estado.auto_activo">
         El informe automático está desactivado. Carpeta: <code>{{ estado.carpeta }}</code>
       </template>
       <template v-else>
-        ⏱️ Cada 1 y 16 el sistema guarda solo la planilla en <code>{{ estado.carpeta }}</code>.
+        <AppIcon name="clock" /> Cada 1 y 16 el sistema guarda solo la planilla en <code>{{ estado.carpeta }}</code>.
         <span v-if="ultimoAuto">Último: <strong>{{ tituloDe(ultimoAuto.desde, ultimoAuto.hasta) }}</strong> ({{ ultimoAuto.filas }} OT, {{ formatFecha(ultimoAuto.generado_en) }}).</span>
         <span v-else>Todavía no se generó ninguno.</span>
-        <span v-if="falloReciente" class="nps-error"> ⚠️ El último intento falló: {{ falloReciente.error }}</span>
+        <span v-if="falloReciente" class="nps-error"> <AppIcon name="alert" /> El último intento falló: {{ falloReciente.error }}</span>
       </template>
     </div>
   </div>

@@ -32,9 +32,9 @@ const claseColor = computed(() => {
   padding: 1px 8px;
   border-radius: 10px;
 }
-.delta-positivo { background: rgba(29, 138, 79, 0.15); color: #1d8a4f; }
-.delta-negativo { background: rgba(178, 34, 52, 0.15); color: #b22234; }
-.delta-neutral { background: rgba(184, 134, 11, 0.15); color: #b8860b; }
+.delta-positivo { background: var(--status-progress-bg); color: var(--status-progress-text); }
+.delta-negativo { background: var(--status-danger-bg); color: var(--status-danger-text); }
+.delta-neutral { background: var(--status-warn-bg); color: var(--status-warn-text); }
 
 /* Dentro de la tarjeta destacada (fondo azul) los colores de arriba no
    contrastan bien, se usa una variante más clara. */

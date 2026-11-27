@@ -1,6 +1,9 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '../stores/useAuthStore'
 
+// Quien tenga alguno de estos permisos usa el layout de oficina; el resto (solo mecánico) va a su tablero.
+const STAFF = ['ot_ver_lista', 'turno_ver', 'tarea_gestionar_todas', 'usuario_gestionar']
+
 const routes = [
   {
     path: '/setup',
@@ -15,30 +18,42 @@ const routes = [
     meta: { requiresAuth: false }
   },
   {
+    // Todo el personal de oficina (asesor, jefe de taller, administración) comparte este
+    // layout con barra lateral. Cada pantalla se muestra según los permisos del usuario.
     path: '/',
-    name: 'home',
-    component: () => import('../views/HomeView.vue'),
-    // El menú principal es el concentrador. Solo exige estar logueado, sin permiso específico.
-    meta: { requiresAuth: true } 
+    component: () => import('../components/layout/AppLayout.vue'),
+    meta: { requiresAuth: true },
+    children: [
+      { path: '', name: 'home', component: () => import('../views/InicioView.vue'),
+        meta: { title: 'Inicio', anyPermission: STAFF } },
+      { path: 'ordenes', name: 'ordenes', component: () => import('../views/OrdenesView.vue'), props: { modo: 'activas' },
+        meta: { title: 'Órdenes en taller', anyPermission: ['ot_ver_lista'] } },
+      { path: 'finalizadas', name: 'finalizadas', component: () => import('../views/OrdenesView.vue'), props: { modo: 'finalizadas' },
+        meta: { title: 'Órdenes finalizadas', anyPermission: ['ot_ver_lista'] } },
+      { path: 'nueva-ot', name: 'nueva-ot', component: () => import('../views/NuevaOTView.vue'),
+        meta: { title: 'Nueva orden de trabajo', anyPermission: ['ot_crear'] } },
+      { path: 'turnos', name: 'turnos', component: () => import('../views/TurnosView.vue'),
+        meta: { title: 'Turnos', anyPermission: ['turno_ver', 'turno_gestionar'] } },
+      { path: 'clientes', name: 'clientes', component: () => import('../components/asesor/AgendaClientes.vue'),
+        meta: { title: 'Clientes y unidades', anyPermission: ['ot_ver_lista'] } },
+      { path: 'informes', name: 'informes', component: () => import('../views/InformesView.vue'),
+        meta: { title: 'Informes', anyPermission: ['informe_financiero', 'informe_operativo', 'informe_taller'] } },
+      { path: 'rendimiento', name: 'rendimiento', component: () => import('../components/jefe/TableroRendimiento.vue'),
+        meta: { title: 'Rendimiento del taller', anyPermission: ['tarea_gestionar_todas'] } },
+      { path: 'equipo', name: 'equipo', component: () => import('../components/asesor/AdminLegajos.vue'),
+        meta: { title: 'Legajos del personal', anyPermission: ['ot_ver_lista'] } },
+      { path: 'admin/usuarios', name: 'admin-usuarios', component: () => import('../components/asesor/AdminUsuarios.vue'),
+        meta: { title: 'Usuarios y accesos', anyPermission: ['usuario_gestionar'] } },
+      { path: 'admin/perfiles', name: 'admin-perfiles', component: () => import('../components/asesor/AdminRoles.vue'),
+        meta: { title: 'Perfiles y permisos', anyPermission: ['usuario_gestionar'] } },
+      { path: 'admin/configuracion', name: 'admin-configuracion', component: () => import('../components/asesor/AdminConfiguracion.vue'),
+        meta: { title: 'Configuración', anyPermission: ['usuario_gestionar'] } }
+    ]
   },
-  {
-    path: '/admin',
-    name: 'admin',
-    component: () => import('../views/AdminView.vue'),
-    meta: { requiresAuth: true, requiredPermission: 'usuario_gestionar' } 
-  },
-  {
-    path: '/asesor',
-    name: 'asesor',
-    component: () => import('../views/AsesorView.vue'),
-    meta: { requiresAuth: true, requiredPermission: 'ot_ver_lista' }
-  },
-  {
-    path: '/jefe',
-    name: 'jefe',
-    component: () => import('../views/JefeView.vue'),
-    meta: { requiresAuth: true, requiredPermission: 'tarea_gestionar_todas' }
-  },
+  // Direcciones de las versiones anteriores (marcadores y accesos directos que ya existan)
+  { path: '/asesor', redirect: '/ordenes' },
+  { path: '/jefe', redirect: '/ordenes' },
+  { path: '/admin', redirect: '/admin/configuracion' },
   {
     path: '/mecanico',
     name: 'mecanico',
@@ -91,15 +106,16 @@ router.beforeEach(async (to, from, next) => {
           return next({ name: 'login' });
       }
 
-      // 3. Control granular: ¿La ruta exige una llave/permiso particular?
-      if (to.meta.requiredPermission) {
-          const permisosUsuario = authStore.usuario?.permisos || [];
-          const tienePermiso = permisosUsuario.includes(to.meta.requiredPermission);
-          
-          if (!tienePermiso) {
-              console.warn(`🔒 Acceso bloqueado. Permiso faltante: ${to.meta.requiredPermission}`);
-              return next({ name: 'home' }); // Expulsado al menú central
-          }
+      // 3. Control granular: ¿la ruta exige algún permiso (o uno de varios)?
+      const permisosUsuario = authStore.usuario?.permisos || [];
+      const exigidos = to.meta.anyPermission || (to.meta.requiredPermission ? [to.meta.requiredPermission] : null);
+      if (exigidos && !exigidos.some(p => permisosUsuario.includes(p))) {
+          console.warn(`Acceso bloqueado. Permiso faltante: ${exigidos.join(' / ')}`);
+          // Quien solo tiene permisos de mecánico no tiene "Inicio": va directo a su tablero.
+          const soloMecanico = !STAFF.some(p => permisosUsuario.includes(p)) && permisosUsuario.includes('tarea_ver_propias');
+          if (soloMecanico) return next({ path: '/mecanico' });
+          if (to.name === 'home') { await authStore.logout(); return next({ name: 'login' }); }
+          return next({ name: 'home' });
       }
   }
 

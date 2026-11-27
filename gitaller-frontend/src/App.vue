@@ -1,5 +1,5 @@
 <template>
-  <div class="container" id="app">
+  <div id="app">
     <router-view />
     <ToastContainer />
     <SessionExpiryModal />
@@ -149,7 +149,7 @@ onMounted(async () => {
         const res = await fetch(pingUrl, { cache: 'no-store' });
         if (!res.ok) throw new Error('Servidor responde con error');
       } catch (err) {
-        console.warn('⚠️ Backend no responde. Intentando revivir el subproceso...');
+        console.warn('Backend no responde. Intentando revivir el subproceso...');
         try {
           await invoke('start_server');
         } catch (invokeErr) {

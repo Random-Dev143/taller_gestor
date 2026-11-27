@@ -1,15 +1,15 @@
 <template>
   <div class="view-mecanico">
-    <NavBar brand="🛠️ Mi Panel - Taller" :tabs="tabs" v-model:activeTab="activeTab" logoutText="Cambiar legajo" customLogout @logout="cambiarLegajo" />
+    <NavBar brand="Mi panel" :tabs="tabs" v-model:activeTab="activeTab" logoutText="Cambiar legajo" customLogout @logout="cambiarLegajo" />
 
     <!-- Aportes que el Jefe habilitó para corregir. Va fuera del bloque de tareas a propósito:
          tiene que verse aunque el mecánico no tenga ninguna tarea pendiente. -->
     <div v-if="aportesCorregibles.length" class="card card-correccion">
-      <h2>✏️ Aportes para corregir</h2>
+      <h2><AppIcon name="edit" /> Aportes para corregir</h2>
       <p class="correccion-ayuda">El Jefe de Taller te habilitó a corregir {{ aportesCorregibles.length === 1 ? 'este aporte' : 'estos aportes' }}. Podés modificar cada uno <strong>una sola vez</strong>.</p>
       <div v-for="ap in aportesCorregibles" :key="ap.id" class="correccion-item">
         <div class="correccion-cabecera">
-          <strong>OT {{ ap.ot }}</strong> · {{ ap.patente }} · {{ ap.unidad }} <span class="correccion-cliente">({{ ap.cliente }})</span>
+          <strong>OT {{ ap.ot }}</strong> · {{ ap.patente }} · {{ $modelo(ap.unidad) }} <span class="correccion-cliente">({{ ap.cliente }})</span>
         </div>
         <textarea v-model="textosCorreccion[ap.id]" rows="4" class="form-control" :disabled="guardandoAporte === ap.id"></textarea>
         <button class="btn btn-success btn-sm mt-8" :disabled="guardandoAporte === ap.id" @click="guardarCorreccionAporte(ap)">
@@ -32,7 +32,7 @@
       <section v-if="tareaEnCurso" class="activa-bar" aria-live="polite">
         <span class="estado-linea estado-linea--fuerte"><span class="dot dot--activa"></span>EN CURSO</span>
         <button v-if="tareaEnCurso.ot !== '0000'" type="button" class="activa-bar__ot" title="Ir a esta OT" @click="irAOrden(tareaEnCurso)">
-          #{{ tareaEnCurso.ot }} <span class="patente-badge patente-badge--mini">{{ tareaEnCurso.patente }}</span>
+          #{{ tareaEnCurso.ot }} <span class="patente patente--mini">{{ tareaEnCurso.patente }}</span>
         </button>
         <span v-else class="activa-bar__ot">Tarea interna</span>
         <span class="activa-bar__desc" :title="tareaEnCurso.descripcion">{{ tareaEnCurso.descripcion }}</span>
@@ -45,12 +45,12 @@
         </span>
         <span class="activa-bar__acciones">
           <template v-if="tareaEnCurso.ot !== '0000'">
-            <button v-can="'tarea_operar'" class="act-btn" @click="abrirPausa(tareaEnCurso)">⏸ Pausar</button>
-            <button v-can="'tarea_operar'" class="act-btn act-btn--success" @click="abrirFinalizar(tareaEnCurso)">✔ Finalizar mi parte</button>
+            <button v-can="'tarea_operar'" class="act-btn" @click="abrirPausa(tareaEnCurso)"><AppIcon name="pause" /> Pausar</button>
+            <button v-can="'tarea_operar'" class="act-btn act-btn--success" @click="abrirFinalizar(tareaEnCurso)"><AppIcon name="check" /> Finalizar mi parte</button>
           </template>
           <template v-else>
-            <button v-can="'tarea_operar'" class="act-btn" @click="toggleTareaInterna(tareaEnCurso)">⏸ Pausar</button>
-            <button v-if="!tareaEnCurso.es_rutina" v-can="'tarea_operar'" class="act-btn act-btn--success" @click="finalizarTareaInterna(tareaEnCurso)">✔ Finalizar</button>
+            <button v-can="'tarea_operar'" class="act-btn" @click="toggleTareaInterna(tareaEnCurso)"><AppIcon name="pause" /> Pausar</button>
+            <button v-if="!tareaEnCurso.es_rutina" v-can="'tarea_operar'" class="act-btn act-btn--success" @click="finalizarTareaInterna(tareaEnCurso)"><AppIcon name="check" /> Finalizar</button>
           </template>
         </span>
       </section>
@@ -65,7 +65,7 @@
           <div class="lista__cabecera">
             <span class="legajo-pill">Legajo <strong>{{ legajo }}</strong></span>
             <span class="lista__titulo">Mis OT ({{ ordenesAgrupadas.length }})</span>
-            <button class="act-btn act-btn--icono" @click="cargarTareas(false)" :disabled="loading" title="Actualizar ahora" aria-label="Actualizar ahora">🔄</button>
+            <button class="act-btn act-btn--icono" @click="cargarTareas(false)" :disabled="loading" title="Actualizar ahora" aria-label="Actualizar ahora"><AppIcon name="refresh" /></button>
           </div>
 
           <nav class="lista__items" aria-label="Órdenes de trabajo asignadas">
@@ -75,8 +75,8 @@
               @click="seleccion = orden.ot">
               <span class="dot" :class="`dot--${estadoVisualOrden(orden)}`"></span>
               <span class="ot-item__txt">
-                <span class="ot-item__l1"><strong>#{{ orden.ot }}</strong><span class="patente-badge patente-badge--mini">{{ orden.patente }}</span></span>
-                <span class="ot-item__l2">{{ orden.unidad }}</span>
+                <span class="ot-item__l1"><strong>#{{ orden.ot }}</strong><span class="patente patente--mini">{{ orden.patente }}</span></span>
+                <span class="ot-item__l2" :title="$unidadCompleta(orden.unidad)">{{ $modelo(orden.unidad) }}</span>
                 <span class="ot-item__l3">{{ ESTADOS_VISUALES[estadoVisualOrden(orden)].texto }}</span>
               </span>
               <span v-if="orden.tareas.length > 1" class="ot-item__n" :title="`${orden.tareas.length} tareas`">{{ orden.tareas.length }}</span>
@@ -100,10 +100,10 @@
             <header class="det-cabecera">
               <div class="det-cabecera__fila">
                 <span class="det-cabecera__num">#{{ otActual.ot }}</span>
-                <span class="patente-badge">{{ otActual.patente }}</span>
+                <span class="patente">{{ otActual.patente }}</span>
                 <span class="chip"><span class="dot" :class="`dot--${estadoVisualOrden(otActual)}`"></span>{{ ESTADOS_VISUALES[estadoVisualOrden(otActual)].texto }}</span>
               </div>
-              <h2 class="det-cabecera__unidad">{{ otActual.unidad }}</h2>
+              <h2 class="det-cabecera__unidad" :title="$unidadCompleta(otActual.unidad)">{{ $modelo(otActual.unidad) }}</h2>
               <div class="det-cabecera__cliente">{{ otActual.cliente }}</div>
             </header>
 
@@ -138,12 +138,12 @@
                 <!-- Acciones sobre TU propio estado, independiente del resto del equipo.
                      Un solo botón destacado por tarea; el resto, discretos. -->
                 <div class="acciones-tarea">
-                  <button v-if="tarea.mi_estado === 'Asignada'" v-can="'tarea_operar'" @click="cambiarEstado(tarea, 'En Curso')" class="act-btn" :class="clasePrincipal(tarea, 'iniciar')">▶ Iniciar</button>
-                  <button v-if="tarea.mi_estado === 'Pausada'" v-can="'tarea_operar'" @click="cambiarEstado(tarea, 'En Curso')" class="act-btn" :class="clasePrincipal(tarea, 'iniciar')">▶ Reanudar</button>
-                  <button v-if="tarea.mi_estado === 'En Curso'" v-can="'tarea_operar'" @click="abrirPausa(tarea)" class="act-btn">⏸ Pausar</button>
-                  <button v-if="['En Curso', 'Pausada'].includes(tarea.mi_estado)" v-can="'tarea_operar'" @click="abrirFinalizar(tarea)" class="act-btn" :class="clasePrincipal(tarea, 'finalizar')">✔ Finalizar mi parte</button>
+                  <button v-if="tarea.mi_estado === 'Asignada'" v-can="'tarea_operar'" @click="cambiarEstado(tarea, 'En Curso')" class="act-btn" :class="clasePrincipal(tarea, 'iniciar')"><AppIcon name="play" /> Iniciar</button>
+                  <button v-if="tarea.mi_estado === 'Pausada'" v-can="'tarea_operar'" @click="cambiarEstado(tarea, 'En Curso')" class="act-btn" :class="clasePrincipal(tarea, 'iniciar')"><AppIcon name="play" /> Reanudar</button>
+                  <button v-if="tarea.mi_estado === 'En Curso'" v-can="'tarea_operar'" @click="abrirPausa(tarea)" class="act-btn"><AppIcon name="pause" /> Pausar</button>
+                  <button v-if="['En Curso', 'Pausada'].includes(tarea.mi_estado)" v-can="'tarea_operar'" @click="abrirFinalizar(tarea)" class="act-btn" :class="clasePrincipal(tarea, 'finalizar')"><AppIcon name="check" /> Finalizar mi parte</button>
                   <!-- La tarea completa fue cerrada por el Jefe: solo queda completar el informe -->
-                  <button v-if="tarea.estado === 'Cerrada por Jefe' && tarea.mi_estado !== 'Finalizada'" v-can="'tarea_operar'" @click="abrirInformar(tarea)" class="act-btn" :class="clasePrincipal(tarea, 'informar')">📝 Informar</button>
+                  <button v-if="tarea.estado === 'Cerrada por Jefe' && tarea.mi_estado !== 'Finalizada'" v-can="'tarea_operar'" @click="abrirInformar(tarea)" class="act-btn" :class="clasePrincipal(tarea, 'informar')">Informar</button>
                 </div>
               </article>
             </div>
@@ -159,15 +159,15 @@
           <article v-for="tarea in tareasInternas" :key="tarea.id" class="tarea" :class="{ 'tarea--activa': tarea.mi_estado === 'En Curso' }">
             <div class="tarea__estado">
               <span class="estado-linea"><span class="dot" :class="dotClass(tarea.mi_estado)"></span>{{ tarea.mi_estado }}</span>
-              <span v-if="tarea.es_rutina" class="tarea__general" title="Tarea rutinaria: siempre disponible, no se cierra">🔁 Rutina</span>
+              <span v-if="tarea.es_rutina" class="tarea__general" title="Tarea rutinaria: siempre disponible, no se cierra"><AppIcon name="refresh" /> Rutina</span>
             </div>
             <h4 class="tarea__desc">{{ tarea.descripcion }}</h4>
             <p class="tarea__general">Asignado por Jefe de Taller</p>
             <div class="acciones-tarea">
-              <button v-if="tarea.mi_estado !== 'En Curso'" v-can="'tarea_operar'" @click="toggleTareaInterna(tarea)" class="act-btn act-btn--primary">▶ Iniciar{{ tarea.es_rutina ? ' rutina' : '' }}</button>
-              <button v-else v-can="'tarea_operar'" @click="toggleTareaInterna(tarea)" class="act-btn">⏸ Pausar</button>
+              <button v-if="tarea.mi_estado !== 'En Curso'" v-can="'tarea_operar'" @click="toggleTareaInterna(tarea)" class="act-btn act-btn--primary"><AppIcon name="play" /> Iniciar{{ tarea.es_rutina ? ' rutina' : '' }}</button>
+              <button v-else v-can="'tarea_operar'" @click="toggleTareaInterna(tarea)" class="act-btn"><AppIcon name="pause" /> Pausar</button>
               <!-- Solo las extraordinarias se pueden cerrar; las rutinas nunca -->
-              <button v-if="!tarea.es_rutina && ['En Curso', 'Pausada'].includes(tarea.mi_estado)" v-can="'tarea_operar'" @click="finalizarTareaInterna(tarea)" class="act-btn">✔ Finalizar</button>
+              <button v-if="!tarea.es_rutina && ['En Curso', 'Pausada'].includes(tarea.mi_estado)" v-can="'tarea_operar'" @click="finalizarTareaInterna(tarea)" class="act-btn"><AppIcon name="check" /> Finalizar</button>
             </div>
           </article>
         </div>
@@ -507,12 +507,10 @@ onUnmounted(() => {
    ════════════════════════════════════════════════════════════════ */
 .view-mecanico {
   display: flex; flex-direction: column;
-  /* rompe el .container (max-width + padding) para llegar a los bordes de la pantalla */
-  width: 100vw; height: 100vh; height: 100dvh;
-  margin: -20px 0 -20px calc(50% - 50vw);
+    width: 100%; height: 100vh; height: 100dvh;
   overflow: hidden;
 }
-.view-mecanico > .navbar { flex: none; margin-bottom: 0; border-radius: 0; }
+.view-mecanico > .topbar { flex: none; }
 .view-mecanico > .loading-state, .view-mecanico > .empty-state { flex: 1; }
 
 /* ── Aportes para corregir (se ve aunque no haya tareas) ──── */
@@ -521,15 +519,11 @@ onUnmounted(() => {
 .correccion-item { border-top: 1px solid var(--border-soft); padding: 12px 0; }
 .correccion-cabecera { margin-bottom: 6px; font-size: 0.95rem; }
 .correccion-cliente { color: var(--muted); }
-.mt-8 { margin-top: 8px; }
 
 /* ── Piezas comunes ───────────────────────────────────────── */
-.num { font-variant-numeric: tabular-nums; }
 .num--vivo { color: var(--success); }
 .num--alerta { color: var(--warning); }
-.legajo-pill { background: var(--primary-light); color: var(--primary); padding: 3px 10px; border-radius: 20px; font-size: 0.78rem; white-space: nowrap; }
-.patente-badge { background: #fff; color: #111; border: 2px solid #111; padding: 1px 9px; border-radius: 6px; font-family: monospace; font-weight: 700; font-size: 1rem; letter-spacing: 1px; }
-.patente-badge--mini { border-width: 1px; padding: 0 6px; font-size: 0.78rem; letter-spacing: 0.5px; }
+.legajo-pill { background: var(--primary-light); color: var(--primary-text); padding: 3px 10px; border-radius: 20px; font-size: 0.78rem; white-space: nowrap; }
 
 /* Estado = punto de color + texto. Mismos colores en lista, detalle y leyenda. */
 .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex-shrink: 0; display: inline-block; margin-right: 6px; }
@@ -537,13 +531,12 @@ onUnmounted(() => {
 .dot--pendiente { background: var(--primary); }
 .dot--pausada { background: var(--muted); }
 .dot--repuestos { background: var(--warning); }
-.dot--terceros { background: #8b5cf6; }
+.dot--terceros { background: var(--violet); }
 .dot--hecha { background: var(--border); }
-@keyframes latido { 0% { box-shadow: 0 0 0 0 rgba(39, 174, 96, 0.55); } 70%, 100% { box-shadow: 0 0 0 7px rgba(39, 174, 96, 0); } }
+@keyframes latido { 0% { box-shadow: 0 0 0 0 rgba(52, 179, 111, 0.55); } 70%, 100% { box-shadow: 0 0 0 7px rgba(52, 179, 111, 0); } }
 @media (prefers-reduced-motion: reduce) { .dot--activa { animation: none; } }
 .estado-linea { display: inline-flex; align-items: center; font-size: 0.8rem; font-weight: 600; color: var(--text-soft); white-space: nowrap; }
 .estado-linea--fuerte { color: var(--success); letter-spacing: 0.5px; }
-.chip { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 20px; background: var(--hover-row); font-size: 0.8rem; font-weight: 600; color: var(--text-soft); }
 
 /* ── Botones: uno destacado, el resto discretos ───────────── */
 .acciones-tarea { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -556,12 +549,12 @@ onUnmounted(() => {
 }
 .act-btn:hover { background: var(--hover-row); }
 .act-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.act-btn--primary { background: var(--primary); border-color: var(--primary); color: #fff; }
-.act-btn--success { background: var(--success); border-color: var(--success); color: #fff; }
+.act-btn--primary { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+.act-btn--success { background: var(--success-solid); border-color: var(--success-solid); color: #fff; }
 .act-btn--primary:hover { background: var(--primary); filter: brightness(1.1); }
-.act-btn--success:hover { background: var(--success); filter: brightness(1.1); }
+.act-btn--success:hover { background: var(--success-solid); filter: brightness(1.1); }
 .act-btn--icono { flex: none; min-height: 32px; padding: 4px 10px; }
-.act-btn:focus-visible, .ot-item:focus-visible, .activa-bar__ot:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.act-btn:focus-visible, .ot-item:focus-visible, .activa-bar__ot:focus-visible { outline: 2px solid var(--primary-text); outline-offset: 2px; }
 
 /* ═══ 1. Barra de la tarea en curso ═══ */
 .activa-bar {
@@ -572,7 +565,7 @@ onUnmounted(() => {
 .activa-bar--libre { background: var(--surface); border-bottom-color: var(--border-soft); border-left-color: var(--border); color: var(--muted); font-size: 0.9rem; }
 .activa-bar__ot { display: inline-flex; align-items: center; gap: 8px; padding: 0; background: none; border: 0; font: inherit; font-size: 1.1rem; font-weight: 800; color: var(--text); white-space: nowrap; cursor: pointer; }
 span.activa-bar__ot { cursor: default; font-size: 1rem; }
-.activa-bar__ot:hover { color: var(--primary); }
+.activa-bar__ot:hover { color: var(--primary-text); }
 .activa-bar__desc { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .activa-bar__tiempos { display: flex; gap: 20px; }
 .tiempo { display: flex; flex-direction: column; line-height: 1.15; }
@@ -662,11 +655,5 @@ span.activa-bar__ot { cursor: default; font-size: 1rem; }
   .act-btn--icono { flex: none; min-height: 32px; padding: 2px 12px; }   /* gana a la regla de arriba */
   .lista__titulo { white-space: nowrap; }
 
-  /* NavBar compacto: en celular no puede comerse media pantalla */
-  .view-mecanico > .navbar { flex-direction: row; align-items: center; padding: 6px 10px; gap: 4px 8px; }
-  .view-mecanico > .navbar :deep(.brand) { margin-top: 0; text-align: left; }
-  .view-mecanico > .navbar :deep(button) { padding: 4px 10px; font-size: 0.85rem; }
-  .view-mecanico > .navbar :deep(.brand) { font-size: 0.9rem; }
-  .view-mecanico > .navbar :deep(img) { display: none; }
 }
 </style>

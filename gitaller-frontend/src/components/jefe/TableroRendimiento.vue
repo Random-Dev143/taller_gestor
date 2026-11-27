@@ -1,7 +1,7 @@
 <template>
-  <div class="card">
+  <div class="flat">
     <div class="header-row">
-      <h2>Rendimiento y Productividad del Taller</h2>
+      <span class="toolbar-spacer"></span>
     </div>
 
     <div class="dashboard-controls">

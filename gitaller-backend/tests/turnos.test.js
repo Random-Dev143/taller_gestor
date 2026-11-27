@@ -157,7 +157,12 @@ describe('legajo digital: documentos PDF', () => {
         return { status: res.status, data: await res.json() };
     };
 
-    afterAll(() => { fs.rmSync(carpeta, { recursive: true, force: true }); });
+    // Parte siempre de "sin carpeta configurada", sin importar qué hayan dejado otros archivos de test.
+    beforeAll(async () => { await put('/api/configuracion/documentos', { carpeta_documentos: '' }, { token }); });
+    afterAll(async () => {
+        await put('/api/configuracion/documentos', { carpeta_documentos: '' }, { token });
+        fs.rmSync(carpeta, { recursive: true, force: true });
+    });
 
     test('sin carpeta configurada no se puede subir', async () => {
         const r = await subir({ tipo: 'presupuesto' });

@@ -6,7 +6,7 @@
 
       <div class="resumen">
         <div><strong>{{ turno.cliente }}</strong></div>
-        <div><span class="patente">{{ turno.patente }}</span> {{ turno.unidad }}</div>
+        <div><span class="patente">{{ turno.patente }}</span> <span :title="$unidadCompleta(turno.unidad)">{{ $modelo(turno.unidad) }}</span></div>
         <div class="sub">
           {{ tipoTexto }} · {{ turno.horas_estimadas || 0 }} h estimadas
           <template v-if="turno.estado === 'sin_confirmar'"> · <strong class="sin-conf">el cliente no confirmó el turno</strong></template>
@@ -105,6 +105,5 @@ const generar = async () => {
 .resumen { background: var(--border-soft); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; margin: 10px 0 14px; display: grid; gap: 2px; }
 .sub { font-size: 0.82rem; color: var(--text-soft); }
 .sin-conf { color: var(--warning); }
-.patente { background: #fff; color: #111; border: 1px solid #111; padding: 0 6px; border-radius: 5px; font-family: monospace; font-weight: 700; margin-right: 6px; }
 .aviso { margin: 10px 0 0; padding: 8px 12px; border-radius: 6px; font-size: 0.88rem; background: var(--warning-light); border: 1px solid var(--warning); color: var(--text); }
 </style>

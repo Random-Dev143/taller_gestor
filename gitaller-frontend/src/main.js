@@ -5,6 +5,8 @@ import router from './router'
 import { useAuthStore } from './stores/useAuthStore'
 import { initRuntimePort } from './runtimePort'
 import './style.css'
+import AppIcon from './components/common/AppIcon.vue'
+import { modeloUnidad, unidadCompleta } from './utils/unidad'
 
 // Antes de montar: si estamos en Tauri, intentamos leer el puerto real
 // donde quedó escuchando el backend (puede diferir del default si se
@@ -16,6 +18,12 @@ const app = createApp(App)
 
 app.use(createPinia())
 app.use(router)
+
+// Disponibles en todas las plantillas sin importar nada:
+//   <AppIcon name="search" />   ·   {{ $modelo(ot.unidad) }}   ·   :title="$unidadCompleta(ot.unidad)"
+app.component('AppIcon', AppIcon)
+app.config.globalProperties.$modelo = modeloUnidad
+app.config.globalProperties.$unidadCompleta = unidadCompleta
 
 app.directive('can', {
     mounted(el, binding) {

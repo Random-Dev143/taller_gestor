@@ -13,11 +13,11 @@
         </label>
 
         <div class="form-group mb-15">
-          <label>Causa del desperfecto <span v-if="!form.esAuxiliar">*</span> <span style="color:var(--primary); font-weight:normal;">(Compartida en toda la OT)</span></label>
+          <label>Causa del desperfecto <span v-if="!form.esAuxiliar">*</span> <span style="color: var(--primary-text); font-weight:normal;">(Compartida en toda la OT)</span></label>
           <textarea v-model="form.causa" rows="3" class="form-control" :required="!form.esAuxiliar" placeholder="Describa el origen del problema..."></textarea>
         </div>
         <div v-if="!form.esAuxiliar" class="form-group mb-15">
-          <label>Reparación realizada * <span style="color:var(--primary); font-weight:normal;">(Tu aporte individual)</span></label>
+          <label>Reparación realizada * <span style="color: var(--primary-text); font-weight:normal;">(Tu aporte individual)</span></label>
           <textarea v-model="form.reparacion" rows="3" class="form-control" required placeholder="Describa el trabajo que ejecutaste..."></textarea>
         </div>
         <button type="submit" class="btn btn-success w-100 mt-10">

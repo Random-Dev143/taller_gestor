@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "GITaller",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "identifier": "com.RandomDev.GiTaller",
   "build": {
     "frontendDist": "../dist",
@@ -13,8 +13,11 @@
     "windows": [
       {
         "title": "GITaller",
-        "width": 800,
-        "height": 600,
+        "width": 1280,
+        "height": 800,
+        "minWidth": 900,
+        "minHeight": 600,
+        "center": true,
         "resizable": true,
         "fullscreen": false
       }

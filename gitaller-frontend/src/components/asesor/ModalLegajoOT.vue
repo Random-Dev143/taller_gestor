@@ -7,7 +7,7 @@
       <div v-if="cargando" class="loading-state"><div class="spinner"></div>Cargando legajo...</div>
       <template v-else-if="legajo">
         <p class="text-muted">
-          <span class="patente">{{ legajo.orden.patente }}</span> {{ legajo.orden.unidad }} · {{ legajo.orden.cliente }}
+          <span class="patente">{{ legajo.orden.patente }}</span> <span :title="$unidadCompleta(legajo.orden.unidad)">{{ $modelo(legajo.orden.unidad) }}</span> · {{ legajo.orden.cliente }}
           <span v-if="legajo.orden.es_garantia" class="etiqueta">Garantía</span>
           <span v-if="legajo.orden.es_retrabajo" class="etiqueta etiqueta--warn">Retrabajo<template v-if="legajo.orden.ot_retrabajo_origen"> de la OT {{ legajo.orden.ot_retrabajo_origen }}</template></span>
         </p>
@@ -240,8 +240,7 @@ onMounted(cargar)
 .bloque h3 { margin: 0 0 8px; }
 .sub { font-size: 0.82rem; color: var(--text-soft); }
 .vacio { color: var(--text-soft); font-style: italic; }
-.patente { background: #fff; color: #111; border: 1px solid #111; padding: 0 6px; border-radius: 5px; font-family: monospace; font-weight: 700; margin-right: 6px; }
-.etiqueta { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 10px; font-size: 0.74rem; font-weight: 600; background: var(--primary-light); color: var(--primary); }
+.etiqueta { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 10px; font-size: 0.74rem; font-weight: 600; background: var(--primary-light); color: var(--primary-text); }
 .etiqueta--warn { background: var(--warning-light); color: var(--warning); }
 .linea-tiempo { list-style: none; margin: 6px 0 0; padding: 0; border-left: 2px solid var(--border); }
 .linea-tiempo li { display: grid; grid-template-columns: 130px 1fr auto; gap: 8px; padding: 3px 0 3px 10px; font-size: 0.88rem; }

@@ -24,11 +24,11 @@
           <div class="tipo-tarea-toggle">
             <label class="tipo-tarea-opcion">
               <input type="radio" v-model="form.es_rutina" :value="true" />
-              🔁 Rutina (limpieza, capacitaciones — siempre disponible, no se cierra)
+              <AppIcon name="refresh" /> Rutina (limpieza, capacitaciones — siempre disponible, no se cierra)
             </label>
             <label class="tipo-tarea-opcion">
               <input type="radio" v-model="form.es_rutina" :value="false" />
-              🔧 Extraordinaria (con un tiempo estimado — se cierra al terminar)
+              <AppIcon name="wrench" /> Extraordinaria (con un tiempo estimado — se cierra al terminar)
             </label>
           </div>
         </div>

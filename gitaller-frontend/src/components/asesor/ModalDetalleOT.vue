@@ -13,7 +13,7 @@
         <div v-if="data.ot !== '0000'" class="info-grid">
           <p><strong>Cliente:</strong> {{ data.cliente }}</p>
           <p><strong>Patente:</strong> {{ data.patente }}</p>
-          <p><strong>Unidad:</strong> {{ data.unidad }}</p>
+          <p :title="$unidadCompleta(data.unidad)"><strong>Unidad:</strong> {{ $modelo(data.unidad) }}</p>
           <p><strong>Asesor:</strong> {{ data.asesor_legajo }}</p>
           <p><strong>Garantía:</strong> {{ data.es_garantia ? 'Sí' : 'No' }}</p>
           <p><strong>Otra Marca:</strong> {{ data.es_no_iveco ? 'Sí' : 'No' }}</p>
@@ -66,21 +66,21 @@
                     <td>{{ a.descripcion }}</td>
                     <td>
                       <span class="badge-sm">{{ a.estado }}</span>
-                      <span v-if="data.ot === '0000' && a.es_rutina" class="badge-sm badge-rutina" title="Rutina: siempre disponible, no se cierra">🔁</span>
+                      <span v-if="data.ot === '0000' && a.es_rutina" class="badge-sm badge-rutina" title="Rutina: siempre disponible, no se cierra"><AppIcon name="refresh" /></span>
                     </td>
                     <td>{{ a.tiempo_estimado }}</td>
                     <td>{{ (a.tiempo_real || 0).toFixed(2) }}</td>
                     <td v-if="esJefe" style="white-space: nowrap;">
-                      <button class="btn btn-sm" v-can="'tarea_gestionar_todas'" @click="$emit('editar-actividad', a)" title="Reasignar/Editar">✏️</button>
-                      <button class="btn btn-danger btn-sm" v-can="'tarea_gestionar_todas'" @click="$emit('eliminar-actividad', a.id)" title="Eliminar asignación">🗑️</button>
-                      <button class="btn btn-sm" v-can="'tiempo_editar_manual'" @click="toggleTiempos(a.id)" title="Ver Tiempos">🕒</button>
+                      <button class="btn btn-sm" v-can="'tarea_gestionar_todas'" @click="$emit('editar-actividad', a)" title="Reasignar/Editar"><AppIcon name="edit" /></button>
+                      <button class="btn btn-danger btn-sm" v-can="'tarea_gestionar_todas'" @click="$emit('eliminar-actividad', a.id)" title="Eliminar asignación"><AppIcon name="trash" /></button>
+                      <button class="btn btn-sm" v-can="'tiempo_editar_manual'" @click="toggleTiempos(a.id)" title="Ver Tiempos"><AppIcon name="clock" /></button>
                       <button
                         v-if="data.ot === '0000' && !a.es_rutina && !['Finalizada', 'Cerrada por Jefe'].includes(a.estado)"
                         class="btn btn-success btn-sm"
                         v-can="'tarea_gestionar_todas'"
                         @click="cerrarTareaInterna(a)"
                         title="Cerrar esta tarea interna extraordinaria"
-                      >✅ Cerrar</button>
+                      ><AppIcon name="check" /> Cerrar</button>
                     </td>
                   </tr>
                   <tr v-if="esJefe && tiemposAbiertos === a.id">
@@ -94,7 +94,7 @@
                         <template v-if="gruposTiemposPorMecanico(a).length">
                           <div v-for="grupo in gruposTiemposPorMecanico(a)" :key="grupo.legajo || 'sin-legajo'" class="grupo-mecanico">
                             <button type="button" class="grupo-mecanico-header" @click="toggleGrupoMecanico(a.id, grupo.legajo)">
-                              <span class="grupo-mecanico-toggle">{{ grupoAbierto(a.id, grupo.legajo) ? '▾' : '▸' }}</span>
+                              <span class="grupo-mecanico-toggle"><AppIcon :name="grupoAbierto(a.id, grupo.legajo) ? 'chevron-down' : 'chevron-right'" /></span>
                               <span class="grupo-mecanico-nombre">{{ grupo.nombre }}</span>
                               <span class="grupo-mecanico-resumen">{{ grupo.registros.length }} registro{{ grupo.registros.length === 1 ? '' : 's' }} · {{ grupo.totalHoras.toFixed(2) }} hs</span>
                             </button>
@@ -102,8 +102,8 @@
                               <div v-for="t in grupo.registros" :key="t.id" class="tiempo-row">
                                 <input type="datetime-local" :value="toLocalInput(t.inicio)" @change="t.inicio = fromLocalInput($event.target.value)">
                                 <input type="datetime-local" :value="toLocalInput(t.fin)" @change="t.fin = fromLocalInput($event.target.value)">
-                                <button class="btn btn-sm" v-can="'tiempo_editar_manual'" @click="guardarTiempo(t, a.id)" title="Guardar">💾</button>
-                                <button class="btn btn-danger btn-sm" v-can="'tiempo_editar_manual'" @click="eliminarTiempo(t.id)" title="Eliminar">🗑️</button>
+                                <button class="btn btn-sm" v-can="'tiempo_editar_manual'" @click="guardarTiempo(t, a.id)" title="Guardar"><AppIcon name="save" /></button>
+                                <button class="btn btn-danger btn-sm" v-can="'tiempo_editar_manual'" @click="eliminarTiempo(t.id)" title="Eliminar"><AppIcon name="trash" /></button>
                               </div>
                             </div>
                           </div>
@@ -112,8 +112,8 @@
                         <div v-for="t in (nuevosTiempos[a.id] || [])" :key="t.tempId" class="tiempo-row">
                           <input type="datetime-local" :value="toLocalInput(t.inicio)" @change="t.inicio = fromLocalInput($event.target.value)">
                           <input type="datetime-local" :value="toLocalInput(t.fin)" @change="t.fin = fromLocalInput($event.target.value)">
-                          <button class="btn btn-sm" v-can="'tiempo_editar_manual'" @click="guardarTiempo(t, a.id)" title="Guardar">💾</button>
-                          <button class="btn btn-danger btn-sm" v-can="'tiempo_editar_manual'" @click="quitarNuevo(a.id, t.tempId)" title="Quitar">🗑️</button>
+                          <button class="btn btn-sm" v-can="'tiempo_editar_manual'" @click="guardarTiempo(t, a.id)" title="Guardar"><AppIcon name="save" /></button>
+                          <button class="btn btn-danger btn-sm" v-can="'tiempo_editar_manual'" @click="quitarNuevo(a.id, t.tempId)" title="Quitar"><AppIcon name="trash" /></button>
                         </div>
                       </template>
                       <template v-else>
@@ -122,19 +122,19 @@
                           <div v-for="t in getTiempos(a.id)" :key="t.id" class="tiempo-row">
                             <input type="datetime-local" :value="toLocalInput(t.inicio)" @change="t.inicio = fromLocalInput($event.target.value)">
                             <input type="datetime-local" :value="toLocalInput(t.fin)" @change="t.fin = fromLocalInput($event.target.value)">
-                            <button class="btn btn-sm" v-can="'tiempo_editar_manual'" @click="guardarTiempo(t, a.id)" title="Guardar">💾</button>
-                            <button class="btn btn-danger btn-sm" v-can="'tiempo_editar_manual'" @click="eliminarTiempo(t.id)" title="Eliminar">🗑️</button>
+                            <button class="btn btn-sm" v-can="'tiempo_editar_manual'" @click="guardarTiempo(t, a.id)" title="Guardar"><AppIcon name="save" /></button>
+                            <button class="btn btn-danger btn-sm" v-can="'tiempo_editar_manual'" @click="eliminarTiempo(t.id)" title="Eliminar"><AppIcon name="trash" /></button>
                           </div>
                           <div v-for="t in (nuevosTiempos[a.id] || [])" :key="t.tempId" class="tiempo-row">
                             <input type="datetime-local" :value="toLocalInput(t.inicio)" @change="t.inicio = fromLocalInput($event.target.value)">
                             <input type="datetime-local" :value="toLocalInput(t.fin)" @change="t.fin = fromLocalInput($event.target.value)">
-                            <button class="btn btn-sm" v-can="'tiempo_editar_manual'" @click="guardarTiempo(t, a.id)" title="Guardar">💾</button>
-                            <button class="btn btn-danger btn-sm" v-can="'tiempo_editar_manual'" @click="quitarNuevo(a.id, t.tempId)" title="Quitar">🗑️</button>
+                            <button class="btn btn-sm" v-can="'tiempo_editar_manual'" @click="guardarTiempo(t, a.id)" title="Guardar"><AppIcon name="save" /></button>
+                            <button class="btn btn-danger btn-sm" v-can="'tiempo_editar_manual'" @click="quitarNuevo(a.id, t.tempId)" title="Quitar"><AppIcon name="trash" /></button>
                           </div>
                         </template>
                         <p v-else class="empty-state">Sin registros de tiempo.</p>
                       </template>
-                      <button class="btn btn-sm" v-can="'tiempo_editar_manual'" @click="agregarTiempo(a.id, a.legajo_mecanico)">➕ Agregar registro</button>
+                      <button class="btn btn-sm" v-can="'tiempo_editar_manual'" @click="agregarTiempo(a.id, a.legajo_mecanico)"><AppIcon name="plus" /> Agregar registro</button>
                     </td>
                   </tr>
                 </template>
@@ -149,10 +149,10 @@
            <li v-for="ap in data.aportes" :key="ap.id">
                 <strong>{{ ap.nombre || ap.legajo }}</strong> ({{ formatearFechaAporte(ap.fecha_aporte) }})<br/>
                 <span style="white-space: pre-wrap;">{{ ap.actividades }}</span> <em>(Horas: {{ ap.horas }})</em>
-                <div v-if="ap.correccion_habilitada" class="aporte-estado aporte-estado--pendiente">✏️ Corrección habilitada: esperando que {{ ap.nombre || ap.legajo }} la haga</div>
-                <div v-else-if="ap.corregido_en" class="aporte-estado aporte-estado--ok" :title="'Texto original: ' + (ap.texto_original || '')">✔ Corregido el {{ formatearFechaAporte(ap.corregido_en) }}</div>
+                <div v-if="ap.correccion_habilitada" class="aporte-estado aporte-estado--pendiente"><AppIcon name="edit" /> Corrección habilitada: esperando que {{ ap.nombre || ap.legajo }} la haga</div>
+                <div v-else-if="ap.corregido_en" class="aporte-estado aporte-estado--ok" :title="'Texto original: ' + (ap.texto_original || '')"><AppIcon name="check" /> Corregido el {{ formatearFechaAporte(ap.corregido_en) }}</div>
                 <button v-if="esJefe" v-can="'tarea_gestionar_todas'" class="btn btn-outline btn-sm mt-5" @click="toggleCorreccionAporte(ap)">
-                  {{ ap.correccion_habilitada ? 'Cancelar habilitación' : '✏️ Habilitar corrección' }}
+                  {{ ap.correccion_habilitada ? 'Cancelar habilitación' : 'Habilitar corrección' }}
                 </button>
             </li>
           </ul>
@@ -381,23 +381,18 @@ const guardarTiempo = async (t, actId) => {
 .header-section h2 { margin: 0; }
 .info-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin-bottom: 15px; }
 .info-grid p { margin: 0; font-size: 0.95rem; }
-.highlight { color: var(--primary); }
+.highlight { color: var(--primary-text); }
 .bold { font-weight: bold; }
 hr { border: 0; border-top: 1px solid var(--border-soft); margin: 20px 0; }
-h3 { color: var(--primary); font-size: 1.1rem; margin-bottom: 10px; }
+h3 { color: var(--primary-text); font-size: 1.1rem; margin-bottom: 10px; }
 .box-text { background: var(--border-soft); padding: 10px; border-radius: 8px; border: 1px solid var(--border); }
 .table-wrapper { overflow-x: auto; margin-bottom: 15px; }
-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
-th, td { padding: 8px; text-align: left; border-bottom: 1px solid var(--border-soft); }
-th { background: var(--border-soft); }
-.badge { background: var(--primary); color: white; padding: 4px 10px; border-radius: 20px; font-size: 0.85rem; font-weight: bold; }
-.badge-sm { background: var(--muted); color: white; padding: 2px 8px; border-radius: 10px; font-size: 0.75rem; }
 .equipo-mini { display: flex; flex-direction: column; gap: 4px; }
-.mini-pill { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.78rem; color: white; white-space: nowrap; }
+.mini-pill { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.78rem; color: #fff; white-space: nowrap; }
 .mini-pill small { opacity: 0.85; }
-.pill-info { background: var(--primary); }
-.pill-progress { background: var(--success); }
-.pill-warn { background: var(--warning); }
+.pill-info { background: var(--primary); color: var(--on-primary); }
+.pill-progress { background: var(--success-solid); }
+.pill-warn { background: var(--warning-solid); }
 .pill-done { background: var(--muted); }
 .aporte-estado { font-size: 0.8rem; margin-top: 4px; }
 .aporte-estado--pendiente { color: var(--warning); }
@@ -416,7 +411,7 @@ th { background: var(--border-soft); }
   padding: 8px 12px; text-align: left; font: inherit; color: var(--text);
 }
 .grupo-mecanico-header:hover { background: var(--border-soft); }
-.grupo-mecanico-toggle { width: 1em; color: var(--primary); }
+.grupo-mecanico-toggle { width: 1em; color: var(--primary-text); }
 .grupo-mecanico-nombre { font-weight: bold; flex: 1; }
 .grupo-mecanico-resumen { color: var(--muted); font-size: 0.85rem; white-space: nowrap; }
 .grupo-mecanico-body { padding: 8px 12px; }

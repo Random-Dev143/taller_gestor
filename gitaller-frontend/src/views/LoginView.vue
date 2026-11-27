@@ -1,66 +1,68 @@
 <template>
-  <div class="login-container">
-    <div class="card login-box">
-      <div class="brand-header">
-        <h1>🚗 {{ configStore.config.nombre_taller }}</h1>
-        <p class="subtitle">Gestión Integral de Taller</p>
+  <div class="auth-screen">
+    <div class="auth-card">
+      <div class="auth-brand">
+        <img v-if="configStore.config.logo_path" :src="configStore.getLogoUrl()" class="auth-logo" alt="" />
+        <span v-else class="auth-mark" aria-hidden="true">G</span>
+        <h1>{{ configStore.config.nombre_taller }}</h1>
+        <p>Gestión integral de taller</p>
       </div>
 
       <!-- FORMULARIO DE INGRESO -->
       <form v-if="!mostrandoRegistro" @submit.prevent="ejecutarLogin">
-        <h2 class="mb-15">Iniciar Sesión</h2>
-        <div class="form-group mb-15 text-left">
+        <h2 >Iniciar Sesión</h2>
+        <div class="form-group">
           <label>Correo Electrónico</label>
           <input type="email" v-model="formLogin.email" class="form-control" required autofocus />
         </div>
-        <div class="form-group mb-15 text-left">
+        <div class="form-group">
           <label>Contraseña</label>
           <div class="password-field">
             <input :type="mostrarPassword ? 'text' : 'password'" v-model="formLogin.password" class="form-control"
                    required @keyup="chequearMayus" @blur="capsLockActivo = false" />
             <button type="button" class="btn-toggle-password" @click="mostrarPassword = !mostrarPassword"
                     :title="mostrarPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'">
-              {{ mostrarPassword ? '🙈' : '👁️' }}
+              <AppIcon :name="mostrarPassword ? 'eye-off' : 'eye'" />
             </button>
           </div>
-          <span v-if="capsLockActivo" class="alerta-mayus">⚠️ Bloq Mayús está activado</span>
+          <span v-if="capsLockActivo" class="alerta-mayus"><AppIcon name="alert" /> Bloq Mayús está activado</span>
         </div>
         <button type="submit" class="btn btn-primary w-100" :disabled="procesando">
           {{ procesando ? 'Verificando...' : 'Ingresar' }}
         </button>
-        <div class="mt-15 toggle-link">
+        <div class="auth-link">
           ¿No tienes acceso? <a href="#" @click.prevent="mostrandoRegistro = true">Solicitar cuenta</a>
         </div>
       </form>
 
       <!-- FORMULARIO DE REGISTRO -->
       <form v-else @submit.prevent="ejecutarRegistro">
-        <h2 class="mb-15">Solicitar Cuenta</h2>
-        <div class="form-group mb-10 text-left">
+        <h2 >Solicitar Cuenta</h2>
+        <div class="form-group">
           <label>Nombre y Apellido</label>
           <input type="text" v-model="formRegistro.nombre_completo" class="form-control" required />
         </div>
-        <div class="form-group mb-10 text-left">
+        <div class="form-group">
           <label>Correo Electrónico</label>
           <input type="email" v-model="formRegistro.email" class="form-control" required />
         </div>
-        <div class="form-group mb-15 text-left">
+        <div class="form-group">
           <label>Crear Contraseña</label>
           <div class="password-field">
             <input :type="mostrarPasswordRegistro ? 'text' : 'password'" v-model="formRegistro.password" class="form-control"
                    minlength="6" required @keyup="chequearMayusRegistro" @blur="capsLockActivoRegistro = false" />
             <button type="button" class="btn-toggle-password" @click="mostrarPasswordRegistro = !mostrarPasswordRegistro"
                     :title="mostrarPasswordRegistro ? 'Ocultar contraseña' : 'Mostrar contraseña'">
-              {{ mostrarPasswordRegistro ? '🙈' : '👁️' }}
+              <AppIcon :name="mostrarPasswordRegistro ? 'eye-off' : 'eye'" />
             </button>
           </div>
-          <span v-if="capsLockActivoRegistro" class="alerta-mayus">⚠️ Bloq Mayús está activado</span>
+          <span v-if="capsLockActivoRegistro" class="alerta-mayus"><AppIcon name="alert" /> Bloq Mayús está activado</span>
         </div>
         <button type="submit" class="btn btn-success w-100" :disabled="procesando">
           {{ procesando ? 'Registrando...' : 'Enviar Solicitud' }}
         </button>
-        <div class="mt-15 toggle-link">
-          <a href="#" @click.prevent="mostrandoRegistro = false">← Volver al login</a>
+        <div class="auth-link">
+          <a href="#" @click.prevent="mostrandoRegistro = false"><AppIcon name="arrow-left" /> Volver al login</a>
         </div>
       </form>
 
@@ -133,40 +135,13 @@ const ejecutarRegistro = async () => {
 </script>
 
 <style scoped>
-.login-container {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 100vh;
-  margin: -20px;
-  background: linear-gradient(135deg, #0056a7 0%, #003f7d 100%);
-}
-.login-box {
-  width: 100%;
-  max-width: 400px;
-  text-align: center;
-  padding: 40px 30px;
-}
-.brand-header h1 {
-  color: var(--primary);
-  margin-bottom: 5px;
-}
-.subtitle {
-  color: var(--muted);
-  font-size: 0.95rem;
-  margin-bottom: 25px;
-}
-.text-left { text-align: left; }
-.mb-10 { margin-bottom: 10px; }
-.mb-15 { margin-bottom: 15px; }
-.toggle-link { font-size: 0.9rem; color: var(--text-soft); }
-.toggle-link a { font-weight: bold; text-decoration: none; }
-
+.auth-logo { max-height: 48px; max-width: 200px; margin-bottom: 6px; }
 .password-field { position: relative; display: flex; align-items: center; }
-.password-field .form-control { padding-right: 40px; width: 100%; }
+.password-field .form-control { padding-right: 42px; width: 100%; }
 .btn-toggle-password {
-  position: absolute; right: 6px; background: none; border: none; cursor: pointer;
-  font-size: 1.1rem; line-height: 1; padding: 4px 6px;
+  position: absolute; right: 4px; width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center;
+  background: none; border: none; border-radius: 6px; cursor: pointer; color: var(--muted); font-size: 1.1rem;
 }
-.alerta-mayus { display: block; margin-top: 6px; font-size: 0.8rem; color: var(--warning); font-weight: 600; }
+.btn-toggle-password:hover { color: var(--text); background: var(--hover-row); }
+.alerta-mayus { display: flex; align-items: center; gap: 5px; margin-top: 6px; font-size: 0.8rem; color: var(--warning); font-weight: 600; }
 </style>

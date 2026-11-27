@@ -1,10 +1,10 @@
 <template>
   <div class="view-sala">
     <div class="sala-navbar">
-      <span class="brand">📺 Estado de Vehículos en Taller</span>
+      <span class="brand">Estado de vehículos en taller</span>
       <span class="page-indicator" v-if="totalPages > 1">Página {{ currentPage + 1 }} de {{ totalPages }}</span>
       <span class="last-update">Última actualización: {{ ultimaActualizacion }}</span>
-      <router-link to="/" class="salir-link" title="Salir de la pantalla de sala de espera">⏻</router-link>
+      <router-link to="/" class="salir-link" title="Salir de la pantalla de sala de espera" aria-label="Salir"><AppIcon name="logout" /></router-link>
     </div>
 
     <div v-if="ots.length === 0" class="empty-state">No hay vehículos en taller en este momento.</div>
@@ -17,7 +17,7 @@
               <span class="ot-number">#{{ ot.ot }}</span>
               <span class="patente">{{ ot.patente }}</span>
             </div>
-            <div class="unidad-name">{{ truncate(ot.unidad, 20) }}</div>
+            <div class="unidad-name">{{ truncate($modelo(ot.unidad), 24) }}</div>
             <div class="cliente-name">{{ ot.cliente }}</div>
 
             <div class="card-mid">
@@ -238,20 +238,25 @@ onUnmounted(() => {
 <style scoped>
 .view-sala {
   display: flex; flex-direction: column;
-  padding: 1.5vh 1.5vw; background: #121212; height: 100vh; margin: -20px; color: #fff; overflow: hidden;
+  padding: 1.5vh 1.5vw; background: var(--s-bg); height: 100vh; color: var(--s-text); overflow: hidden;
   box-sizing: border-box;
+  /* La pantalla de sala es siempre oscura (TV), sin importar el tema elegido en la PC. */
+  --s-bg: #0b0f14; --s-card: #151b23; --s-card-2: #1c2430; --s-border: #252e3a;
+  --s-text: #e6eaf0; --s-soft: #a8b2c0; --s-muted: #7c8696;
+  --s-accent: #a9cdfb; --s-accent-bg: rgba(169, 205, 251, 0.1);
+  --s-ok: #34b36f; --s-wait: #8b95a5; --s-warn: #e0a630; --s-done: #5b9df5; --s-done-bg: #14243a;
 }
 
 .sala-navbar {
   display: flex; align-items: center; flex-wrap: wrap; gap: 1vh 2vw;
-  margin-bottom: 1.5vh; padding-bottom: 1vh; border-bottom: 1px solid #333;
+  margin-bottom: 1.5vh; padding-bottom: 1vh; border-bottom: 1px solid var(--s-border);
 }
 .brand { font-weight: 700; font-size: clamp(1.1rem, 2.4vw, 2rem); margin-right: auto; }
-.page-indicator { color: #a4c2f4; font-weight: bold; background: rgba(164, 194, 244, 0.1); padding: 0.4vh 1.2vw; border-radius: 20px; font-size: clamp(0.8rem, 1.1vw, 1.1rem); }
-.last-update { color: #888; font-size: clamp(0.75rem, 1vw, 1rem); }
-.salir-link { color: #555; text-decoration: none; font-size: clamp(1rem, 1.6vw, 1.4rem); padding: 0 0.3vw; }
-.salir-link:hover { color: #a4c2f4; }
-.empty-state { text-align: center; padding: 50px; font-size: clamp(1rem, 2vw, 1.4rem); color: #666; }
+.page-indicator { color: var(--s-accent); font-weight: bold; background: var(--s-accent-bg); padding: 0.4vh 1.2vw; border-radius: 20px; font-size: clamp(0.8rem, 1.1vw, 1.1rem); }
+.last-update { color: var(--s-muted); font-size: clamp(0.75rem, 1vw, 1rem); }
+.salir-link { color: var(--s-muted); text-decoration: none; font-size: clamp(1rem, 1.6vw, 1.4rem); padding: 0 0.3vw; }
+.salir-link:hover { color: var(--s-accent); }
+.empty-state { text-align: center; padding: 50px; font-size: clamp(1rem, 2vw, 1.4rem); color: var(--s-muted); }
 
 .grid-container-wrapper {
   flex: 1;
@@ -269,11 +274,10 @@ onUnmounted(() => {
 }
 
 .card-sala {
-  background: #1e1e1e; border-radius: 12px; padding: 1.6vh 1.4vw; border-left: 0.5vw solid #555;
+  background: var(--s-card); border: 1px solid var(--s-border); border-radius: 12px; padding: 1.6vh 1.4vw; border-left: 0.5vw solid var(--s-wait);
   display: flex; flex-direction: column; justify-content: space-between;
   gap: 8px;
-  box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-  box-sizing: border-box;
+    box-sizing: border-box;
   min-width: 0; min-height: 0; overflow: hidden;
   container-type: size;
   container-name: card-sala;
@@ -283,25 +287,25 @@ onUnmounted(() => {
 .fade-enter-from { opacity: 0; transform: translateX(20px); }
 .fade-leave-to { opacity: 0; transform: translateX(-20px); position: absolute; }
 
-.border-progress { border-left-color: #4CAF50; }
-.border-wait { border-left-color: #9E9E9E; }
-.border-warn { border-left-color: #FFC107; }
-.border-done { border-left-color: #2196F3; background: #1a2836; }
+.border-progress { border-left-color: var(--s-ok); }
+.border-wait { border-left-color: var(--s-wait); }
+.border-warn { border-left-color: var(--s-warn); }
+.border-done { border-left-color: var(--s-done); background: var(--s-done-bg); }
 
 .card-top { display: flex; justify-content: space-between; align-items: center; }
-.ot-number { font-weight: bold; color: #aaa; font-size: clamp(0.8rem, 3.2vw, 1.3rem); }
-.patente { background: white; color: black; padding: 0.3vh 0.8vw; border-radius: 4px; font-family: monospace; font-weight: bold; font-size: clamp(0.75rem, 3vw, 1.2rem); }
+.ot-number { font-weight: bold; color: var(--s-soft); font-size: clamp(0.8rem, 3.2vw, 1.3rem); }
+.patente { padding: 0.3vh 0.8vw; border-width: 1px; font-size: clamp(0.75rem, 3vw, 1.2rem); }
 .unidad-name { font-weight: bold; margin-top: 0.5vh; font-size: clamp(0.85rem, 3.6vw, 1.5rem); line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.cliente-name { color: #9e9e9e; font-weight: 500; margin-top: 0.2vh; font-size: clamp(0.8rem, 3.2vw, 1.3rem); line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-transform: uppercase; }
+.cliente-name { color: var(--s-soft); font-weight: 500; margin-top: 0.2vh; font-size: clamp(0.8rem, 3.2vw, 1.3rem); line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-transform: uppercase; }
 
-.card-mid { background: #2a2a2a; padding: 1vh 1vw; border-radius: 8px; margin: auto 0; }
-.mecanico { margin-bottom: 0.5vh; color: #ccc; font-size: clamp(0.7rem, 2.6vw, 1.05rem); }
+.card-mid { background: var(--s-card-2); padding: 1vh 1vw; border-radius: 8px; margin: auto 0; }
+.mecanico { margin-bottom: 0.5vh; color: var(--s-soft); font-size: clamp(0.7rem, 2.6vw, 1.05rem); }
 .estado-text { font-weight: bold; letter-spacing: 0.5px; font-size: clamp(0.75rem, 2.8vw, 1.15rem); }
 
 .card-bottom { display: flex; flex-direction: column; align-items: center; text-align: center; }
-.eta-label { color: #888; text-transform: uppercase; font-size: clamp(0.6rem, 2vw, 0.85rem); }
-.eta-value { font-weight: bold; color: #a4c2f4; font-size: clamp(0.85rem, 3.4vw, 1.35rem); }
+.eta-label { color: var(--s-muted); text-transform: uppercase; font-size: clamp(0.6rem, 2vw, 0.85rem); }
+.eta-value { font-weight: bold; color: var(--s-accent); font-size: clamp(0.85rem, 3.4vw, 1.35rem); }
 
 @container card-sala (min-width: 1px) {
   .ot-number { font-size: clamp(0.8rem, min(9cqw, 14cqh), 1.4rem); }

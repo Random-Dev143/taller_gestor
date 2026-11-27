@@ -40,10 +40,10 @@
           <div class="estado-tag" :class="'estado-' + imp.estado">{{ imp.estado }}</div>
         </div>
         <ul class="errores" v-if="archivosConError.length">
-          <li v-for="a in archivosConError" :key="a.nombre">⚠️ {{ a.nombre }}: {{ a.error }}</li>
+          <li v-for="a in archivosConError" :key="a.nombre"><AppIcon name="alert" /> {{ a.nombre }}: {{ a.error }}</li>
         </ul>
         <details v-if="imp.resumen.advertencias?.length" class="advertencias">
-          <summary>⚠️ {{ imp.resumen.advertencias.length }} fila(s) omitidas por inconsistencias</summary>
+          <summary><AppIcon name="alert" /> {{ imp.resumen.advertencias.length }} fila(s) omitidas por inconsistencias</summary>
           <ul><li v-for="(a, i) in imp.resumen.advertencias" :key="i">{{ a.archivo }} · fila {{ a.fila }}: {{ a.detalle }}</li></ul>
         </details>
 
@@ -100,8 +100,8 @@
                 <input class="form-control" v-model="valores[it.id]" :disabled="it.estado !== 'pendiente'" />
               </div>
               <div class="conf-botones" v-if="it.estado === 'pendiente'">
-                <button class="btn btn-success btn-sm" :disabled="ocupado" @click="resolver(it, 'aprobar')">✔ Aceptar</button>
-                <button class="btn btn-secondary btn-sm" :disabled="ocupado" @click="resolver(it, 'rechazar')">✖ Rechazar</button>
+                <button class="btn btn-success btn-sm" :disabled="ocupado" @click="resolver(it, 'aprobar')"><AppIcon name="check" /> Aceptar</button>
+                <button class="btn btn-secondary btn-sm" :disabled="ocupado" @click="resolver(it, 'rechazar')"><AppIcon name="x" /> Rechazar</button>
               </div>
               <div v-else class="conf-botones"><span :class="'estado-' + it.estado">{{ it.estado }}</span></div>
             </div>
@@ -116,7 +116,7 @@
         </div>
 
         <div class="acciones">
-          <button class="btn btn-secondary" @click="imp = null; cargarPendientes()">← Otra importación</button>
+          <button class="btn btn-secondary" @click="imp = null; cargarPendientes()"><AppIcon name="arrow-left" /> Otra importación</button>
           <button v-if="imp.estado === 'pendiente'" class="btn btn-danger" :disabled="ocupado" @click="cancelarImportacion">Cancelar importación</button>
         </div>
       </section>
